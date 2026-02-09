@@ -534,25 +534,25 @@ DATABASE_PATH=./data/jobs.db
 ### **PHASE 1A: MVP Foundation (Week 1 - Days 1-5)**
 Goal: Get core system working locally, ready for AWS deployment
 
-1. **Day 1**: 
+1. **Day 1**:
    - Setup project structure & dependencies
    - Create local SQLite database schema
    - Implement CV parser (process your CV markdown file)
 
-2. **Day 2**: 
+2. **Day 2**:
    - User profile management from parsed CV
    - User preferences CLI setup
 
-3. **Day 3**: 
+3. **Day 3**:
    - Job scraper base class
    - Implement ONE platform scraper (GitHub Jobs - simplest API)
    - Implement ONE company scraper (Microsoft careers.microsoft.com)
 
-4. **Day 4**: 
+4. **Day 4**:
    - Job matching engine with scoring algorithm
    - Basic application tracker
 
-5. **Day 5**: 
+5. **Day 5**:
    - Minimal CLI interface (profile upload, jobs search, job view)
    - Local testing with sample data
 
@@ -585,16 +585,16 @@ Goal: Deploy working system to AWS with daily scheduled job fetch
 ### **PHASE 2: Expand Job Sources (Week 2)**
 Goal: Add more job sources while MVP runs in production
 
-1. **Day 8-9**: 
+1. **Day 8-9**:
    - Add Glassdoor scraper
    - Add Stack Overflow scraper
    - Add 3 more company portal scrapers (Google, Vodafone, Apple)
 
-2. **Day 10**: 
+2. **Day 10**:
    - Deploy updated scrapers to AWS Lambda
    - Update EventBridge job fetch handler
 
-3. **Day 11**: 
+3. **Day 11**:
    - Add CLI commands: `job list --filter`, `job view <id>`, `job export`
    - Add basic application logging (`job-agent apply <job_id>`)
 
@@ -635,21 +635,21 @@ Day 1:
   ☐ Project structure & dependencies
   ☐ SQLite database schema
   ☐ CV parser (parse data/cv.md)
-  
+
 Day 2:
   ☐ User profile creation from CV
   ☐ User preferences interactive setup
-  
+
 Day 3:
   ☐ Base scraper abstract class
   ☐ GitHub Jobs scraper
   ☐ Microsoft careers scraper
-  
+
 Day 4:
   ☐ Job matching engine
   ☐ Application tracker module
   ☐ Unit tests for core modules
-  
+
 Day 5:
   ☐ Basic CLI commands (profile, jobs search, jobs view)
   ☐ Local integration testing
@@ -661,7 +661,7 @@ Day 6:
   ☐ AWS RDS PostgreSQL setup
   ☐ Database schema migration (SQLite → PostgreSQL)
   ☐ IAM roles and Secrets Manager setup
-  
+
 Day 7:
   ☐ Create job_fetch_handler Lambda function
   ☐ Create job_match_handler Lambda function
@@ -677,11 +677,11 @@ Days 8-9:
   ☐ Google careers scraper
   ☐ Vodafone careers scraper
   ☐ Apple careers scraper
-  
+
 Day 10:
   ☐ Deploy updated Lambda functions
   ☐ Test multi-source aggregation
-  
+
 Day 11:
   ☐ Enhanced CLI commands
   ☐ Application logging system
@@ -955,12 +955,12 @@ But the core system will already be **live, automated, and running in the cloud*
    ```bash
    # Build Docker image
    docker build -t job-agent:latest .
-   
+
    # Push to AWS ECR (Elastic Container Registry)
    aws ecr create-repository --repository-name job-agent
    docker tag job-agent:latest <account>.dkr.ecr.<region>.amazonaws.com/job-agent:latest
    docker push <account>.dkr.ecr.<region>.amazonaws.com/job-agent:latest
-   
+
    # Deploy Lambda function from container image
    ```
 
@@ -968,7 +968,7 @@ But the core system will already be **live, automated, and running in the cloud*
    ```bash
    # Store secrets in AWS Secrets Manager
    aws secretsmanager create-secret --name job-agent/api-keys
-   
+
    # Set Lambda environment variables
    # - DATABASE_URL (RDS connection string)
    # - AWS_REGION
@@ -986,7 +986,7 @@ But the core system will already be **live, automated, and running in the cloud*
    ```bash
    # Invoke Lambda manually to test
    aws lambda invoke --function-name job-fetch-handler output.json
-   
+
    # Check RDS for job data
    # Verify EventBridge rules are triggering
    ```
@@ -1051,7 +1051,7 @@ Resources:
                   - secretsmanager:GetSecretValue
                   - ses:SendEmail
                 Resource: '*'
-  
+
   JobAgentDatabase:
     Type: AWS::RDS::DBInstance
     Properties:
