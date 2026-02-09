@@ -147,6 +147,29 @@ jobhunter-agent/
 - **Database**: SQLAlchemy + SQLite
 - **Type Checking**: Mypy
 
+### Using pip in the virtual environment (SOP)
+
+Always install or update Python packages using the project's virtual environment to ensure tooling (pre-commit, mypy, tests) run consistently.
+
+Preferred commands:
+
+After activating the venv:
+```bash
+source .venv/bin activate && python -m pip install -r requirements.txt
+```
+
+Or explicitly using the venv Python:
+```bash
+.venv/bin/python -m pip install -r requirements.txt
+```
+
+When installing single packages (for example, type stubs for mypy):
+```bash
+.venv/bin/python -m pip install types-requests
+```
+
+Note: pre-commit hooks run their own isolated environments; if mypy reports missing type stub packages during pre-commit, prefer adding `ignore_missing_imports = true` to `[tool.mypy]` in `pyproject.toml` or install the required type stubs into the project's venv as above.
+
 ## Day-by-Day Summary
 
 - **Day 1**: CV parsing & database models ✅
