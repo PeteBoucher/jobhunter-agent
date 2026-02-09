@@ -1,0 +1,12 @@
+[tool.black]
+line-length = 88
+target-version = ['py313']
+
+[tool.isort]
+profile = "black"
+line_length = 88
+known_first_party = ["src"]
+
+[tool.coverage.run]
+branch = true
+source = ["src"]
