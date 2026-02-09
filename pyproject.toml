@@ -1,3 +1,23 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jobhunter-agent"
+version = "0.1.0"
+description = "Automated job search and application tracking agent"
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.0",
+    "sqlalchemy>=2.0",
+    "rich>=10.0",
+]
+
+[project.scripts]
+job-agent = "src.cli:cli"
+
+[tool.setuptools.packages.find]
+
 [tool.black]
 line-length = 88
 target-version = ['py310']
