@@ -8,10 +8,13 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from src.application_tracker import ApplicationTracker
+from src.data_exporter import DataExporter
 from src.database import get_session, init_db
 from src.job_matcher import compute_match_for_user
 from src.job_scrapers.github_scraper import GitHubJobsScraper
 from src.job_scrapers.microsoft_scraper import MicrosoftScraper
+from src.job_searcher import JobSearcher
 from src.metrics import get_metrics_summary
 from src.models import Job, User
 from src.prometheus_exporter import create_exporter
@@ -607,6 +610,398 @@ def prometheus(port: int) -> None:
     except Exception as e:
         console.print(f"[red]✗[/red] Error starting Prometheus exporter: {e}")
         raise
+
+
+@cli.group()
+def jobs() -> None:
+    """Manage and search jobs."""
+    pass
+
+
+@jobs.command("search")
+@click.option("--keywords", help="Search keywords")
+@click.option("--location", help="Job location filter")
+@click.option(
+    "--remote",
+    type=click.Choice(["remote", "hybrid", "onsite"], case_sensitive=False),
+    help="Remote status filter",
+)
+@click.option(
+    "--min-score",
+    type=float,
+    default=0,
+    help="Minimum match score (0-100)",
+)
+@click.option(
+    "--source",
+    type=click.Choice(["github", "microsoft"], case_sensitive=False),
+    help="Filter by job source",
+)
+@click.option(
+    "--limit",
+    type=int,
+    default=20,
+    help="Maximum results to show",
+)
+def search_jobs(
+    keywords: Optional[str],
+    location: Optional[str],
+    remote: Optional[str],
+    min_score: float,
+    source: Optional[str],
+    limit: int,
+) -> None:
+    """Search and filter jobs.
+
+    Examples:
+        job-agent jobs search --keywords "python" --location "remote"
+        job-agent jobs search --min-score 75 --limit 10
+    """
+    session = get_session()
+    try:
+        searcher = JobSearcher(session)
+        jobs_list = searcher.search(
+            keywords=keywords,
+            location=location,
+            remote=remote,
+            min_match_score=min_score if min_score > 0 else None,
+            source=source,
+            limit=limit,
+        )
+
+        if not jobs_list:
+            console.print("[yellow]No jobs found matching your criteria[/yellow]")
+            return
+
+        # Display results in a table
+        table = Table(title=f"Found {len(jobs_list)} jobs")
+        table.add_column("ID", style="cyan")
+        table.add_column("Title", style="magenta")
+        table.add_column("Company", style="green")
+        table.add_column("Score", style="yellow")
+        table.add_column("Posted", style="blue")
+
+        for job in jobs_list:
+            posted = (
+                job.posted_date.strftime("%Y-%m-%d") if job.posted_date else "Unknown"
+            )
+            score_val = (
+                max((jm.match_score or 0) for jm in job.job_matches)
+                if getattr(job, "job_matches", None)
+                else None
+            )
+            score = f"{score_val:.0f}" if score_val else "N/A"
+            table.add_row(
+                str(job.id),
+                job.title[:30],
+                job.company,
+                score,
+                posted,
+            )
+
+        console.print(table)
+        console.print(
+            "\n[green]✓[/green] Use 'job-agent jobs view <id>' to see details"
+        )
+
+    finally:
+        session.close()
+
+
+@jobs.command("view")
+@click.argument("job_id", type=int)
+def view_job(job_id: int) -> None:
+    """View detailed information about a job.
+
+    Example:
+        job-agent jobs view 42
+    """
+    session = get_session()
+    try:
+        job = session.query(Job).filter(Job.id == job_id).first()
+
+        if not job:
+            console.print(f"[red]✗[/red] Job {job_id} not found")
+            return
+
+        # Display job details in panels
+        # Compute display score from JobMatch relationship if present
+        score_val = (
+            max((jm.match_score or 0) for jm in job.job_matches)
+            if getattr(job, "job_matches", None)
+            else 0
+        )
+        score_str = f"{score_val:.0f}%"
+
+        console.print(
+            Panel(
+                f"[bold green]{job.title}[/bold green]\n"
+                f"[cyan]{job.company}[/cyan] • {job.location or 'Location TBD'}\n"
+                f"[yellow]Match Score: {score_str}[/yellow]",
+                title="Job Details",
+            )
+        )
+
+        if job.salary_min or job.salary_max:
+            salary = f"${job.salary_min:,.0f}" if job.salary_min else "Not specified"
+            if job.salary_max:
+                salary += f" - ${job.salary_max:,.0f}"
+            console.print(f"[bold]Salary:[/bold] {salary}")
+
+        if job.remote:
+            console.print(f"[bold]Remote:[/bold] {job.remote}")
+
+        console.print(f"[bold]Posted:[/bold] {job.posted_date or 'Unknown'}")
+        console.print(f"[bold]Source:[/bold] {job.source}")
+
+        if job.requirements:
+            console.print("\n[bold]Requirements:[/bold]")
+            for req in job.requirements[:10]:  # Show first 10
+                console.print(f"  • {req}")
+
+        if job.description:
+            console.print("\n[bold]Description:[/bold]")
+            desc = (
+                job.description[:500] + "..."
+                if len(job.description) > 500
+                else job.description
+            )
+            console.print(desc)
+
+        if job.apply_url:
+            console.print(f"\n[bold]Apply:[/bold] {job.apply_url}")
+
+    finally:
+        session.close()
+
+
+@jobs.command("recent")
+@click.option("--days", type=int, default=7, help="Days back to search")
+@click.option("--limit", type=int, default=20, help="Maximum results")
+def recent_jobs(days: int, limit: int) -> None:
+    """Show recently posted jobs.
+
+    Example:
+        job-agent jobs recent --days 3 --limit 10
+    """
+    session = get_session()
+    try:
+        searcher = JobSearcher(session)
+        jobs_list = searcher.get_recent_jobs(days=days, limit=limit)
+
+        if not jobs_list:
+            console.print(f"[yellow]No jobs posted in the last {days} days[/yellow]")
+            return
+
+        table = Table(title=f"Recent jobs (last {days} days)")
+        table.add_column("ID", style="cyan")
+        table.add_column("Title", style="magenta")
+        table.add_column("Company", style="green")
+        table.add_column("Score", style="yellow")
+        table.add_column("Posted", style="blue")
+
+        for job in jobs_list:
+            posted = (
+                job.posted_date.strftime("%Y-%m-%d %H:%M")
+                if job.posted_date
+                else "Unknown"
+            )
+            score_val = (
+                max((jm.match_score or 0) for jm in job.job_matches)
+                if getattr(job, "job_matches", None)
+                else None
+            )
+            score = f"{score_val:.0f}" if score_val else "N/A"
+            table.add_row(
+                str(job.id),
+                job.title[:30],
+                job.company,
+                score,
+                posted,
+            )
+
+        console.print(table)
+
+    finally:
+        session.close()
+
+
+@cli.group()
+def applications() -> None:
+    """Manage job applications."""
+    pass
+
+
+@applications.command("apply")
+@click.argument("job_id", type=int)
+@click.option("--notes", help="Notes about the application")
+def apply_command(job_id: int, notes: Optional[str]) -> None:
+    """Record an application to a job.
+
+    Example:
+        job-agent applications apply 42 --notes "Applied via LinkedIn"
+    """
+    session = get_session()
+    try:
+        job = session.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            console.print(f"[red]✗[/red] Job {job_id} not found")
+            return
+
+        tracker = ApplicationTracker(session)
+        app = tracker.apply_to_job(job_id, notes=notes)
+
+        console.print(
+            f"[green]✓[/green] Recorded application to {job.title} at {job.company}"
+        )
+        console.print(f"  Status: {app.status}")
+
+    finally:
+        session.close()
+
+
+@applications.command("list")
+@click.option(
+    "--status",
+    type=click.Choice(["saved", "applied", "interview_scheduled", "rejected", "offer"]),
+    help="Filter by status",
+)
+@click.option("--limit", type=int, default=20, help="Maximum results")
+def list_applications(status: Optional[str], limit: int) -> None:
+    """List applications.
+
+    Examples:
+        job-agent applications list
+        job-agent applications list --status "interview_scheduled"
+        job-agent applications list --status "offer"
+    """
+    session = get_session()
+    try:
+        if status == "saved":
+            tracker = ApplicationTracker(session)
+            apps = tracker.get_saved_jobs(limit=limit)
+            title = "Saved Jobs"
+        elif status == "applied":
+            tracker = ApplicationTracker(session)
+            apps = tracker.get_applied_jobs(limit=limit)
+            title = "Applied Jobs"
+        elif status == "interview_scheduled":
+            tracker = ApplicationTracker(session)
+            apps = tracker.get_interview_schedule(limit=limit)
+            title = "Scheduled Interviews"
+        else:
+            console.print(
+                "[yellow]Please specify a status (saved, applied, interview_scheduled, "
+                "rejected, offer)[/yellow]"
+            )
+            return
+
+        if not apps:
+            console.print(f"[yellow]No {title.lower()} found[/yellow]")
+            return
+
+        table = Table(title=title)
+        table.add_column("ID", style="cyan")
+        table.add_column("Job", style="magenta")
+        table.add_column("Company", style="green")
+        table.add_column("Status", style="yellow")
+
+        for app in apps:
+            app_id = app.id if hasattr(app, "id") else app.job_id
+            job_title = app.title if hasattr(app, "title") else ""
+            company = app.company if hasattr(app, "company") else ""
+            table.add_row(str(app_id), job_title[:40], company, status or "unknown")
+
+        console.print(table)
+
+    finally:
+        session.close()
+
+
+@cli.group()
+def export() -> None:
+    """Export data."""
+    pass
+
+
+@export.command("jobs")
+@click.option(
+    "--format",
+    type=click.Choice(["json", "csv"], case_sensitive=False),
+    default="json",
+    help="Export format",
+)
+@click.option("--min-score", type=float, default=0, help="Minimum match score")
+@click.option("--output", help="Output file path", required=True)
+def export_jobs(format: str, min_score: float, output: str) -> None:
+    """Export jobs to file.
+
+    Examples:
+        job-agent export jobs --output jobs.json
+        job-agent export jobs --output jobs.csv --format csv
+        job-agent export jobs --output top-matches.json --min-score 75
+    """
+    session = get_session()
+    try:
+        searcher = JobSearcher(session)
+        jobs_list = searcher.search(
+            min_match_score=min_score if min_score > 0 else None,
+            limit=10000,
+        )
+
+        if not jobs_list:
+            console.print("[yellow]No jobs to export[/yellow]")
+            return
+
+        exporter = DataExporter(session)
+        exporter.export_to_file(
+            jobs_list, output, data_type="jobs", format=format.lower()
+        )
+
+        console.print(f"[green]✓[/green] Exported {len(jobs_list)} jobs to {output}")
+
+    except Exception as e:
+        console.print(f"[red]✗[/red] Export failed: {e}")
+    finally:
+        session.close()
+
+
+@export.command("applications")
+@click.option(
+    "--format",
+    type=click.Choice(["json", "csv"], case_sensitive=False),
+    default="json",
+    help="Export format",
+)
+@click.option("--output", help="Output file path", required=True)
+def export_applications(format: str, output: str) -> None:
+    """Export applications to file.
+
+    Examples:
+        job-agent export applications --output applications.json
+        job-agent export applications --output my-apps.csv --format csv
+    """
+    session = get_session()
+    try:
+        from src.models import Application
+
+        apps = session.query(Application).all()
+
+        if not apps:
+            console.print("[yellow]No applications to export[/yellow]")
+            return
+
+        exporter = DataExporter(session)
+        exporter.export_to_file(
+            apps, output, data_type="applications", format=format.lower()
+        )
+
+        console.print(f"[green]✓[/green] Exported {len(apps)} applications to {output}")
+
+    except Exception as e:
+        console.print(f"[red]✗[/red] Export failed: {e}")
+    finally:
+        session.close()
 
 
 if __name__ == "__main__":
