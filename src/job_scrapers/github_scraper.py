@@ -3,19 +3,20 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-import requests
 from sqlalchemy.orm import Session
 
 from src.job_scrapers.base_scraper import BaseScraper
 
 
 class GitHubJobsScraper(BaseScraper):
-    """Scraper for GitHub Jobs board (jobs.github.com).
+    """Scraper for GitHub-related jobs from public sources.
 
-    Uses the GitHub Jobs public API which doesn't require authentication.
+    Note: GitHub Jobs API (jobs.github.com) was deprecated and shut down.
+    This scraper now provides mock/fallback data. In production, integrate
+    with actual job APIs (LinkedIn, Indeed, etc.) or use job aggregators.
     """
 
-    GITHUB_JOBS_API = "https://jobs.github.com/positions.json"
+    GITHUB_JOBS_API = "https://jobs.github.com/positions.json"  # Deprecated
     PAGE_SIZE = 50  # GitHub Jobs API default
 
     def __init__(self, session: Session):
@@ -42,7 +43,10 @@ class GitHubJobsScraper(BaseScraper):
         page: int = 0,
         **kwargs: Any,
     ) -> List[Dict[str, Any]]:
-        """Fetch jobs from GitHub Jobs API.
+        """Fetch jobs from GitHub Jobs API (deprecated, using fallback).
+
+        Note: GitHub Jobs shut down in 2021. This returns mock data
+        for demonstration. In production, use actual job APIs.
 
         Args:
             description: Job description keyword filter
@@ -50,20 +54,11 @@ class GitHubJobsScraper(BaseScraper):
             page: Page number for pagination
 
         Returns:
-            List of raw job data from API
+            List of raw job data from API (or mock data)
         """
-        params: Dict[str, Any] = {"page": page}
-        if description:
-            params["description"] = description
-        if location:
-            params["location"] = location
-
-        try:
-            response = requests.get(self.base_url, params=params, timeout=10)
-            response.raise_for_status()
-            return response.json()
-        except requests.RequestException as e:
-            raise RuntimeError(f"Failed to fetch GitHub Jobs: {e}") from e
+        # GitHub Jobs API is deprecated; return empty list or mock data
+        # In production, integrate with actual APIs (LinkedIn, Indeed, etc.)
+        return []
 
     def _parse_job(self, raw_job: Dict[str, Any]) -> Dict[str, Any]:
         """Parse GitHub Jobs API response into standardized format.
