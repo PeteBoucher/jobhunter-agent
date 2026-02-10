@@ -1,5 +1,6 @@
 """CLI interface for job hunting agent."""
 
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 import click
@@ -11,7 +12,9 @@ from src.database import get_session, init_db
 from src.job_matcher import compute_match_for_user
 from src.job_scrapers.github_scraper import GitHubJobsScraper
 from src.job_scrapers.microsoft_scraper import MicrosoftScraper
+from src.metrics import get_metrics_summary
 from src.models import Job, User
+from src.prometheus_exporter import create_exporter
 from src.user_profile import UserProfile
 from src.worker import setup_signal_handlers, start_worker
 
@@ -527,6 +530,82 @@ def worker(scrape_cron: str, match_cron: str) -> None:
         console.print("[yellow]Worker stopped[/yellow]")
     except Exception as e:
         console.print(f"[red]✗[/red] Error starting worker: {e}")
+        raise
+
+
+@cli.command()
+@click.option("--source", type=str, default=None, help="Filter metrics by source name")
+@click.option(
+    "--hours", type=int, default=24, help="Lookback window in hours (default 24)"
+)
+def metrics(source: Optional[str], hours: int) -> None:
+    """Show summarized scraper metrics.
+
+    Examples:
+        job-agent metrics
+        job-agent metrics --source github --hours 48
+    """
+    session = get_session()
+    try:
+        since = datetime.utcnow() - timedelta(hours=hours) if hours else None
+        rows = get_metrics_summary(session, since=since, source=source)
+
+        if not rows:
+            console.print("[yellow]No metrics found for given filters[/yellow]")
+            return
+
+        table = Table(title="Scraper Metrics")
+        table.add_column("Source", style="cyan")
+        table.add_column("Action", style="magenta")
+        table.add_column("Rows", justify="right")
+        table.add_column("Value", justify="right")
+
+        for src, action, cnt, val in rows:
+            table.add_row(str(src), str(action), str(cnt), str(val))
+
+        console.print(table)
+
+    except Exception as e:
+        console.print(f"[red]✗[/red] Error querying metrics: {e}")
+        raise
+    finally:
+        session.close()
+
+
+@cli.command()
+@click.option(
+    "--port", type=int, default=8000, help="Port for Prometheus exporter (default 8000)"
+)
+def prometheus(port: int) -> None:
+    """Start Prometheus metrics exporter server.
+
+    Exposes scraper metrics on http://localhost:PORT/metrics
+
+    Example:
+        job-agent prometheus --port 9090
+    """
+    try:
+        from prometheus_client import start_http_server
+
+        # Create and register collector
+        create_exporter()
+
+        # Start HTTP server
+        start_http_server(port)
+        console.print(f"[green]✓[/green] Prometheus exporter started on port {port}")
+        console.print(f"  Metrics URL: http://localhost:{port}/metrics")
+        console.print("\n[yellow]Press Ctrl+C to stop[/yellow]\n")
+
+        # Block forever
+        import time
+
+        while True:
+            time.sleep(1)
+
+    except KeyboardInterrupt:
+        console.print("[yellow]Exporter stopped[/yellow]")
+    except Exception as e:
+        console.print(f"[red]✗[/red] Error starting Prometheus exporter: {e}")
         raise
 
 
