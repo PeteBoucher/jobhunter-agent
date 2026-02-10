@@ -2,7 +2,6 @@
 
 import tempfile
 from datetime import datetime
-from unittest.mock import patch
 
 import pytest
 
@@ -126,8 +125,7 @@ class TestGitHubJobsScraper:
         assert "javascript" in requirements
         assert "docker" in requirements
 
-    @patch("requests.get")
-    def test_fetch_github_jobs_success(self, mock_get, github_scraper):
+    def test_fetch_github_jobs_success(self, github_scraper):
         """Test successful GitHub Jobs API fetch - deprecated API returns empty."""
         # GitHub Jobs API is deprecated; endpoint returns empty list
         jobs = github_scraper._fetch_jobs(description="python")
@@ -135,15 +133,13 @@ class TestGitHubJobsScraper:
         assert len(jobs) == 0
         assert jobs == []
 
-    @patch("src.job_scrapers.github_scraper.requests.get")
-    def test_fetch_github_jobs_api_error(self, mock_get, github_scraper):
+    def test_fetch_github_jobs_api_error(self, github_scraper):
         """Test GitHub Jobs API error handling - deprecated API no longer raises."""
         # GitHub Jobs API is deprecated; no longer makes requests or raises errors
         jobs = github_scraper._fetch_jobs()
         assert len(jobs) == 0
 
-    @patch("requests.get")
-    def test_scrape_github_jobs(self, mock_get, github_scraper):
+    def test_scrape_github_jobs(self, github_scraper):
         """Test GitHub Jobs scraping - returns empty due to API deprecation."""
         # GitHub Jobs API is deprecated; scrape returns empty list
         jobs = github_scraper.scrape()
@@ -194,8 +190,7 @@ class TestMicrosoftScraper:
         assert "azure" in requirements
         assert "sql server" in requirements
 
-    @patch("requests.get")
-    def test_fetch_microsoft_jobs_success(self, mock_get, microsoft_scraper):
+    def test_fetch_microsoft_jobs_success(self, microsoft_scraper):
         """Test Microsoft API fetch - deprecated API returns empty."""
         # Microsoft API endpoint has changed; returns empty list
         jobs = microsoft_scraper._fetch_jobs(keywords="engineer")
@@ -203,15 +198,13 @@ class TestMicrosoftScraper:
         assert len(jobs) == 0
         assert jobs == []
 
-    @patch("src.job_scrapers.microsoft_scraper.requests.get")
-    def test_fetch_microsoft_jobs_api_error(self, mock_get, microsoft_scraper):
+    def test_fetch_microsoft_jobs_api_error(self, microsoft_scraper):
         """Test Microsoft API error handling - no longer makes requests."""
         # Microsoft API endpoint has changed; no longer makes requests
         jobs = microsoft_scraper._fetch_jobs()
         assert len(jobs) == 0
 
-    @patch("requests.get")
-    def test_scrape_microsoft_jobs(self, mock_get, microsoft_scraper):
+    def test_scrape_microsoft_jobs(self, microsoft_scraper):
         """Test Microsoft Jobs scraping - returns empty due to API changes."""
         # Microsoft API endpoint has changed; scrape returns empty list
         jobs = microsoft_scraper.scrape()
@@ -228,8 +221,7 @@ class TestMicrosoftScraper:
 class TestScraperIntegration:
     """Integration tests for scrapers."""
 
-    @patch("requests.get")
-    def test_scrape_multiple_sources(self, mock_get, session):
+    def test_scrape_multiple_sources(self, session):
         """Test scraping multiple sources - both return empty."""
         # Both GitHub and Microsoft APIs have changed; both return empty lists
         github_scraper = GitHubJobsScraper(session)
