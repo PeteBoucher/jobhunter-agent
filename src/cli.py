@@ -8,7 +8,12 @@ from rich.panel import Panel
 from rich.table import Table
 
 from src.database import get_session, init_db
+from src.job_matcher import compute_match_for_user
+from src.job_scrapers.github_scraper import GitHubJobsScraper
+from src.job_scrapers.microsoft_scraper import MicrosoftScraper
+from src.models import Job, User
 from src.user_profile import UserProfile
+from src.worker import setup_signal_handlers, start_worker
 
 console = Console()
 
@@ -362,6 +367,167 @@ def _parse_list_input(items: tuple) -> List[str]:
         parts = item.split(",")
         result.extend(p.strip() for p in parts if p.strip())
     return result
+
+
+@cli.command()
+@click.option(
+    "--user-id",
+    type=int,
+    default=None,
+    help="User ID to run matches for (defaults to all users)",
+)
+@click.option(
+    "--min-score",
+    type=float,
+    default=0.0,
+    help="Only report matches with score >= MIN_SCORE",
+)
+def match(user_id: Optional[int], min_score: float) -> None:
+    """Compute job match scores for users against available jobs."""
+    session = get_session()
+
+    try:
+        # Load users and optionally filter
+        if user_id:
+            users = session.query(User).filter(User.id == user_id).all()
+        else:
+            users = session.query(User).all()
+
+        if not users:
+            console.print("[yellow]No users found to match[/yellow]")
+            return
+
+        jobs = session.query(Job).all()
+        if not jobs:
+            console.print("[yellow]No jobs available to match[/yellow]")
+            return
+
+        processed = 0
+        accepted = 0
+        for user in users:
+            for job in jobs:
+                jm = compute_match_for_user(session, job, user)
+                processed += 1
+                if jm.match_score >= min_score:
+                    accepted += 1
+
+        console.print(
+            f"[green]✓[/green] Matches processed: {processed}; accepted: {accepted}"
+        )
+
+    except Exception as e:
+        console.print(f"[red]✗[/red] Error running matches: {e}")
+        raise
+    finally:
+        session.close()
+
+
+@cli.command()
+@click.option(
+    "--sources",
+    multiple=True,
+    default=("github", "microsoft"),
+    help="Sources to scrape (defaults to github,microsoft)",
+)
+@click.option(
+    "--keywords",
+    multiple=True,
+    help="Keywords to search for when supported by the scraper",
+)
+@click.option("--max-retries", type=int, default=3, help="Max fetch retries")
+@click.option("--backoff", type=float, default=1.0, help="Backoff factor seconds")
+def scrape(sources: tuple, keywords: tuple, max_retries: int, backoff: float) -> None:
+    """Run scrapers for configured sources and persist new jobs."""
+    session = get_session()
+
+    try:
+        source_map = {
+            "github": GitHubJobsScraper,
+            "microsoft": MicrosoftScraper,
+        }
+
+        selected = [s.lower() for s in sources]
+        total_new = 0
+
+        for src_name in selected:
+            cls = source_map.get(src_name)
+            if not cls:
+                console.print(f"[yellow]Skipping unknown source: {src_name}[/yellow]")
+                continue
+
+            scraper = cls(session)
+
+            # If scraper supports scrape_by_keywords and keywords were provided, use it.
+            try:
+                if keywords and hasattr(scraper, "scrape_by_keywords"):
+                    count = scraper.scrape_by_keywords(list(keywords))
+                    total_new += count
+                else:
+                    jobs = scraper.scrape(
+                        max_retries=max_retries, backoff_factor=backoff
+                    )
+                    total_new += len(jobs)
+
+                console.print(
+                    f"[green]✓[/green] {src_name}: new jobs added: {total_new}"
+                )
+
+            except Exception as e:
+                console.print(f"[red]✗[/red] Error scraping {src_name}: {e}")
+
+        console.print(
+            f"[green]✓[/green] Scraping completed. Total new jobs: {total_new}"
+        )
+
+    finally:
+        session.close()
+
+
+@cli.command()
+@click.option(
+    "--scrape-cron",
+    default="0 */6 * * *",
+    help="Cron expression for scraping (default every 6 hours)",
+)
+@click.option(
+    "--match-cron",
+    default="0 */12 * * *",
+    help="Cron expression for matching (default every 12 hours)",
+)
+def worker(scrape_cron: str, match_cron: str) -> None:
+    """Start the background job worker for periodic scraping and matching.
+
+    Example:
+        job-agent worker --scrape-cron "*/30 * * * *" --match-cron "0 2 * * *"
+    """
+    try:
+        console.print(
+            f"[cyan]Starting job-agent worker...[/cyan]\n"
+            f"  Scrape schedule: {scrape_cron}\n"
+            f"  Match schedule: {match_cron}"
+        )
+
+        scheduler = start_worker(
+            scrape_cron=scrape_cron,
+            match_cron=match_cron,
+            daemonize=True,
+        )
+        del scheduler  # Scheduler is managed in background
+        setup_signal_handlers()
+
+        console.print("\n[green]✓[/green] Worker started. Press Ctrl+C to stop.\n")
+
+        # Block forever
+        import time
+
+        while True:
+            time.sleep(1)
+
+    except KeyboardInterrupt:
+        console.print("[yellow]Worker stopped[/yellow]")
+    except Exception as e:
+        console.print(f"[red]✗[/red] Error starting worker: {e}")
+        raise
 
 
 if __name__ == "__main__":

@@ -1,12 +1,23 @@
 """Base scraper abstract class for all job scrapers."""
 
+import logging
+import time
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from sqlalchemy.orm import Session
 
-from src.models import Job
+from src.models import Job, ScraperMetric
+
+# Configure module logger
+logger = logging.getLogger("jobhunter.scrapers")
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
 
 
 class BaseScraper(ABC):
@@ -61,9 +72,13 @@ class BaseScraper(ABC):
         pass
 
     def scrape(self, **kwargs) -> List[Job]:
-        """Main scraping method.
+        """Main scraping method with retry/backoff for transient fetch errors.
 
         Fetches jobs from the source, parses them, and stores in database.
+
+        Supports optional kwargs:
+          - max_retries: int = number of fetch retries (default 3)
+          - backoff_factor: float = base seconds for exponential backoff (default 1.0)
 
         Args:
             **kwargs: Source-specific parameters
@@ -71,15 +86,59 @@ class BaseScraper(ABC):
         Returns:
             List of Job objects that were scraped
         """
+        max_retries = int(kwargs.pop("max_retries", 3))
+        backoff = float(kwargs.pop("backoff_factor", 1.0))
+
         try:
-            # Fetch raw jobs from source
-            raw_jobs = self._fetch_jobs(**kwargs)
-            jobs = []
+            # Retry _fetch_jobs on transient errors
+            last_exc: Optional[BaseException] = None
+            raw_jobs: Optional[List[Any]] = None
+            for attempt in range(max_retries):
+                # record attempt
+                try:
+                    self._record_metric("fetch_attempt", 1, f"attempt={attempt}")
+                except Exception:
+                    logger.debug("Failed to record fetch_attempt metric")
+                try:
+                    raw_jobs = self._fetch_jobs(**kwargs)
+                    # success
+                    try:
+                        self._record_metric("fetch_success", 1, f"attempt={attempt}")
+                    except Exception:
+                        logger.debug("Failed to record fetch_success metric")
+                    break
+                except Exception as e:
+                    last_exc = e
+                    if attempt < max_retries - 1:
+                        try:
+                            self._record_metric("retry", 1, f"attempt={attempt}")
+                        except Exception:
+                            logger.debug("Failed to record retry metric")
+                        sleep_time = backoff * (2**attempt)
+                        time.sleep(sleep_time)
+                        continue
+                    else:
+                        raise
+
+            if raw_jobs is None:
+                raise RuntimeError(
+                    f"Failed to fetch jobs from {self.source_name}: {last_exc}"
+                )
+
+            jobs: List[Job] = []
 
             for raw_job in raw_jobs:
                 try:
                     # Parse job data
                     parsed_data = self._parse_job(raw_job)
+
+                    # count parsed
+                    try:
+                        self._record_metric(
+                            "jobs_parsed", 1, parsed_data.get("source_job_id")
+                        )
+                    except Exception:
+                        logger.debug("Failed to record jobs_parsed metric")
 
                     # Check if job already exists
                     existing_job = self._job_exists(parsed_data)
@@ -91,19 +150,54 @@ class BaseScraper(ABC):
                     jobs.append(job)
 
                 except Exception as e:
-                    print(f"Error parsing job from {self.source_name}: {e}")
+                    logger.exception(f"Error parsing job from {self.source_name}: {e}")
+                    try:
+                        self._record_metric("parse_error", 1, str(e))
+                    except Exception:
+                        logger.debug("Failed to record parse_error metric")
                     continue
-
             # Save all jobs to database
             if jobs:
                 self.session.add_all(jobs)
                 self.session.commit()
-
+                try:
+                    self._record_metric("jobs_added", len(jobs), None)
+                except Exception:
+                    logger.debug("Failed to record jobs_added metric")
             return jobs
 
         except Exception as e:
+            try:
+                self._record_metric("fetch_fail", 1, str(e))
+            except Exception:
+                logger.debug("Failed to record fetch_fail metric")
             self.session.rollback()
             raise RuntimeError(f"Error scraping {self.source_name}: {e}") from e
+
+    def _record_metric(
+        self, action: str, value: int = 1, details: Optional[str] = None
+    ) -> None:
+        """Helper to persist a scraper metric row.
+
+        This uses a short-lived session commit to ensure metrics are recorded
+        even if the main scraping transaction rolls back.
+        """
+        try:
+            metric = ScraperMetric(
+                source=self.source_name,
+                action=action,
+                value=value,
+                details=details,
+            )
+            self.session.add(metric)
+            self.session.commit()
+        except Exception:
+            # If recording fails, try to rollback the metric insert
+            # to keep the session stable
+            try:
+                self.session.rollback()
+            except Exception:
+                pass
 
     def _job_exists(self, parsed_data: dict) -> Optional[Job]:
         """Check if job already exists in database.

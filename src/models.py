@@ -168,3 +168,18 @@ class Offer(Base):
     notes = Column(String)
 
     application = relationship("Application", back_populates="offers")
+
+
+class ScraperMetric(Base):
+    """Simple metrics table for scraper events."""
+
+    __tablename__ = "scraper_metrics"
+
+    id = Column(Integer, primary_key=True)
+    source = Column(String(100))
+    action = Column(
+        String(100)
+    )  # fetch_attempt, fetch_success, fetch_fail, jobs_parsed, jobs_added, retry
+    value = Column(Integer, default=0)
+    details = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
