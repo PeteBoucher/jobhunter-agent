@@ -1,0 +1,16 @@
+[Unit]
+Description=Job Hunter Agent Prometheus Exporter
+After=network.target
+
+[Service]
+Type=simple
+User=jobhunter
+WorkingDirectory=/opt/jobhunter-agent
+ExecStart=/opt/jobhunter-agent/.venv/bin/python -m src.cli prometheus --port 9090
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

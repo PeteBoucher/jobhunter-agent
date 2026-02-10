@@ -1,0 +1,63 @@
+version: "3.9"
+
+services:
+  # PostgreSQL database (optional, for production)
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: jobhunter
+      POSTGRES_USER: jobhunter
+      POSTGRES_PASSWORD: jobhunter_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # Job Hunter Agent Worker (scraping + matching)
+  worker:
+    build: .
+    command: python -m src.cli worker --scrape-cron "0 */6 * * *" --match-cron "0 */12 * * *"
+    environment:
+      DATABASE_URL: postgresql://jobhunter:jobhunter_password@postgres:5432/jobhunter
+    depends_on:
+      - postgres
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
+
+  # Prometheus exporter
+  prometheus-exporter:
+    build: .
+    command: python -m src.cli prometheus --port 9090
+    environment:
+      DATABASE_URL: postgresql://jobhunter:jobhunter_password@postgres:5432/jobhunter
+    depends_on:
+      - postgres
+    ports:
+      - "9090:9090"
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
+
+  # Prometheus (optional, for scraping metrics)
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    restart: always
+
+volumes:
+  postgres_data:
+  prometheus_data:
