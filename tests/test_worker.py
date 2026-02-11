@@ -7,13 +7,13 @@ from src.worker import _match_job, _scrape_job, start_worker
 
 def test_scrape_job_with_mock():
     """Test _scrape_job function with mocked scraper."""
-    with patch("src.worker.GitHubJobsScraper") as MockScraper:
+    with patch("src.worker.MicrosoftScraper") as MockScraper:
         mock_instance = MagicMock()
         mock_instance.scrape.return_value = []
         MockScraper.return_value = mock_instance
 
         # Should not raise
-        _scrape_job("github")
+        _scrape_job("microsoft")
 
         # Verify scraper was called
         assert MockScraper.called
@@ -42,8 +42,8 @@ def test_start_worker_returns_scheduler():
     assert hasattr(scheduler, "start")
     assert hasattr(scheduler, "shutdown")
 
-    # Verify 3 jobs were added (github scrape, microsoft scrape, match)
-    assert len(scheduler.get_jobs()) == 3
+    # Verify 2 jobs were added (microsoft scrape, match)
+    assert len(scheduler.get_jobs()) == 2
 
 
 def test_worker_cli_command():

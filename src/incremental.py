@@ -5,8 +5,10 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from src.job_scrapers.github_scraper import GitHubJobsScraper
+from src.job_scrapers.coinbase_scraper import CoinbaseScraper
 from src.job_scrapers.microsoft_scraper import MicrosoftScraper
+from src.job_scrapers.revolut_scraper import RevolutScraper
+from src.job_scrapers.uber_scraper import UberScraper
 from src.models import Job, JobMatch, User
 
 logger = logging.getLogger("jobhunter.incremental")
@@ -31,7 +33,16 @@ class IncrementalScraper:
         Returns:
             Number of new jobs added
         """
-        scraper_map = {"github": GitHubJobsScraper, "microsoft": MicrosoftScraper}
+        from typing import Dict, Type
+
+        from src.job_scrapers.base_scraper import BaseScraper
+
+        scraper_map: Dict[str, Type[BaseScraper]] = {
+            "microsoft": MicrosoftScraper,
+            "revolut": RevolutScraper,
+            "coinbase": CoinbaseScraper,
+            "uber": UberScraper,
+        }
 
         cls = scraper_map.get(source)
         if not cls:

@@ -19,8 +19,10 @@ def test_scrape_cli_monkeypatched(monkeypatch):
             return 0
 
     # Patch the scraper classes in src.cli
-    monkeypatch.setattr("src.cli.GitHubJobsScraper", DummyScraper)
     monkeypatch.setattr("src.cli.MicrosoftScraper", DummyScraper)
+    monkeypatch.setattr("src.cli.RevolutScraper", DummyScraper)
+    monkeypatch.setattr("src.cli.CoinbaseScraper", DummyScraper)
+    monkeypatch.setattr("src.cli.UberScraper", DummyScraper)
 
     from src.cli import cli
 

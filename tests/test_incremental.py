@@ -18,14 +18,14 @@ def test_incremental_scraper(tmp_path, monkeypatch):
     # Mock scraper to return jobs with different posted dates
     now = datetime.utcnow()
     old_job = Job(
-        source="github",
+        source="microsoft",
         source_job_id="old-1",
         title="Old Job",
         company="OldCo",
         posted_date=now - timedelta(days=2),
     )
     new_job = Job(
-        source="github",
+        source="microsoft",
         source_job_id="new-1",
         title="New Job",
         company="NewCo",
@@ -34,13 +34,13 @@ def test_incremental_scraper(tmp_path, monkeypatch):
     session.add_all([old_job, new_job])
     session.commit()
 
-    with patch("src.incremental.GitHubJobsScraper") as MockScraper:
+    with patch("src.incremental.MicrosoftScraper") as MockScraper:
         mock_scraper = MagicMock()
         mock_scraper.scrape.return_value = [old_job, new_job]
         MockScraper.return_value = mock_scraper
 
         incremental = IncrementalScraper(session)
-        count = incremental.scrape_incremental("github", lookback_hours=24)
+        count = incremental.scrape_incremental("microsoft", lookback_hours=24)
 
         # Should only count new_job as it's within 24 hours
         assert count == 1

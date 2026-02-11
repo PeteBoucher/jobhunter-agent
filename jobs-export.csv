@@ -1,0 +1,24 @@
+[
+  {
+    "id": 1,
+    "source": "dummy",
+    "title": "Dev",
+    "company": "Acme",
+    "location": "Remote",
+    "remote": "remote",
+    "salary_min": null,
+    "salary_max": null,
+    "description": "",
+    "apply_url": "https://acme/jobs/x1",
+    "posted_date": null,
+    "match_score": null,
+    "requirements": [
+      "python"
+    ],
+    "nice_to_haves": [],
+    "company_industry": null,
+    "company_size": null,
+    "source_type": "aggregator",
+    "source_job_id": "x1"
+  }
+]
