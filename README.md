@@ -9,13 +9,13 @@ The project is **fully functional** with working job scrapers fetching real list
 - ✅ **Greenhouse scraper** - fetches jobs from 15 top tech companies (Stripe, Cloudflare, Airbnb, Figma, Discord, Datadog, etc.)
 - ✅ **Lever scraper** - fetches jobs from Spotify, Palantir, Plaid
 - ✅ **LinkedIn scraper** - guest endpoint (may be rate-limited)
-- ✅ User profile management and CV parsing
-- ✅ Intelligent job matching engine with scoring algorithm
+- ✅ **Smart CV parsing** - extracts skills, experience, and auto-populates matching preferences
+- ✅ **Job matching engine** - 5-dimension scoring (title, skills, experience, location, salary)
 - ✅ Background worker for periodic scraping and matching
 - ✅ Centralized scraper registry for easy extension
 - ✅ Metrics collection and Prometheus exporter
 - ✅ Structured JSON logging
-- ✅ Full test coverage (111 tests)
+- ✅ Full test coverage (111+ tests)
 - ✅ Deployment configurations (systemd, Docker)
 
 ### Legacy Scrapers
@@ -24,9 +24,9 @@ The GitHub Jobs and Microsoft Careers scrapers remain in the codebase but return
 
 ## Features
 
-- 📄 **CV Parsing**: Extract skills, experience, education, and languages from CV files
+- 📄 **CV Parsing**: Extract skills, experience, and preferences from CV markdown files
 - 🔍 **Real Job Data**: Greenhouse and Lever APIs fetch thousands of live listings from top tech companies
-- 🎯 **Smart Job Matching**: Scoring algorithm matches jobs against user profile
+- 🎯 **Smart Job Matching**: 5-dimension scoring (title 30pts, skills 40pts, experience 10pts, location 10pts, salary 10pts)
 - 🤖 **Background Worker**: APScheduler-based periodic scraping and job matching
 - 📊 **Metrics & Monitoring**: Prometheus exporter with custom scrapers and job counts
 - 📝 **Structured Logging**: JSON-formatted logs for production observability
@@ -56,11 +56,14 @@ job-agent init
 ### Basic Usage
 
 ```bash
-# Upload and parse your CV
-job-agent profile upload path/to/cv.pdf
+# Upload and parse your CV (auto-extracts skills + preferences)
+job-agent profile upload path/to/cv.md
 
 # View your profile
 job-agent profile show
+
+# Re-extract skills/preferences after CV parser improvements
+job-agent profile refresh
 
 # Scrape jobs from all default sources (Greenhouse + Lever)
 job-agent scrape
@@ -75,9 +78,10 @@ job-agent scrape --keywords "python" --keywords "backend"
 # Match jobs to your profile
 job-agent match
 
-# Search stored jobs
+# Search stored jobs (shows match scores when available)
 job-agent jobs search --keywords "engineer"
 job-agent jobs search --keywords "python" --remote remote
+job-agent jobs search --keywords "software" --min-score 30
 
 # View job details
 job-agent jobs view 42
@@ -118,7 +122,7 @@ jobhunter-agent/
 │   ├── logging_config.py      # JSON logging setup
 │   ├── incremental.py         # Incremental scraping + notifications
 │   └── user_profile.py        # CV parsing and profile management
-├── tests/                      # Comprehensive test suite (111 tests)
+├── tests/                      # Comprehensive test suite (111+ tests)
 ├── requirements.txt
 ├── .env.example
 ├── Dockerfile
@@ -180,7 +184,7 @@ scraper = LeverScraper(session, company_slugs=["spotify", "palantir"])
 Run the full test suite:
 
 ```bash
-pytest -v                              # All 111 tests
+pytest -v                              # All tests
 pytest tests/test_greenhouse_scraper.py  # Greenhouse scraper tests
 pytest tests/test_lever_scraper.py       # Lever scraper tests
 pytest tests/test_scrapers.py            # Legacy scraper tests
@@ -198,11 +202,12 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions includin
 ## Architecture Highlights
 
 ### Job Matching Algorithm
-- Skill-based scoring (exact, partial, and fuzzy matches)
-- Location preference matching
-- Salary range validation
-- Experience level alignment
-- Company size and industry preferences
+- **Title matching** (30pts): SequenceMatcher similarity against target titles from CV
+- **Skill matching** (40pts): User skills extracted from CV matched against job requirements
+- **Experience level** (10pts): Inferred from work history length (senior if 3+ roles)
+- **Location/remote** (10pts): Remote preference and location matching
+- **Salary alignment** (10pts): Job salary meets user minimum
+- Profile auto-populates from CV: skills, target titles, experience level, remote preference
 
 ### Background Worker
 - APScheduler for periodic job scraping and matching

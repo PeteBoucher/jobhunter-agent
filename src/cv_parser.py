@@ -91,7 +91,7 @@ class CVParser:
 
     def _parse_section(self, section_name: str) -> Optional[str]:
         """Extract text content of a section."""
-        pattern = rf"## {section_name}\n(.*?)(?=## |\Z)"
+        pattern = rf"## {section_name}\n(.*?)(?=\n## |\Z)"
         match = re.search(pattern, self.cv_text, re.IGNORECASE | re.DOTALL)
         if match:
             content = match.group(1).strip()
@@ -109,7 +109,7 @@ class CVParser:
         }
 
         # Find Core Skills or Skills section
-        pattern = r"## .*?[Ss]kill.*?\n(.*?)(?=## |\Z)"
+        pattern = r"## (?:Core\s+)?[Ss]kill[^\n]*\n(.*?)(?=\n## |\Z)"
         match = re.search(pattern, self.cv_text, re.DOTALL)
 
         if not match:
@@ -127,9 +127,12 @@ class CVParser:
 
             # First line is the category name
             category_line = lines[0].lower()
-            category = "technical" if "technical" in category_line else "soft"
             if "language" in category_line:
                 category = "languages"
+            elif "technical" in category_line:
+                category = "technical"
+            else:
+                category = "soft"
 
             # Extract bullet points from this subsection
             items = re.findall(r"[-*]\s+([^\n]+)", subsection)
@@ -252,7 +255,7 @@ class CVParser:
         languages = []
 
         # Look for Languages section or extract from skills
-        pattern = r"## .*?[Ll]anguages.*?\n(.*?)(?=## |\Z)"
+        pattern = r"## [^\n]*[Ll]anguages[^\n]*\n(.*?)(?=\n## |\Z)"
         match = re.search(pattern, self.cv_text, re.DOTALL)
 
         if match:

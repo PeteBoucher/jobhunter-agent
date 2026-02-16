@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from src.cv_parser import parse_cv_file
-from src.models import User, UserPreferences
+from src.models import Skill, User, UserPreferences
 
 
 class UserProfile:
@@ -115,6 +115,91 @@ class UserProfile:
             )
             self.session.add(preferences)
 
+        # Create Skill objects from parsed CV skills
+        self._sync_skills_from_cv(user, cv_data.get("skills", {}))
+
+        # Auto-populate empty preferences from CV data
+        self._auto_populate_preferences(preferences, cv_data)
+
+        self.session.commit()
+        return user
+
+    def _sync_skills_from_cv(
+        self, user: User, parsed_skills: Dict[str, List[str]]
+    ) -> None:
+        """Create or update Skill objects from parsed CV skill data."""
+        # Build set of existing skill names for this user
+        existing = {s.skill_name.lower() for s in user.skills if s.skill_name}
+
+        proficiency_map = {"technical": 3, "soft": 3, "languages": 2}
+
+        for category, skill_list in parsed_skills.items():
+            db_category = category if category != "languages" else "language"
+            for skill_name in skill_list:
+                if skill_name.lower() not in existing:
+                    skill = Skill(
+                        user_id=user.id,
+                        skill_name=skill_name,
+                        proficiency=proficiency_map.get(category, 3),
+                        category=db_category,
+                    )
+                    self.session.add(skill)
+                    existing.add(skill_name.lower())
+
+    def _auto_populate_preferences(self, prefs: UserPreferences, cv_data: Dict) -> None:
+        """Fill in empty preference fields from CV data."""
+        personal = cv_data.get("personal_info", {})
+        experience = cv_data.get("experience", [])
+
+        # Auto-populate target_titles from CV title and recent job titles
+        if not prefs.target_titles:
+            titles = []
+            if personal.get("title"):
+                titles.append(personal["title"])
+            for exp in experience[:3]:
+                t = exp.get("title")
+                if t and t not in titles:
+                    titles.append(t)
+            if titles:
+                prefs.target_titles = titles
+
+        # Auto-populate experience_level from years of experience
+        if not prefs.experience_level and experience:
+            prefs.experience_level = "senior" if len(experience) >= 3 else "mid"
+
+        # Auto-populate preferred_locations from CV location
+        if not prefs.preferred_locations and personal.get("location"):
+            prefs.preferred_locations = [personal["location"]]
+
+        # Default remote preference to remote if not set
+        if not prefs.remote_preference:
+            prefs.remote_preference = "remote"
+
+    def refresh_profile(self, user_id: int) -> Optional[User]:
+        """Re-extract skills and preferences from existing CV data.
+
+        Useful when the parser has been improved and you want to
+        re-process an already-uploaded CV.
+        """
+        user = self.session.query(User).filter_by(id=user_id).first()
+        if not user or not user.cv_text:
+            return None
+
+        # Re-parse the CV text
+        from src.cv_parser import CVParser
+
+        parser = CVParser(user.cv_text)
+        cv_data = parser.parse()
+        user.cv_parsed_json = cv_data
+
+        # Get or create preferences
+        prefs = self.session.query(UserPreferences).filter_by(user_id=user.id).first()
+        if not prefs:
+            prefs = UserPreferences(user_id=user.id)
+            self.session.add(prefs)
+
+        self._sync_skills_from_cv(user, cv_data.get("skills", {}))
+        self._auto_populate_preferences(prefs, cv_data)
         self.session.commit()
         return user
 

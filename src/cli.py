@@ -287,6 +287,54 @@ def list_users_cmd() -> None:
         session.close()
 
 
+@profile.command()
+@click.option(
+    "--user-id",
+    type=int,
+    default=None,
+    help="User ID (defaults to first user)",
+)
+def refresh(user_id: Optional[int]) -> None:
+    """Re-extract skills and preferences from existing CV data.
+
+    Useful after parser improvements to update skills and preferences
+    without re-uploading the CV file.
+    """
+    session = get_session()
+    profile_manager = UserProfile(session)
+
+    try:
+        if not user_id:
+            users = profile_manager.list_users()
+            if not users:
+                console.print("[yellow]No user profiles found[/yellow]")
+                return
+            user_id = users[0].id
+
+        assert user_id is not None
+        user = profile_manager.refresh_profile(user_id)
+        if not user:
+            console.print(f"[red]User {user_id} not found or has no CV[/red]")
+            return
+
+        console.print(f"[green]✓[/green] Profile refreshed for {user.name}")
+        console.print(f"  Skills: {len(user.skills)}")
+        if user.preferences:
+            prefs = user.preferences
+            if prefs.target_titles:
+                console.print(f"  Target titles: {', '.join(prefs.target_titles)}")
+            if prefs.experience_level:
+                console.print(f"  Experience: {prefs.experience_level}")
+            if prefs.remote_preference:
+                console.print(f"  Remote: {prefs.remote_preference}")
+
+    except Exception as e:
+        console.print(f"[red]✗[/red] Error refreshing profile: {e}")
+        raise
+    finally:
+        session.close()
+
+
 def _prompt_preferences() -> tuple:
     """Prompt user for preferences interactively.
 
