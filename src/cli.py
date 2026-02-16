@@ -667,36 +667,47 @@ def search_jobs(
             console.print("[yellow]No jobs found matching your criteria[/yellow]")
             return
 
+        # Check if any job has match scores computed
+        has_scores = any(job.job_matches for job in jobs_list)
+
         # Display results in a table
         table = Table(title=f"Found {len(jobs_list)} jobs")
         table.add_column("ID", style="cyan")
         table.add_column("Title", style="magenta")
         table.add_column("Company", style="green")
-        table.add_column("Score", style="yellow")
+        table.add_column("Location")
+        if has_scores:
+            table.add_column("Score", style="yellow")
         table.add_column("Posted", style="blue")
 
         for job in jobs_list:
             posted = (
                 job.posted_date.strftime("%Y-%m-%d") if job.posted_date else "Unknown"
             )
-            score_val = (
-                max((jm.match_score or 0) for jm in job.job_matches)
-                if getattr(job, "job_matches", None)
-                else None
-            )
-            score = f"{score_val:.0f}" if score_val else "N/A"
-            table.add_row(
+            row = [
                 str(job.id),
-                job.title[:30],
+                job.title[:40],
                 job.company,
-                score,
-                posted,
-            )
+                (job.location or "")[:25],
+            ]
+            if has_scores:
+                score_val = (
+                    max((jm.match_score or 0) for jm in job.job_matches)
+                    if job.job_matches
+                    else 0
+                )
+                row.append(f"{score_val:.0f}")
+            row.append(posted)
+            table.add_row(*row)
 
         console.print(table)
         console.print(
             "\n[green]✓[/green] Use 'job-agent jobs view <id>' to see details"
         )
+        if not has_scores:
+            console.print(
+                "[dim]Tip: Run 'job-agent match' to compute match scores[/dim]"
+            )
 
     finally:
         session.close()
@@ -719,19 +730,16 @@ def view_job(job_id: int) -> None:
             return
 
         # Display job details in panels
-        # Compute display score from JobMatch relationship if present
-        score_val = (
-            max((jm.match_score or 0) for jm in job.job_matches)
-            if getattr(job, "job_matches", None)
-            else 0
-        )
-        score_str = f"{score_val:.0f}%"
+        score_line = ""
+        if job.job_matches:
+            score_val = max((jm.match_score or 0) for jm in job.job_matches)
+            score_line = f"\n[yellow]Match Score: {score_val:.0f}%[/yellow]"
 
         console.print(
             Panel(
                 f"[bold green]{job.title}[/bold green]\n"
-                f"[cyan]{job.company}[/cyan] • {job.location or 'Location TBD'}\n"
-                f"[yellow]Match Score: {score_str}[/yellow]",
+                f"[cyan]{job.company}[/cyan] • {job.location or 'Location TBD'}"
+                f"{score_line}",
                 title="Job Details",
             )
         )
@@ -787,11 +795,15 @@ def recent_jobs(days: int, limit: int) -> None:
             console.print(f"[yellow]No jobs posted in the last {days} days[/yellow]")
             return
 
+        has_scores = any(job.job_matches for job in jobs_list)
+
         table = Table(title=f"Recent jobs (last {days} days)")
         table.add_column("ID", style="cyan")
         table.add_column("Title", style="magenta")
         table.add_column("Company", style="green")
-        table.add_column("Score", style="yellow")
+        table.add_column("Location")
+        if has_scores:
+            table.add_column("Score", style="yellow")
         table.add_column("Posted", style="blue")
 
         for job in jobs_list:
@@ -800,19 +812,21 @@ def recent_jobs(days: int, limit: int) -> None:
                 if job.posted_date
                 else "Unknown"
             )
-            score_val = (
-                max((jm.match_score or 0) for jm in job.job_matches)
-                if getattr(job, "job_matches", None)
-                else None
-            )
-            score = f"{score_val:.0f}" if score_val else "N/A"
-            table.add_row(
+            row = [
                 str(job.id),
-                job.title[:30],
+                job.title[:40],
                 job.company,
-                score,
-                posted,
-            )
+                (job.location or "")[:25],
+            ]
+            if has_scores:
+                score_val = (
+                    max((jm.match_score or 0) for jm in job.job_matches)
+                    if job.job_matches
+                    else 0
+                )
+                row.append(f"{score_val:.0f}")
+            row.append(posted)
+            table.add_row(*row)
 
         console.print(table)
 

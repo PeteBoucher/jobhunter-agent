@@ -3,9 +3,9 @@
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
-from src.models import Job, User
+from src.models import Job, JobMatch, User
 
 
 class JobSearcher:
@@ -44,7 +44,7 @@ class JobSearcher:
         Returns:
             List of matching jobs
         """
-        query = self.session.query(Job)
+        query = self.session.query(Job).options(joinedload(Job.job_matches))
 
         # Text search
         if keywords:
@@ -71,6 +71,10 @@ class JobSearcher:
         # Posted date filter
         if posted_after:
             query = query.filter(Job.posted_date >= posted_after)
+
+        # Match score filter - join to JobMatch table
+        if min_match_score is not None:
+            query = query.join(JobMatch).filter(JobMatch.match_score >= min_match_score)
 
         # Sort by posted date descending
         results = query.order_by(Job.posted_date.desc()).limit(limit)
