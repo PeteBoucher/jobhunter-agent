@@ -735,12 +735,19 @@ def search_jobs(
         table.add_column("Location")
         if has_scores:
             table.add_column("Score", style="yellow")
+        table.add_column("Status", style="bold")
         table.add_column("Posted", style="blue")
 
         for job in jobs_list:
             posted = (
                 job.posted_date.strftime("%Y-%m-%d") if job.posted_date else "Unknown"
             )
+            # Check application status
+            if job.applications:
+                app = job.applications[0]
+                status = f"[green]{app.status}[/green]"
+            else:
+                status = ""
             row = [
                 str(job.id),
                 job.title[:40],
@@ -754,6 +761,7 @@ def search_jobs(
                     else 0
                 )
                 row.append(f"{score_val:.0f}")
+            row.append(status)
             row.append(posted)
             table.add_row(*row)
 
