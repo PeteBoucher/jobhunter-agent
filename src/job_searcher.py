@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta
 from typing import List, Optional
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from src.models import Job, JobMatch, User
@@ -27,6 +28,7 @@ class JobSearcher:
         min_match_score: Optional[float] = None,
         source: Optional[str] = None,
         posted_after: Optional[datetime] = None,
+        sort_by: str = "date",
         limit: int = 50,
     ) -> List[Job]:
         """Search jobs with filters.
@@ -39,6 +41,7 @@ class JobSearcher:
                 JobMatch relationship
             source: Filter by job source (github, microsoft, etc.)
             posted_after: Only show jobs posted after this date
+            sort_by: Sort order - "date" (default) or "score"
             limit: Maximum number of results
 
         Returns:
@@ -60,9 +63,15 @@ class JobSearcher:
             location_term = f"%{location.lower()}%"
             query = query.filter(Job.location.ilike(location_term))
 
-        # Remote filter
+        # Remote filter - check both the remote field and location text
         if remote:
-            query = query.filter(Job.remote == remote.lower())
+            remote_val = remote.lower()
+            query = query.filter(
+                or_(
+                    Job.remote == remote_val,
+                    Job.location.ilike(f"%{remote_val}%"),
+                )
+            )
 
         # Source filter
         if source:
@@ -76,8 +85,16 @@ class JobSearcher:
         if min_match_score is not None:
             query = query.join(JobMatch).filter(JobMatch.match_score >= min_match_score)
 
-        # Sort by posted date descending
-        results = query.order_by(Job.posted_date.desc()).limit(limit)
+        # Sort by score or date
+        if sort_by == "score" or min_match_score is not None:
+            # Need JobMatch join for sorting if not already joined
+            if min_match_score is None:
+                query = query.join(JobMatch)
+            results = query.order_by(
+                JobMatch.match_score.desc(), Job.posted_date.desc()
+            ).limit(limit)
+        else:
+            results = query.order_by(Job.posted_date.desc()).limit(limit)
 
         return results.all()
 

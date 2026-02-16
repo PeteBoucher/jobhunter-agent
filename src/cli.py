@@ -680,6 +680,12 @@ def jobs() -> None:
     help="Filter by job source",
 )
 @click.option(
+    "--sort",
+    type=click.Choice(["date", "score"], case_sensitive=False),
+    default="date",
+    help="Sort by date (newest) or score (best match)",
+)
+@click.option(
     "--limit",
     type=int,
     default=20,
@@ -691,13 +697,15 @@ def search_jobs(
     remote: Optional[str],
     min_score: float,
     source: Optional[str],
+    sort: str,
     limit: int,
 ) -> None:
     """Search and filter jobs.
 
     Examples:
-        job-agent jobs search --keywords "python" --location "remote"
-        job-agent jobs search --min-score 75 --limit 10
+        job-agent jobs search --keywords "python" --remote remote
+        job-agent jobs search --min-score 30 --sort score
+        job-agent jobs search --remote remote --location spain
     """
     session = get_session()
     try:
@@ -708,6 +716,7 @@ def search_jobs(
             remote=remote,
             min_match_score=min_score if min_score > 0 else None,
             source=source,
+            sort_by=sort,
             limit=limit,
         )
 
