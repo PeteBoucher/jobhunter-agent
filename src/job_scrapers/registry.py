@@ -1,0 +1,32 @@
+"""Centralized scraper registry.
+
+All scrapers are registered here so that the CLI and worker can reference
+a single source of truth instead of duplicating the mapping.
+"""
+
+from typing import Dict, List, Type
+
+from src.job_scrapers.base_scraper import BaseScraper
+from src.job_scrapers.coinbase_scraper import CoinbaseScraper
+from src.job_scrapers.github_scraper import GitHubJobsScraper
+from src.job_scrapers.greenhouse_scraper import GreenhouseScraper
+from src.job_scrapers.lever_scraper import LeverScraper
+from src.job_scrapers.linkedin_scraper import LinkedInScraper
+from src.job_scrapers.microsoft_scraper import MicrosoftScraper
+from src.job_scrapers.revolut_scraper import RevolutScraper
+from src.job_scrapers.uber_scraper import UberScraper
+
+# All available scrapers keyed by source name
+SCRAPER_MAP: Dict[str, Type[BaseScraper]] = {
+    "greenhouse": GreenhouseScraper,
+    "lever": LeverScraper,
+    "linkedin": LinkedInScraper,
+    "microsoft": MicrosoftScraper,
+    "github": GitHubJobsScraper,
+    "coinbase": CoinbaseScraper,
+    "revolut": RevolutScraper,
+    "uber": UberScraper,
+}
+
+# Default sources to scrape (the ones that actually return data)
+DEFAULT_SOURCES: List[str] = ["greenhouse", "lever"]

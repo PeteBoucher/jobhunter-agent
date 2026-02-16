@@ -7,17 +7,16 @@ from src.worker import _match_job, _scrape_job, start_worker
 
 def test_scrape_job_with_mock():
     """Test _scrape_job function with mocked scraper."""
-    with patch("src.worker.MicrosoftScraper") as MockScraper:
-        mock_instance = MagicMock()
-        mock_instance.scrape.return_value = []
-        MockScraper.return_value = mock_instance
+    mock_scraper_cls = MagicMock()
+    mock_instance = MagicMock()
+    mock_instance.scrape.return_value = []
+    mock_scraper_cls.return_value = mock_instance
 
-        # Should not raise
-        _scrape_job("microsoft")
+    with patch("src.worker.SCRAPER_MAP", {"greenhouse": mock_scraper_cls}):
+        _scrape_job("greenhouse")
 
-        # Verify scraper was called
-        assert MockScraper.called
-        assert mock_instance.scrape.called
+    assert mock_scraper_cls.called
+    assert mock_instance.scrape.called
 
 
 def test_match_job_with_mock():
@@ -42,8 +41,8 @@ def test_start_worker_returns_scheduler():
     assert hasattr(scheduler, "start")
     assert hasattr(scheduler, "shutdown")
 
-    # Verify 2 jobs were added (microsoft scrape, match)
-    assert len(scheduler.get_jobs()) == 2
+    # Verify 3 jobs: 2 scrape (greenhouse + lever) + 1 match
+    assert len(scheduler.get_jobs()) == 3
 
 
 def test_worker_cli_command():

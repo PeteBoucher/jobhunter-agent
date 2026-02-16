@@ -4,28 +4,28 @@ An intelligent CLI tool that automates job searching, CV profile building, job m
 
 ## Current Status
 
-The project is **fully functional** with the following core features implemented:
+The project is **fully functional** with working job scrapers fetching real listings:
 
+- ✅ **Greenhouse scraper** - fetches jobs from 15 top tech companies (Stripe, Cloudflare, Airbnb, Figma, Discord, Datadog, etc.)
+- ✅ **Lever scraper** - fetches jobs from Spotify, Palantir, Plaid
+- ✅ **LinkedIn scraper** - guest endpoint (may be rate-limited)
 - ✅ User profile management and CV parsing
-- ✅ Job scraper framework with retry/backoff logic
 - ✅ Intelligent job matching engine with scoring algorithm
 - ✅ Background worker for periodic scraping and matching
+- ✅ Centralized scraper registry for easy extension
 - ✅ Metrics collection and Prometheus exporter
 - ✅ Structured JSON logging
-- ✅ Full test coverage (67 tests)
+- ✅ Full test coverage (111 tests)
 - ✅ Deployment configurations (systemd, Docker)
 
-### Note on Job Data Sources
+### Legacy Scrapers
 
-Currently, the GitHub Jobs and Microsoft Careers scrapers return empty results due to:
-- **GitHub Jobs API**: Deprecated and shut down (jobs.github.com no longer available)
-- **Microsoft Careers API**: Endpoint changed (HTTP 404)
-
-The scrapers are designed to gracefully handle these API changes and are ready to be integrated with production job APIs (LinkedIn, Indeed, GitHub API, etc.). See [Integration Guide](#production-job-api-integration) below.
+The GitHub Jobs and Microsoft Careers scrapers remain in the codebase but return empty results due to deprecated APIs. They are still available via `--sources github` or `--sources microsoft` if the APIs are restored.
 
 ## Features
 
 - 📄 **CV Parsing**: Extract skills, experience, education, and languages from CV files
+- 🔍 **Real Job Data**: Greenhouse and Lever APIs fetch thousands of live listings from top tech companies
 - 🎯 **Smart Job Matching**: Scoring algorithm matches jobs against user profile
 - 🤖 **Background Worker**: APScheduler-based periodic scraping and job matching
 - 📊 **Metrics & Monitoring**: Prometheus exporter with custom scrapers and job counts
@@ -62,14 +62,31 @@ job-agent profile upload path/to/cv.pdf
 # View your profile
 job-agent profile show
 
-# Scrape jobs (currently returns 0 jobs due to API deprecation)
+# Scrape jobs from all default sources (Greenhouse + Lever)
 job-agent scrape
+
+# Scrape specific sources
+job-agent scrape --sources greenhouse
+job-agent scrape --sources lever
+
+# Scrape with keyword filtering
+job-agent scrape --keywords "python" --keywords "backend"
 
 # Match jobs to your profile
 job-agent match
 
-# Start background worker
-job-agent worker start
+# Search stored jobs
+job-agent jobs search --keywords "engineer"
+job-agent jobs search --keywords "python" --remote remote
+
+# View job details
+job-agent jobs view 42
+
+# Record an application
+job-agent applications apply 42 --notes "Applied via company website"
+
+# Start background worker (scrapes every 6h, matches every 12h)
+job-agent worker
 
 # View scraping metrics
 job-agent metrics
@@ -85,9 +102,13 @@ jobhunter-agent/
 ├── src/
 │   ├── cli.py                 # Click CLI commands
 │   ├── job_scrapers/          # Job scraper implementations
-│   │   ├── base_scraper.py   # Abstract base scraper
-│   │   ├── github_scraper.py
-│   │   └── microsoft_scraper.py
+│   │   ├── base_scraper.py    # Abstract base scraper with retry/backoff
+│   │   ├── registry.py        # Centralized scraper registration
+│   │   ├── greenhouse_scraper.py  # Greenhouse ATS API (15 companies)
+│   │   ├── lever_scraper.py   # Lever ATS API (3 companies)
+│   │   ├── linkedin_scraper.py # LinkedIn guest endpoint
+│   │   ├── github_scraper.py  # GitHub Jobs (deprecated)
+│   │   └── microsoft_scraper.py # Microsoft Careers (deprecated)
 │   ├── job_matcher.py         # Job matching engine
 │   ├── models.py              # SQLAlchemy models
 │   ├── database.py            # Database initialization
@@ -97,13 +118,56 @@ jobhunter-agent/
 │   ├── logging_config.py      # JSON logging setup
 │   ├── incremental.py         # Incremental scraping + notifications
 │   └── user_profile.py        # CV parsing and profile management
-├── tests/                      # Comprehensive test suite (67 tests)
+├── tests/                      # Comprehensive test suite (111 tests)
 ├── requirements.txt
 ├── .env.example
 ├── Dockerfile
 ├── docker-compose.yml
-├── deployment.md              # Deployment guide
+├── DEPLOYMENT.md              # Deployment guide
 └── README.md (this file)
+```
+
+## Adding New Job Sources
+
+All scrapers are registered in `src/job_scrapers/registry.py`. To add a new scraper:
+
+1. Create a new scraper class inheriting from `BaseScraper`:
+
+```python
+from src.job_scrapers.base_scraper import BaseScraper
+
+class MyCompanyScraper(BaseScraper):
+    def _get_source_name(self) -> str:
+        return "mycompany"
+
+    def _fetch_jobs(self, **kwargs):
+        # Fetch from API and return list of raw dicts
+        pass
+
+    def _parse_job(self, raw_job):
+        # Convert to standardized format with fields:
+        # source_job_id, title, company, location, description, apply_url, etc.
+        pass
+```
+
+2. Register it in `src/job_scrapers/registry.py`:
+
+```python
+from src.job_scrapers.mycompany_scraper import MyCompanyScraper
+
+SCRAPER_MAP["mycompany"] = MyCompanyScraper
+```
+
+### Adding Companies to Existing Scrapers
+
+To add more Greenhouse or Lever companies, pass custom board lists:
+
+```python
+# Greenhouse - use the company's board token (URL slug)
+scraper = GreenhouseScraper(session, board_tokens=["stripe", "cloudflare", "mycompany"])
+
+# Lever - use the company's Lever slug
+scraper = LeverScraper(session, company_slugs=["spotify", "palantir"])
 ```
 
 ## Documentation
@@ -111,41 +175,16 @@ jobhunter-agent/
 - [DEPLOYMENT.md](DEPLOYMENT.md) - Production deployment guide with systemd and Docker
 - [PROJECT_PLAN.md](PROJECT_PLAN.md) - Comprehensive project plan and roadmap
 
-## Production Job API Integration
-
-To enable real job data in production, replace the empty returns in the scrapers with actual API integrations:
-
-### Option 1: Use Job Aggregation APIs
-- **LinkedIn Jobs API**: Official job data (requires business access)
-- **Indeed API**: Job aggregator with broad coverage
-- **Glassdoor API**: Career and job information
-- **Stack Overflow Jobs API**: Tech-focused positions
-
-### Option 2: Implement New Scrapers
-Create new scraper classes in `src/job_scrapers/` following the `BaseScraper` pattern:
-
-```python
-class LinkedInScraper(BaseScraper):
-    def _fetch_jobs(self, keywords, location, **kwargs):
-        # Implement LinkedIn API integration
-        pass
-
-    def _parse_job(self, raw_job):
-        # Parse API response into standardized format
-        pass
-```
-
-### Option 3: Web Scraping
-Implement web scraping using BeautifulSoup (already available) to extract job listings from job boards.
-
 ## Testing
 
 Run the full test suite:
 
 ```bash
-pytest -v          # All tests
-pytest tests/test_scrapers.py  # Scraper tests
-pytest tests/test_job_matcher.py  # Matcher tests
+pytest -v                              # All 111 tests
+pytest tests/test_greenhouse_scraper.py  # Greenhouse scraper tests
+pytest tests/test_lever_scraper.py       # Lever scraper tests
+pytest tests/test_scrapers.py            # Legacy scraper tests
+pytest tests/test_job_matcher.py         # Matcher tests
 ```
 
 ## Deployment

@@ -4,10 +4,10 @@ from click.testing import CliRunner
 def test_scrape_cli_monkeypatched(monkeypatch):
     """Ensure `job-agent scrape` runs and handles scrapers without network calls.
 
-    We monkeypatch scraper classes used by `src.cli` to harmless dummies.
+    We monkeypatch the SCRAPER_MAP in the registry to use dummy scrapers.
     """
 
-    # Dummy scrapers
+    # Dummy scraper
     class DummyScraper:
         def __init__(self, session):
             pass
@@ -18,11 +18,12 @@ def test_scrape_cli_monkeypatched(monkeypatch):
         def scrape_by_keywords(self, keywords):
             return 0
 
-    # Patch the scraper classes in src.cli
-    monkeypatch.setattr("src.cli.MicrosoftScraper", DummyScraper)
-    monkeypatch.setattr("src.cli.RevolutScraper", DummyScraper)
-    monkeypatch.setattr("src.cli.CoinbaseScraper", DummyScraper)
-    monkeypatch.setattr("src.cli.UberScraper", DummyScraper)
+    # Patch the registry used by the CLI
+    dummy_map = {"greenhouse": DummyScraper, "lever": DummyScraper}
+    monkeypatch.setattr("src.job_scrapers.registry.SCRAPER_MAP", dummy_map)
+    monkeypatch.setattr(
+        "src.job_scrapers.registry.DEFAULT_SOURCES", ["greenhouse", "lever"]
+    )
 
     from src.cli import cli
 

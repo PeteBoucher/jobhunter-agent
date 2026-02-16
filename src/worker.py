@@ -10,10 +10,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from src.database import get_session
 from src.job_matcher import compute_match_for_user
-from src.job_scrapers.coinbase_scraper import CoinbaseScraper
-from src.job_scrapers.microsoft_scraper import MicrosoftScraper
-from src.job_scrapers.revolut_scraper import RevolutScraper
-from src.job_scrapers.uber_scraper import UberScraper
+from src.job_scrapers.registry import DEFAULT_SOURCES, SCRAPER_MAP
 from src.models import Job, User
 
 logger = logging.getLogger("jobhunter.worker")
@@ -30,19 +27,7 @@ def _scrape_job(source_name: str) -> None:
     """
     session = get_session()
     try:
-        # Local import for typing to avoid module-level abstract-base confusion
-        from typing import Dict, Type
-
-        from src.job_scrapers.base_scraper import BaseScraper
-
-        scraper_map: Dict[str, Type[BaseScraper]] = {
-            "microsoft": MicrosoftScraper,
-            "revolut": RevolutScraper,
-            "coinbase": CoinbaseScraper,
-            "uber": UberScraper,
-        }
-
-        cls = scraper_map.get(source_name)
+        cls = SCRAPER_MAP.get(source_name)
         if not cls:
             logger.warning(f"Unknown source: {source_name}")
             return
@@ -124,14 +109,15 @@ def start_worker(
     scheduler = BackgroundScheduler()
     _scheduler = scheduler
 
-    # Add scraping jobs (Microsoft only)
-    scheduler.add_job(
-        _scrape_job,
-        CronTrigger.from_crontab(scrape_cron),
-        args=("microsoft",),
-        id="scrape_microsoft",
-        name="Scrape Microsoft Careers",
-    )
+    # Add scraping jobs for all default sources
+    for source_name in DEFAULT_SOURCES:
+        scheduler.add_job(
+            _scrape_job,
+            CronTrigger.from_crontab(scrape_cron),
+            args=(source_name,),
+            id=f"scrape_{source_name}",
+            name=f"Scrape {source_name.title()} Jobs",
+        )
 
     # Add matching job
     scheduler.add_job(

@@ -12,10 +12,7 @@ from src.application_tracker import ApplicationTracker
 from src.data_exporter import DataExporter
 from src.database import get_session, init_db
 from src.job_matcher import compute_match_for_user
-from src.job_scrapers.coinbase_scraper import CoinbaseScraper
-from src.job_scrapers.microsoft_scraper import MicrosoftScraper
-from src.job_scrapers.revolut_scraper import RevolutScraper
-from src.job_scrapers.uber_scraper import UberScraper
+from src.job_scrapers.registry import DEFAULT_SOURCES, SCRAPER_MAP
 from src.job_searcher import JobSearcher
 from src.metrics import get_metrics_summary
 from src.models import Job, User
@@ -434,8 +431,8 @@ def match(user_id: Optional[int], min_score: float) -> None:
 @click.option(
     "--sources",
     multiple=True,
-    default=("microsoft",),
-    help="Sources to scrape (defaults to microsoft)",
+    default=None,
+    help=f"Sources to scrape (available: {', '.join(SCRAPER_MAP.keys())})",
 )
 @click.option(
     "--keywords",
@@ -449,23 +446,11 @@ def scrape(sources: tuple, keywords: tuple, max_retries: int, backoff: float) ->
     session = get_session()
 
     try:
-        # Local typing imports for mypy
-        from typing import Dict, Type
-
-        from src.job_scrapers.base_scraper import BaseScraper
-
-        source_map: Dict[str, Type[BaseScraper]] = {
-            "microsoft": MicrosoftScraper,
-            "revolut": RevolutScraper,
-            "coinbase": CoinbaseScraper,
-            "uber": UberScraper,
-        }
-
-        selected = [s.lower() for s in sources]
+        selected = [s.lower() for s in sources] if sources else list(DEFAULT_SOURCES)
         total_new = 0
 
         for src_name in selected:
-            cls = source_map.get(src_name)
+            cls = SCRAPER_MAP.get(src_name)
             if not cls:
                 console.print(f"[yellow]Skipping unknown source: {src_name}[/yellow]")
                 continue
@@ -643,7 +628,7 @@ def jobs() -> None:
 )
 @click.option(
     "--source",
-    type=click.Choice(["github", "microsoft"], case_sensitive=False),
+    type=click.Choice(list(SCRAPER_MAP.keys()), case_sensitive=False),
     help="Filter by job source",
 )
 @click.option(
