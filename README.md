@@ -82,6 +82,7 @@ job-agent match
 job-agent jobs search --keywords "engineer"
 job-agent jobs search --keywords "python" --remote remote
 job-agent jobs search --keywords "software" --min-score 30
+job-agent jobs search --remote remote --location spain --sort score
 
 # View job details
 job-agent jobs view 42
