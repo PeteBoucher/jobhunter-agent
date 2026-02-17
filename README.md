@@ -15,8 +15,9 @@ The project is **fully functional** with working job scrapers fetching real list
 - ✅ Centralized scraper registry for easy extension
 - ✅ Metrics collection and Prometheus exporter
 - ✅ Structured JSON logging
-- ✅ Full test coverage (111+ tests)
-- ✅ Deployment configurations (systemd, Docker)
+- ✅ Full test coverage (118+ tests)
+- ✅ **AWS Lambda + EventBridge** deployment via SAM (S3-backed SQLite, SNS notifications)
+- ✅ Deployment configurations (systemd, Docker, AWS SAM)
 
 ### Legacy Scrapers
 
@@ -28,6 +29,7 @@ The GitHub Jobs and Microsoft Careers scrapers remain in the codebase but return
 - 🔍 **Real Job Data**: Greenhouse and Lever APIs fetch thousands of live listings from top tech companies
 - 🎯 **Smart Job Matching**: 5-dimension scoring (title 30pts, skills 40pts, experience 10pts, location 10pts, salary 10pts)
 - 🤖 **Background Worker**: APScheduler-based periodic scraping and job matching
+- ☁️ **Serverless Deployment**: AWS Lambda + EventBridge with S3-backed SQLite and SNS notifications
 - 📊 **Metrics & Monitoring**: Prometheus exporter with custom scrapers and job counts
 - 📝 **Structured Logging**: JSON-formatted logs for production observability
 - 💾 **SQLite Database**: Local development storage with PostgreSQL support for production
@@ -118,15 +120,20 @@ jobhunter-agent/
 │   ├── models.py              # SQLAlchemy models
 │   ├── database.py            # Database initialization
 │   ├── worker.py              # Background worker with APScheduler
+│   ├── lambda_handler.py      # AWS Lambda entry point
 │   ├── metrics.py             # Metrics persistence and querying
 │   ├── prometheus_exporter.py # Prometheus metrics export
 │   ├── logging_config.py      # JSON logging setup
 │   ├── incremental.py         # Incremental scraping + notifications
 │   └── user_profile.py        # CV parsing and profile management
-├── tests/                      # Comprehensive test suite (111+ tests)
+├── tests/                      # Comprehensive test suite (118+ tests)
 ├── requirements.txt
+├── requirements-lambda.txt     # Minimal deps for Lambda
 ├── .env.example
-├── Dockerfile
+├── Dockerfile                  # Local development container
+├── Dockerfile.lambda           # AWS Lambda container (arm64)
+├── template.yaml               # SAM template (Lambda + EventBridge + S3 + SNS)
+├── samconfig.toml              # SAM deploy config (dev/prod)
 ├── docker-compose.yml
 ├── DEPLOYMENT.md              # Deployment guide
 └── README.md (this file)
@@ -194,7 +201,26 @@ pytest tests/test_job_matcher.py         # Matcher tests
 
 ## Deployment
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions including:
+### AWS Lambda (Recommended)
+
+The app deploys to AWS Lambda with EventBridge for scheduled scraping via SAM:
+
+```bash
+# Build the Docker image
+sam build
+
+# Deploy dev (scrapes every 12 hours)
+sam deploy --config-env default
+
+# Deploy prod (scrapes every 6 hours)
+sam deploy --config-env prod
+```
+
+Architecture: EventBridge triggers Lambda on schedule → Lambda downloads SQLite DB from S3 → runs scrapers + match computation → uploads DB back to S3 → sends SNS notifications for high-score matches.
+
+### Local Deployment
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for local deployment options:
 - systemd service setup
 - Docker containerization
 - docker-compose for multi-service deployment

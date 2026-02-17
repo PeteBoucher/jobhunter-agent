@@ -1,0 +1,122 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Jobhunter Agent - Serverless job scraping and matching pipeline
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, prod]
+  ScheduleRate:
+    Type: String
+    Default: "rate(6 hours)"
+  S3DbKey:
+    Type: String
+    Default: "jobhunter/jobs.db"
+  NotificationEmail:
+    Type: String
+    Default: ""
+  MinMatchScoreNotify:
+    Type: String
+    Default: "70"
+
+Globals:
+  Function:
+    Timeout: 120
+    MemorySize: 256
+
+Conditions:
+  HasNotificationEmail: !Not [!Equals [!Ref NotificationEmail, ""]]
+
+Resources:
+  # --- S3 Bucket for SQLite DB ---
+  JobhunterDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "jobhunter-data-${Environment}"
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # --- SNS Topic ---
+  JobhunterNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "jobhunter-notifications-${Environment}"
+
+  JobhunterNotificationSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasNotificationEmail
+    Properties:
+      TopicArn: !Ref JobhunterNotificationTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+
+  # --- Lambda Function ---
+  JobhunterFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "jobhunter-${Environment}"
+      PackageType: Image
+      Architectures:
+        - arm64
+      ImageConfig:
+        Command: ["src.lambda_handler.lambda_handler"]
+      Environment:
+        Variables:
+          S3_BUCKET: !Ref JobhunterDataBucket
+          S3_DB_KEY: !Ref S3DbKey
+          SNS_TOPIC_ARN: !Ref JobhunterNotificationTopic
+          MIN_MATCH_SCORE_NOTIFY: !Ref MinMatchScoreNotify
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+              Resource: !Sub "${JobhunterDataBucket.Arn}/*"
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt JobhunterNotificationTopic.TopicName
+      Events:
+        ScheduledScrape:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref ScheduleRate
+            Description: "Periodic job scraping and matching"
+            Enabled: true
+    Metadata:
+      Dockerfile: Dockerfile.lambda
+      DockerContext: .
+
+  # --- CloudWatch Alarms ---
+  JobhunterErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "jobhunter-errors-${Environment}"
+      AlarmDescription: "Alert on Lambda invocation errors"
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref JobhunterFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref JobhunterNotificationTopic
+
+Outputs:
+  FunctionArn:
+    Value: !GetAtt JobhunterFunction.Arn
+  FunctionName:
+    Value: !Ref JobhunterFunction
+  BucketName:
+    Value: !Ref JobhunterDataBucket
+  TopicArn:
+    Value: !Ref JobhunterNotificationTopic
