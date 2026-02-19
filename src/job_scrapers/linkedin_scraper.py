@@ -7,6 +7,9 @@ endpoint is inaccessible. For reliable scraping consider using official APIs
 or an authenticated/browser-driven approach (Playwright/Selenium) with
 respect for terms-of-service.
 """
+import logging
+import random
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -15,6 +18,27 @@ from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 
 from src.job_scrapers.base_scraper import BaseScraper
+
+logger = logging.getLogger("jobhunter.scrapers.linkedin")
+
+_USER_AGENTS = [
+    (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    (
+        "Mozilla/5.0 (X11; Linux x86_64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+    ),
+    (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+    ),
+]
 
 
 class LinkedInScraper(BaseScraper):
@@ -52,10 +76,7 @@ class LinkedInScraper(BaseScraper):
         }
 
         headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
-            ),
+            "User-Agent": random.choice(_USER_AGENTS),
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         }
 
@@ -70,9 +91,16 @@ class LinkedInScraper(BaseScraper):
                 resp = requests.get(
                     self.LINKEDIN_SEARCH_API, params=params, headers=headers, timeout=10
                 )
+
+                if resp.status_code == 429:
+                    wait = 2 ** (p + 1)
+                    logger.warning(f"LinkedIn rate limited, waiting {wait}s")
+                    time.sleep(wait)
+                    return results
+
                 if resp.status_code != 200:
                     # Blocked or changed API
-                    return []
+                    return results
 
                 # The endpoint returns an HTML fragment containing job cards
                 html = resp.text
@@ -109,9 +137,15 @@ class LinkedInScraper(BaseScraper):
                     location_tag = card.find(
                         class_="job-result-card__location"
                     ) or card.find(class_="result-card__location")
-                    location = (
-                        location_tag.get_text(strip=True) if location_tag else None
-                    )
+                    loc = location_tag.get_text(strip=True) if location_tag else None
+
+                    # Detect remote from location or title
+                    remote = None
+                    check_str = f"{title or ''} {loc or ''}".lower()
+                    if "remote" in check_str:
+                        remote = "remote"
+                    elif "hybrid" in check_str:
+                        remote = "hybrid"
 
                     posted_date = datetime.utcnow()
 
@@ -121,8 +155,8 @@ class LinkedInScraper(BaseScraper):
                             "title": title,
                             "company": company or "LinkedIn",
                             "department": None,
-                            "location": location,
-                            "remote": None,
+                            "location": loc,
+                            "remote": remote,
                             "salary_min": None,
                             "salary_max": None,
                             "description": None,
@@ -143,7 +177,7 @@ class LinkedInScraper(BaseScraper):
 
             except Exception:
                 # If anything goes wrong assume blocked/changed endpoint
-                return []
+                return results
 
         return results
 

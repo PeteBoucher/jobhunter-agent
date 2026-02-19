@@ -41,8 +41,10 @@ def test_start_worker_returns_scheduler():
     assert hasattr(scheduler, "start")
     assert hasattr(scheduler, "shutdown")
 
-    # Verify 3 jobs: 2 scrape (greenhouse + lever) + 1 match
-    assert len(scheduler.get_jobs()) == 3
+    # Verify scrape jobs (one per DEFAULT_SOURCE) + 1 match job
+    from src.job_scrapers.registry import DEFAULT_SOURCES
+
+    assert len(scheduler.get_jobs()) == len(DEFAULT_SOURCES) + 1
 
 
 def test_worker_cli_command():

@@ -8,14 +8,16 @@ The project is **fully functional** with working job scrapers fetching real list
 
 - ✅ **Greenhouse scraper** - fetches jobs from 15 top tech companies (Stripe, Cloudflare, Airbnb, Figma, Discord, Datadog, etc.)
 - ✅ **Lever scraper** - fetches jobs from Spotify, Palantir, Plaid
-- ✅ **LinkedIn scraper** - guest endpoint (may be rate-limited)
+- ✅ **Adzuna scraper** - aggregates jobs from Indeed, Reed, Monster via free API (UK/US/EU)
+- ✅ **The Muse scraper** - curated jobs from well-known tech companies (no auth required)
+- ✅ **LinkedIn scraper** - guest endpoint with rate-limit handling and user-agent rotation
 - ✅ **Smart CV parsing** - extracts skills, experience, and auto-populates matching preferences
 - ✅ **Job matching engine** - 5-dimension scoring (title, skills, experience, location, salary)
 - ✅ Background worker for periodic scraping and matching
 - ✅ Centralized scraper registry for easy extension
 - ✅ Metrics collection and Prometheus exporter
 - ✅ Structured JSON logging
-- ✅ Full test coverage (118+ tests)
+- ✅ Full test coverage (142+ tests)
 - ✅ **AWS Lambda + EventBridge** deployment via SAM (S3-backed SQLite, SNS notifications)
 - ✅ Deployment configurations (systemd, Docker, AWS SAM)
 
@@ -26,7 +28,7 @@ The GitHub Jobs and Microsoft Careers scrapers remain in the codebase but return
 ## Features
 
 - 📄 **CV Parsing**: Extract skills, experience, and preferences from CV markdown files
-- 🔍 **Real Job Data**: Greenhouse and Lever APIs fetch thousands of live listings from top tech companies
+- 🔍 **Real Job Data**: Greenhouse, Lever, Adzuna, and The Muse APIs fetch thousands of live listings
 - 🎯 **Smart Job Matching**: 5-dimension scoring (title 30pts, skills 40pts, experience 10pts, location 10pts, salary 10pts)
 - 🤖 **Background Worker**: APScheduler-based periodic scraping and job matching
 - ☁️ **Serverless Deployment**: AWS Lambda + EventBridge with S3-backed SQLite and SNS notifications
@@ -67,12 +69,14 @@ job-agent profile show
 # Re-extract skills/preferences after CV parser improvements
 job-agent profile refresh
 
-# Scrape jobs from all default sources (Greenhouse + Lever)
+# Scrape jobs from all default sources (Greenhouse + Lever + Adzuna + The Muse)
 job-agent scrape
 
 # Scrape specific sources
 job-agent scrape --sources greenhouse
 job-agent scrape --sources lever
+job-agent scrape --sources adzuna
+job-agent scrape --sources themuse
 
 # Scrape with keyword filtering
 job-agent scrape --keywords "python" --keywords "backend"
@@ -113,6 +117,8 @@ jobhunter-agent/
 │   │   ├── registry.py        # Centralized scraper registration
 │   │   ├── greenhouse_scraper.py  # Greenhouse ATS API (15 companies)
 │   │   ├── lever_scraper.py   # Lever ATS API (3 companies)
+│   │   ├── adzuna_scraper.py  # Adzuna aggregator API (UK/US/EU)
+│   │   ├── themuse_scraper.py # The Muse curated jobs API
 │   │   ├── linkedin_scraper.py # LinkedIn guest endpoint
 │   │   ├── github_scraper.py  # GitHub Jobs (deprecated)
 │   │   └── microsoft_scraper.py # Microsoft Careers (deprecated)
@@ -126,7 +132,7 @@ jobhunter-agent/
 │   ├── logging_config.py      # JSON logging setup
 │   ├── incremental.py         # Incremental scraping + notifications
 │   └── user_profile.py        # CV parsing and profile management
-├── tests/                      # Comprehensive test suite (118+ tests)
+├── tests/                      # Comprehensive test suite (142+ tests)
 ├── requirements.txt
 ├── requirements-lambda.txt     # Minimal deps for Lambda
 ├── .env.example
@@ -170,6 +176,20 @@ from src.job_scrapers.mycompany_scraper import MyCompanyScraper
 SCRAPER_MAP["mycompany"] = MyCompanyScraper
 ```
 
+### Adzuna API Setup
+
+Adzuna requires a free API key. Sign up at [developer.adzuna.com](https://developer.adzuna.com).
+
+For local use, set environment variables:
+```bash
+export ADZUNA_APP_ID=your_app_id
+export ADZUNA_APP_KEY=your_app_key
+```
+
+For Lambda deployment, credentials are stored in AWS SSM Parameter Store (`/jobhunter/adzuna-app-id` and `/jobhunter/adzuna-app-key`) and resolved at deploy time.
+
+The Adzuna scraper gracefully returns empty results if credentials are not configured.
+
 ### Adding Companies to Existing Scrapers
 
 To add more Greenhouse or Lever companies, pass custom board lists:
@@ -195,6 +215,8 @@ Run the full test suite:
 pytest -v                              # All tests
 pytest tests/test_greenhouse_scraper.py  # Greenhouse scraper tests
 pytest tests/test_lever_scraper.py       # Lever scraper tests
+pytest tests/test_adzuna_scraper.py      # Adzuna scraper tests
+pytest tests/test_themuse_scraper.py     # The Muse scraper tests
 pytest tests/test_scrapers.py            # Legacy scraper tests
 pytest tests/test_job_matcher.py         # Matcher tests
 ```

@@ -72,6 +72,8 @@ Resources:
           S3_DB_KEY: !Ref S3DbKey
           SNS_TOPIC_ARN: !Ref JobhunterNotificationTopic
           MIN_MATCH_SCORE_NOTIFY: !Ref MinMatchScoreNotify
+          ADZUNA_APP_ID: '{{resolve:ssm:/jobhunter/adzuna-app-id}}'
+          ADZUNA_APP_KEY: '{{resolve:ssm-secure:/jobhunter/adzuna-app-key}}'
       Policies:
         - Statement:
             - Effect: Allow

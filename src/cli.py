@@ -509,16 +509,14 @@ def scrape(sources: tuple, keywords: tuple, max_retries: int, backoff: float) ->
             try:
                 if keywords and hasattr(scraper, "scrape_by_keywords"):
                     count = scraper.scrape_by_keywords(list(keywords))
-                    total_new += count
                 else:
                     jobs = scraper.scrape(
                         max_retries=max_retries, backoff_factor=backoff
                     )
-                    total_new += len(jobs)
+                    count = len(jobs)
 
-                console.print(
-                    f"[green]✓[/green] {src_name}: new jobs added: {total_new}"
-                )
+                total_new += count
+                console.print(f"[green]✓[/green] {src_name}: new jobs added: {count}")
 
             except Exception as e:
                 console.print(f"[red]✗[/red] Error scraping {src_name}: {e}")
