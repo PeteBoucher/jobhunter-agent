@@ -27,6 +27,7 @@ Globals:
 
 Conditions:
   HasNotificationEmail: !Not [!Equals [!Ref NotificationEmail, ""]]
+  IsProd: !Equals [!Ref Environment, "prod"]
 
 Resources:
   # --- S3 Bucket for SQLite DB ---
@@ -73,7 +74,7 @@ Resources:
           SNS_TOPIC_ARN: !Ref JobhunterNotificationTopic
           MIN_MATCH_SCORE_NOTIFY: !Ref MinMatchScoreNotify
           ADZUNA_APP_ID: '{{resolve:ssm:/jobhunter/adzuna-app-id}}'
-          ADZUNA_APP_KEY: '{{resolve:ssm-secure:/jobhunter/adzuna-app-key}}'
+          ADZUNA_APP_KEY: '{{resolve:ssm:/jobhunter/adzuna-app-key}}'
       Policies:
         - Statement:
             - Effect: Allow
@@ -93,7 +94,7 @@ Resources:
           Properties:
             Schedule: !Ref ScheduleRate
             Description: "Periodic job scraping and matching"
-            Enabled: true
+            Enabled: !If [IsProd, true, false]
     Metadata:
       Dockerfile: Dockerfile.lambda
       DockerContext: .
