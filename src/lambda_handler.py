@@ -43,7 +43,7 @@ def _download_db(bucket: str, key: str) -> bool:
         logger.info("Downloaded existing DB from s3://%s/%s", bucket, key)
         return True
     except ClientError as e:
-        if e.response["Error"]["Code"] in ("404", "NoSuchKey"):
+        if e.response["Error"]["Code"] in ("404", "NoSuchKey", "403"):
             logger.info("No existing DB in S3 — starting fresh")
             return False
         raise

@@ -22,7 +22,7 @@ Parameters:
 
 Globals:
   Function:
-    Timeout: 120
+    Timeout: 300
     MemorySize: 256
 
 Conditions:
@@ -79,6 +79,10 @@ Resources:
                 - s3:GetObject
                 - s3:PutObject
               Resource: !Sub "${JobhunterDataBucket.Arn}/*"
+            - Effect: Allow
+              Action:
+                - s3:ListBucket
+              Resource: !GetAtt JobhunterDataBucket.Arn
         - SNSPublishMessagePolicy:
             TopicName: !GetAtt JobhunterNotificationTopic.TopicName
       Events:
