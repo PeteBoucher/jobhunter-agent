@@ -45,14 +45,18 @@ DEFAULT_SEARCH_TERMS = [
     "agile coach",
 ]
 
-DEFAULT_LOCATION = "United Kingdom"
+DEFAULT_LOCATIONS = [
+    "United Kingdom",
+    "Spain",
+    "Worldwide",  # LinkedIn's token for fully remote roles
+]
 
 
 class LinkedInScraper(BaseScraper):
     """Scraper for LinkedIn jobs (public guest search endpoint).
 
     Fetches job cards from LinkedIn's unauthenticated search API across
-    multiple search terms and deduplicates by job posting ID.
+    multiple search terms and locations, deduplicating by job posting ID.
 
     Notes:
     - Returns HTML fragments; selectors may break if LinkedIn redesigns.
@@ -68,20 +72,20 @@ class LinkedInScraper(BaseScraper):
         self,
         session: Session,
         search_terms: Optional[List[str]] = None,
-        location: str = DEFAULT_LOCATION,
+        locations: Optional[List[str]] = None,
     ):
         super().__init__(session)
         self.search_terms = search_terms or DEFAULT_SEARCH_TERMS
-        self.location = location
+        self.locations = locations or DEFAULT_LOCATIONS
 
     def _get_source_name(self) -> str:
         return "linkedin"
 
     def _fetch_jobs(self, max_pages: int = 2, **kwargs: Any) -> List[Dict[str, Any]]:
-        """Fetch jobs from LinkedIn across all configured search terms.
+        """Fetch jobs from LinkedIn across all search terms and locations.
 
-        Paginates each term (25 results/page) and deduplicates across terms
-        by LinkedIn job posting ID extracted from the data-entity-urn attribute.
+        Iterates term × location × page and deduplicates by job posting ID
+        extracted from the data-entity-urn attribute.
 
         Returns:
             List of raw job dicts (already in standard format; _parse_job is
@@ -91,125 +95,139 @@ class LinkedInScraper(BaseScraper):
         all_results: List[Dict[str, Any]] = []
 
         for term in self.search_terms:
-            for page in range(max_pages):
-                params = {
-                    "keywords": term,
-                    "location": self.location,
-                    "start": str(page * 25),
-                }
-                headers = {
-                    "User-Agent": random.choice(_USER_AGENTS),
-                    "Accept": (
-                        "text/html,application/xhtml+xml,"
-                        "application/xml;q=0.9,*/*;q=0.8"
-                    ),
-                }
+            for location in self.locations:
+                for page in range(max_pages):
+                    params = {
+                        "keywords": term,
+                        "location": location,
+                        "start": str(page * 25),
+                    }
+                    headers = {
+                        "User-Agent": random.choice(_USER_AGENTS),
+                        "Accept": (
+                            "text/html,application/xhtml+xml,"
+                            "application/xml;q=0.9,*/*;q=0.8"
+                        ),
+                    }
 
-                try:
-                    resp = requests.get(
-                        self.LINKEDIN_SEARCH_API,
-                        params=params,
-                        headers=headers,
-                        timeout=10,
-                    )
+                    try:
+                        resp = requests.get(
+                            self.LINKEDIN_SEARCH_API,
+                            params=params,
+                            headers=headers,
+                            timeout=10,
+                        )
 
-                    if resp.status_code == 429:
-                        wait = 2 ** (page + 1)
+                        if resp.status_code == 429:
+                            wait = 2 ** (page + 1)
+                            logger.warning(
+                                f"LinkedIn rate limited on '{term}' / '{location}' "
+                                f"p{page}, backing off {wait}s"
+                            )
+                            time.sleep(wait)
+                            return all_results
+
+                        if resp.status_code != 200:
+                            logger.warning(
+                                f"LinkedIn returned {resp.status_code} "
+                                f"for '{term}' / '{location}'"
+                            )
+                            break
+
+                        soup = BeautifulSoup(resp.text, "html.parser")
+                        cards = soup.find_all("div", class_="base-card")
+
+                        if not cards:
+                            break
+
+                        parsed_any = False
+                        for card in cards:
+                            # Job ID from data-entity-urn="urn:li:jobPosting:1234"
+                            urn = card.get("data-entity-urn", "")
+                            job_id = urn.split(":")[-1] if urn else None
+                            if not job_id or job_id in seen_ids:
+                                continue
+                            seen_ids.add(job_id)
+
+                            title_tag = card.find(
+                                "h3", class_="base-search-card__title"
+                            )
+                            title = (
+                                title_tag.get_text(strip=True) if title_tag else None
+                            )
+
+                            company_tag = card.find(
+                                "h4", class_="base-search-card__subtitle"
+                            )
+                            company = (
+                                company_tag.get_text(strip=True)
+                                if company_tag
+                                else None
+                            )
+
+                            loc_tag = card.find(
+                                "span", class_="job-search-card__location"
+                            )
+                            loc = loc_tag.get_text(strip=True) if loc_tag else None
+
+                            link_tag = card.find("a", class_="base-card__full-link")
+                            href = (
+                                link_tag["href"].split("?")[0]
+                                if link_tag and link_tag.get("href")
+                                else None
+                            )
+
+                            posted_date = datetime.utcnow()
+                            time_tag = card.find(
+                                "time", class_="job-search-card__listdate"
+                            )
+                            if time_tag and time_tag.get("datetime"):
+                                try:
+                                    posted_date = datetime.strptime(
+                                        time_tag["datetime"], "%Y-%m-%d"
+                                    )
+                                except (ValueError, TypeError):
+                                    pass
+
+                            remote = None
+                            check_str = f"{title or ''} {loc or ''}".lower()
+                            if "remote" in check_str:
+                                remote = "remote"
+                            elif "hybrid" in check_str:
+                                remote = "hybrid"
+
+                            all_results.append(
+                                {
+                                    "source_job_id": job_id,
+                                    "title": title,
+                                    "company": company or "LinkedIn",
+                                    "department": None,
+                                    "location": loc,
+                                    "remote": remote,
+                                    "salary_min": None,
+                                    "salary_max": None,
+                                    "description": None,
+                                    "requirements": None,
+                                    "nice_to_haves": None,
+                                    "apply_url": href,
+                                    "posted_date": posted_date,
+                                    "company_industry": None,
+                                    "company_size": None,
+                                    "source_type": "aggregator",
+                                }
+                            )
+                            parsed_any = True
+
+                        if not parsed_any:
+                            break
+
+                        time.sleep(1)  # polite delay between pages
+
+                    except requests.RequestException as e:
                         logger.warning(
-                            f"LinkedIn rate limited on '{term}' p{page}, "
-                            f"backing off {wait}s"
-                        )
-                        time.sleep(wait)
-                        return all_results
-
-                    if resp.status_code != 200:
-                        logger.warning(
-                            f"LinkedIn returned {resp.status_code} for '{term}'"
+                            f"LinkedIn request failed for '{term}' / '{location}': {e}"
                         )
                         break
-
-                    soup = BeautifulSoup(resp.text, "html.parser")
-                    cards = soup.find_all("div", class_="base-card")
-
-                    if not cards:
-                        break
-
-                    parsed_any = False
-                    for card in cards:
-                        # Job ID from data-entity-urn="urn:li:jobPosting:1234"
-                        urn = card.get("data-entity-urn", "")
-                        job_id = urn.split(":")[-1] if urn else None
-                        if not job_id or job_id in seen_ids:
-                            continue
-                        seen_ids.add(job_id)
-
-                        title_tag = card.find("h3", class_="base-search-card__title")
-                        title = title_tag.get_text(strip=True) if title_tag else None
-
-                        company_tag = card.find(
-                            "h4", class_="base-search-card__subtitle"
-                        )
-                        company = (
-                            company_tag.get_text(strip=True) if company_tag else None
-                        )
-
-                        loc_tag = card.find("span", class_="job-search-card__location")
-                        loc = loc_tag.get_text(strip=True) if loc_tag else None
-
-                        link_tag = card.find("a", class_="base-card__full-link")
-                        href = (
-                            link_tag["href"].split("?")[0]
-                            if link_tag and link_tag.get("href")
-                            else None
-                        )
-
-                        posted_date = datetime.utcnow()
-                        time_tag = card.find("time", class_="job-search-card__listdate")
-                        if time_tag and time_tag.get("datetime"):
-                            try:
-                                posted_date = datetime.strptime(
-                                    time_tag["datetime"], "%Y-%m-%d"
-                                )
-                            except (ValueError, TypeError):
-                                pass
-
-                        remote = None
-                        check_str = f"{title or ''} {loc or ''}".lower()
-                        if "remote" in check_str:
-                            remote = "remote"
-                        elif "hybrid" in check_str:
-                            remote = "hybrid"
-
-                        all_results.append(
-                            {
-                                "source_job_id": job_id,
-                                "title": title,
-                                "company": company or "LinkedIn",
-                                "department": None,
-                                "location": loc,
-                                "remote": remote,
-                                "salary_min": None,
-                                "salary_max": None,
-                                "description": None,
-                                "requirements": None,
-                                "nice_to_haves": None,
-                                "apply_url": href,
-                                "posted_date": posted_date,
-                                "company_industry": None,
-                                "company_size": None,
-                                "source_type": "aggregator",
-                            }
-                        )
-                        parsed_any = True
-
-                    if not parsed_any:
-                        break
-
-                    time.sleep(1)  # polite delay between pages
-
-                except requests.RequestException as e:
-                    logger.warning(f"LinkedIn request failed for '{term}': {e}")
-                    break
 
         return all_results
 

@@ -37,7 +37,7 @@ def scraper(session):
     return LinkedInScraper(
         session,
         search_terms=["innovation lead"],
-        location="United Kingdom",
+        locations=["United Kingdom"],
     )
 
 
