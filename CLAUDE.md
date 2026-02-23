@@ -21,6 +21,43 @@ Location and remote have an OR relationship — a job qualifies if either the lo
 
 ---
 
+## Development Workflow
+
+Every change should follow this cycle:
+
+```
+Problem → Plan → Approve → Execute → Test → Document → Commit → Deploy
+```
+
+### Steps
+
+1. **Problem** — Clearly state what needs to change and why. Check the prod DB or logs if investigating a data/runtime issue.
+
+2. **Plan** — Explore the codebase, identify affected files, and outline the approach before writing any code. For non-trivial changes, present the plan to the user for approval before proceeding.
+
+3. **Approve** — User confirms the plan. Don't start coding until approved.
+
+4. **Execute** — Implement the change. One concern at a time; don't refactor unrelated code.
+
+5. **Test** — Always run the full test suite after changes:
+   ```bash
+   .venv/bin/python -m pytest
+   ```
+   Fix any failures before proceeding. Add or update tests for new behaviour.
+
+6. **Document** — Update `CLAUDE.md` if new patterns, gotchas, or architectural decisions were introduced. Update `README.md` if user-facing behaviour changed.
+
+7. **Commit** — Stage only the relevant files and commit with a clear message. Pre-commit hooks run black, isort, flake8, mypy — re-stage if black reformats files.
+
+8. **Deploy** — Any code change that affects Lambda behaviour must be built and deployed to prod:
+   ```bash
+   DOCKER_HOST=unix:///Users/pete/.docker/run/docker.sock sam build
+   sam deploy --config-env prod
+   ```
+   Config-only changes (SSM values, samconfig.toml) do not require a rebuild.
+
+---
+
 ## Python / CLI
 
 Always use the project virtualenv, not system Python:
