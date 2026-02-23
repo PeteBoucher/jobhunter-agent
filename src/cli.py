@@ -6,6 +6,14 @@ from typing import List, Optional
 import click
 from rich.console import Console
 from rich.panel import Panel
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 from rich.table import Table
 
 from src.application_tracker import ApplicationTracker
@@ -457,12 +465,27 @@ def match(user_id: Optional[int], min_score: float) -> None:
 
         processed = 0
         accepted = 0
-        for user in users:
-            for job in jobs:
-                jm = compute_match_for_user(session, job, user)
-                processed += 1
-                if jm.match_score >= min_score:
-                    accepted += 1
+        total = len(users) * len(jobs)
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task(
+                f"Matching {len(jobs)} jobs for {len(users)} user(s)...",
+                total=total,
+            )
+            for user in users:
+                for job in jobs:
+                    jm = compute_match_for_user(session, job, user)
+                    processed += 1
+                    if jm.match_score >= min_score:
+                        accepted += 1
+                    progress.advance(task)
 
         console.print(
             f"[green]✓[/green] Matches processed: {processed}; accepted: {accepted}"
