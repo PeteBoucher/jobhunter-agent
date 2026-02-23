@@ -35,4 +35,11 @@ SCRAPER_MAP: Dict[str, Type[BaseScraper]] = {
 }
 
 # Default sources to scrape (the ones that actually return data)
-DEFAULT_SOURCES: List[str] = ["greenhouse", "lever", "adzuna", "themuse", "reed"]
+DEFAULT_SOURCES: List[str] = [
+    "greenhouse",
+    "lever",
+    "adzuna",
+    "themuse",
+    "reed",
+    "linkedin",
+]
