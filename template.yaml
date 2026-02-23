@@ -75,6 +75,7 @@ Resources:
           MIN_MATCH_SCORE_NOTIFY: !Ref MinMatchScoreNotify
           ADZUNA_APP_ID: '{{resolve:ssm:/jobhunter/adzuna-app-id}}'
           ADZUNA_APP_KEY: '{{resolve:ssm:/jobhunter/adzuna-app-key}}'
+          REED_API_KEY: '{{resolve:ssm:/jobhunter/reed-api-key}}'
       Policies:
         - Statement:
             - Effect: Allow

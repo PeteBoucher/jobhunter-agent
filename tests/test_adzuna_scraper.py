@@ -35,14 +35,24 @@ def session(temp_db):
 def scraper(session):
     """Create Adzuna scraper with test credentials."""
     return AdzunaScraper(
-        session, countries=["gb"], app_id="test_id", app_key="test_key"
+        session,
+        countries=["gb"],
+        search_terms=["innovation lead"],
+        app_id="test_id",
+        app_key="test_key",
     )
 
 
 @pytest.fixture
 def scraper_no_creds(session):
     """Create Adzuna scraper without credentials."""
-    return AdzunaScraper(session, countries=["gb"], app_id="", app_key="")
+    return AdzunaScraper(
+        session,
+        countries=["gb"],
+        search_terms=["innovation lead"],
+        app_id="",
+        app_key="",
+    )
 
 
 # Sample Adzuna API response

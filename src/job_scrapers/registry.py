@@ -14,6 +14,7 @@ from src.job_scrapers.greenhouse_scraper import GreenhouseScraper
 from src.job_scrapers.lever_scraper import LeverScraper
 from src.job_scrapers.linkedin_scraper import LinkedInScraper
 from src.job_scrapers.microsoft_scraper import MicrosoftScraper
+from src.job_scrapers.reed_scraper import ReedScraper
 from src.job_scrapers.revolut_scraper import RevolutScraper
 from src.job_scrapers.themuse_scraper import TheMuseScraper
 from src.job_scrapers.uber_scraper import UberScraper
@@ -30,7 +31,8 @@ SCRAPER_MAP: Dict[str, Type[BaseScraper]] = {
     "uber": UberScraper,
     "adzuna": AdzunaScraper,
     "themuse": TheMuseScraper,
+    "reed": ReedScraper,
 }
 
 # Default sources to scrape (the ones that actually return data)
-DEFAULT_SOURCES: List[str] = ["greenhouse", "lever", "adzuna", "themuse"]
+DEFAULT_SOURCES: List[str] = ["greenhouse", "lever", "adzuna", "themuse", "reed"]

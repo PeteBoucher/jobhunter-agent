@@ -21,7 +21,17 @@ logger = logging.getLogger("jobhunter.scrapers.adzuna")
 
 ADZUNA_API_BASE = "https://api.adzuna.com/v1/api/jobs"
 
-DEFAULT_COUNTRIES = ["gb"]
+DEFAULT_COUNTRIES = ["gb", "es"]
+
+# Search terms tailored to the user's target roles.
+# Each term is searched independently and results are deduplicated.
+DEFAULT_SEARCH_TERMS = [
+    "innovation lead",
+    "enterprise architect",
+    "quality assurance lead",
+    "digital transformation",
+    "agile coach",
+]
 
 
 class AdzunaScraper(BaseScraper):
@@ -35,11 +45,13 @@ class AdzunaScraper(BaseScraper):
         self,
         session: Session,
         countries: Optional[List[str]] = None,
+        search_terms: Optional[List[str]] = None,
         app_id: Optional[str] = None,
         app_key: Optional[str] = None,
     ):
         super().__init__(session)
         self.countries = countries or DEFAULT_COUNTRIES
+        self.search_terms = search_terms or DEFAULT_SEARCH_TERMS
         self.app_id = app_id or os.environ.get("ADZUNA_APP_ID", "")
         self.app_key = app_key or os.environ.get("ADZUNA_APP_KEY", "")
 
@@ -47,15 +59,15 @@ class AdzunaScraper(BaseScraper):
         return "adzuna"
 
     def _fetch_jobs(self, **kwargs: Any) -> List[Dict[str, Any]]:
-        """Fetch jobs from Adzuna API across configured countries.
+        """Fetch jobs from Adzuna API across configured countries and search terms.
 
         Kwargs:
-            keywords: Search keywords (default: "software engineer")
-            max_pages: Max pages per country (default: 5)
+            search_terms: Override default search terms list
+            max_pages: Max pages per country/term combination (default: 3)
             results_per_page: Results per page (default: 50)
 
         Returns:
-            List of raw job dicts from the Adzuna API
+            List of raw job dicts from the Adzuna API (deduplicated by job ID)
         """
         if not self.app_id or not self.app_key:
             logger.warning(
@@ -64,61 +76,70 @@ class AdzunaScraper(BaseScraper):
             )
             return []
 
-        keywords = kwargs.get("keywords", "software engineer")
-        max_pages = kwargs.get("max_pages", 5)
+        search_terms = kwargs.get("search_terms", self.search_terms)
+        max_pages = kwargs.get("max_pages", 3)
         results_per_page = kwargs.get("results_per_page", 50)
 
+        seen_ids: set = set()
         all_jobs: List[Dict[str, Any]] = []
 
         for country in self.countries:
-            for page in range(1, max_pages + 1):
-                try:
-                    url = f"{ADZUNA_API_BASE}/{country}/search/{page}"
-                    params = {
-                        "app_id": self.app_id,
-                        "app_key": self.app_key,
-                        "results_per_page": results_per_page,
-                        "what": keywords,
-                        "content-type": "application/json",
-                    }
+            for term in search_terms:
+                for page in range(1, max_pages + 1):
+                    try:
+                        url = f"{ADZUNA_API_BASE}/{country}/search/{page}"
+                        params = {
+                            "app_id": self.app_id,
+                            "app_key": self.app_key,
+                            "results_per_page": results_per_page,
+                            "what_phrase": term,
+                            "content-type": "application/json",
+                        }
 
-                    resp = requests.get(url, params=params, timeout=15)
+                        resp = requests.get(url, params=params, timeout=15)
 
-                    if resp.status_code == 401:
-                        logger.warning("Adzuna API authentication failed")
-                        return all_jobs
-                    if resp.status_code == 429:
-                        logger.warning("Adzuna API rate limit reached")
-                        return all_jobs
-                    if resp.status_code != 200:
+                        if resp.status_code == 401:
+                            logger.warning("Adzuna API authentication failed")
+                            return all_jobs
+                        if resp.status_code == 429:
+                            logger.warning("Adzuna API rate limit reached")
+                            return all_jobs
+                        if resp.status_code != 200:
+                            logger.warning(
+                                f"Adzuna API error for {country}/{term} page {page}: "
+                                f"HTTP {resp.status_code}"
+                            )
+                            break
+
+                        data = resp.json()
+                        results = data.get("results", [])
+
+                        if not results:
+                            break
+
+                        new_results = []
+                        for job in results:
+                            job_id = job.get("id")
+                            if job_id not in seen_ids:
+                                seen_ids.add(job_id)
+                                job["_country"] = country
+                                new_results.append(job)
+
+                        all_jobs.extend(new_results)
+                        logger.info(
+                            f"Fetched {len(new_results)} jobs from Adzuna "
+                            f"({country}, '{term}', page {page})"
+                        )
+
+                        # Stop if we got fewer results than requested (last page)
+                        if len(results) < results_per_page:
+                            break
+
+                    except requests.RequestException as e:
                         logger.warning(
-                            f"Adzuna API error for {country} page {page}: "
-                            f"HTTP {resp.status_code}"
+                            f"Failed to fetch from Adzuna ({country}/{term}): {e}"
                         )
                         break
-
-                    data = resp.json()
-                    results = data.get("results", [])
-
-                    if not results:
-                        break
-
-                    for job in results:
-                        job["_country"] = country
-
-                    all_jobs.extend(results)
-                    logger.info(
-                        f"Fetched {len(results)} jobs from Adzuna "
-                        f"({country}, page {page})"
-                    )
-
-                    # Stop if we got fewer results than requested (last page)
-                    if len(results) < results_per_page:
-                        break
-
-                except requests.RequestException as e:
-                    logger.warning(f"Failed to fetch from Adzuna ({country}): {e}")
-                    break
 
         return all_jobs
 

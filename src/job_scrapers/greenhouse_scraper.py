@@ -19,24 +19,30 @@ from src.job_scrapers.base_scraper import BaseScraper
 
 logger = logging.getLogger("jobhunter.scrapers.greenhouse")
 
-# Default set of tech companies using Greenhouse for their job boards.
-# Board tokens are the company slug used in their Greenhouse URL.
+# Companies using Greenhouse selected for Innovation/QA/Enterprise Architect roles.
+# Includes enterprise tech, consulting, logistics, and European companies.
 DEFAULT_BOARD_TOKENS = [
-    "stripe",
+    # Enterprise tech & tooling (hire architects, innovation leads)
     "cloudflare",
+    "hashicorp",
+    "pagerduty",
+    "servicenow",
+    "atlassian",
+    # Consulting & professional services (QA, transformation, architecture)
+    "thoughtworks",
+    "slalom",
+    "publicissapient",
+    # Logistics & supply chain (Peter's domain)
+    "flexport",
+    "project44",
+    "shippeo",
+    # Large European / global tech (QA leads, innovation)
+    "booking",
+    "criteo",
+    "deliveroo",
+    "typeform",
+    # Kept: has Enterprise Architect & innovation roles confirmed in DB
     "airbnb",
-    "figma",
-    "twitch",
-    "discord",
-    "coinbase",
-    "reddit",
-    "datadog",
-    "airtable",
-    "duolingo",
-    "gusto",
-    "brex",
-    "verkada",
-    "webflow",
 ]
 
 GREENHOUSE_API_BASE = "https://boards-api.greenhouse.io/v1/boards"
