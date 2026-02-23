@@ -34,6 +34,9 @@ class BaseScraper(ABC):
         """
         self.session = session
         self.source_name = self._get_source_name()
+        # Set by scrape() after _fetch_jobs() succeeds; 0 means the source
+        # returned nothing (API down, auth failure, HTML changed, etc.)
+        self.last_raw_count: int = 0
 
     @abstractmethod
     def _get_source_name(self) -> str:
@@ -101,6 +104,7 @@ class BaseScraper(ABC):
                     logger.debug("Failed to record fetch_attempt metric")
                 try:
                     raw_jobs = self._fetch_jobs(**kwargs)
+                    self.last_raw_count = len(raw_jobs)
                     # success
                     try:
                         self._record_metric("fetch_success", 1, f"attempt={attempt}")

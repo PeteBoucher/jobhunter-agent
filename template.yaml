@@ -119,6 +119,25 @@ Resources:
       AlarmActions:
         - !Ref JobhunterNotificationTopic
 
+  JobhunterThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "jobhunter-throttles-${Environment}"
+      AlarmDescription: "Alert when Lambda is throttled or times out"
+      Namespace: AWS/Lambda
+      MetricName: Duration
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref JobhunterFunction
+      ExtendedStatistic: p100
+      Period: 3600
+      EvaluationPeriods: 1
+      # Alert when max duration exceeds 90% of the 300 s timeout
+      Threshold: 270000
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref JobhunterNotificationTopic
+
 Outputs:
   FunctionArn:
     Value: !GetAtt JobhunterFunction.Arn

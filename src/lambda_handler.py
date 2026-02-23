@@ -100,6 +100,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     # Step 2: Scrape
     total_new_jobs = 0
     scrape_errors = []
+    zero_result_scrapers = []
 
     for source_name in DEFAULT_SOURCES:
         session = get_session()
@@ -112,12 +113,39 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             jobs = scraper.scrape(max_retries=3, backoff_factor=1.0)
             count = len(jobs)
             total_new_jobs += count
-            logger.info("Scraped %d new jobs from %s", count, source_name)
+            logger.info(
+                "Scraped %d new jobs from %s (raw fetched: %d)",
+                count,
+                source_name,
+                scraper.last_raw_count,
+            )
+            if scraper.last_raw_count == 0:
+                zero_result_scrapers.append(source_name)
+                logger.warning("Scraper %s returned 0 raw results", source_name)
         except Exception as e:
             logger.exception("Error scraping %s: %s", source_name, e)
             scrape_errors.append(source_name)
         finally:
             session.close()
+
+    # Alert on scraper health issues (exceptions or completely empty responses)
+    if scrape_errors or zero_result_scrapers:
+        lines = []
+        if scrape_errors:
+            lines.append("Scrapers that raised exceptions:")
+            lines.extend(f"  - {s}" for s in scrape_errors)
+        if zero_result_scrapers:
+            if lines:
+                lines.append("")
+            lines.append("Scrapers that returned 0 raw results (may be broken):")
+            lines.extend(f"  - {s}" for s in zero_result_scrapers)
+        lines.append("\nCheck CloudWatch logs for details.")
+        _notify(
+            sns_topic_arn,
+            f"Jobhunter: scraper health alert ({len(scrape_errors)} errors, "
+            f"{len(zero_result_scrapers)} empty)",
+            "\n".join(lines),
+        )
 
     # Step 3: Match
     total_matches = 0
@@ -169,6 +197,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "matches_computed": total_matches,
         "high_score_matches": len(high_score_matches),
         "scrape_errors": scrape_errors,
+        "zero_result_scrapers": zero_result_scrapers,
     }
     logger.info("Summary: %s", json.dumps(summary))
     return summary
