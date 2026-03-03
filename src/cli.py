@@ -1071,6 +1071,70 @@ def list_applications(status: Optional[str], limit: int) -> None:
         session.close()
 
 
+@applications.command("update")
+@click.argument("job_id", type=int)
+@click.option(
+    "--status",
+    type=click.Choice(
+        ["saved", "applied", "interview_scheduled", "interviewed", "rejected", "offer"],
+        case_sensitive=False,
+    ),
+    required=True,
+    help="New status",
+)
+@click.option("--notes", help="Optional notes")
+def update_application(job_id: int, status: str, notes: Optional[str]) -> None:
+    """Update application status for a job.
+
+    Examples:
+        job-agent applications update 2296 --status rejected
+        job-agent applications update 42 --status offer --notes "£80k base"
+    """
+    _sync_pull()
+    session = get_session()
+    try:
+        job = session.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            console.print(f"[red]✗[/red] Job {job_id} not found")
+            return
+
+        tracker = ApplicationTracker(session)
+        if status == "rejected":
+            app = tracker.reject_application(job_id, reason=notes)
+        elif status == "offer":
+            app = tracker.offer_received(job_id, notes=notes)
+        elif status == "interview_scheduled":
+            app = tracker.schedule_interview(
+                job_id, interview_date=datetime.utcnow(), notes=notes
+            )
+        elif status == "interviewed":
+            app = tracker.mark_interviewed(job_id, notes=notes)
+        elif status == "applied":
+            app = tracker.apply_to_job(job_id, notes=notes)
+        else:
+            # saved — direct update
+            existing = tracker.get_application(job_id)
+            if not existing:
+                from src.models import Application
+
+                app = Application(job_id=job_id, status="saved", notes=notes)
+                session.add(app)
+            else:
+                existing.status = "saved"
+                if notes:
+                    existing.notes = notes
+                app = existing
+            session.commit()
+
+        console.print(
+            f"[green]✓[/green] Updated {job.title} at {job.company} → {app.status}"
+        )
+        _sync_push()
+
+    finally:
+        session.close()
+
+
 @cli.group()
 def export() -> None:
     """Export data."""
