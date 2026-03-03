@@ -1221,5 +1221,87 @@ def export_applications(format: str, output: str) -> None:
         session.close()
 
 
+@cli.command("apply-ai")
+@click.argument("job_id", type=int)
+@click.option(
+    "--provider",
+    type=click.Choice(["claude", "openai"], case_sensitive=False),
+    default=None,
+    help="LLM provider (default: auto-detect from API key env vars)",
+)
+@click.option("--dry-run", is_flag=True, help="Fill the form but do not submit")
+@click.option(
+    "--yes",
+    is_flag=True,
+    help="Submit without pausing for review (use with care)",
+)
+@click.option(
+    "--cv", "cv_path", default=None, help="Path to CV PDF (overrides USER_CV_PATH)"
+)
+def apply_ai(
+    job_id: int,
+    provider: Optional[str],
+    dry_run: bool,
+    yes: bool,
+    cv_path: Optional[str],
+) -> None:
+    """Apply to a job using AI-driven form automation.
+
+    Requires the jobhunter-ai private package to be installed:
+        pip install git+ssh://github.com/peteboucher/jobhunter-ai.git
+
+    Examples:
+        job-agent apply-ai 6571 --dry-run
+        job-agent apply-ai 6571 --yes
+        job-agent apply-ai 6571 --provider openai --dry-run
+    """
+    try:
+        from jobhunter_ai import apply_to_job  # noqa: PLC0415
+    except ImportError:
+        console.print(
+            "[red]jobhunter-ai not installed.[/red] Install the private package with:\n"
+            "  pip install git+ssh://github.com/peteboucher/jobhunter-ai.git"
+        )
+        raise SystemExit(1)
+
+    _sync_pull()
+    session = get_session()
+    try:
+        automation = apply_to_job(
+            job_id,
+            session,
+            provider=provider,
+            dry_run=dry_run,
+            auto_submit=yes,
+            cv_path=cv_path,
+        )
+        status = automation.status
+        screenshot = automation.screenshot_path or ""
+
+        if status == "submitted":
+            console.print("[green]✓ Submitted![/green]")
+            if screenshot:
+                console.print(f"  Screenshot: {screenshot}")
+            _sync_push()
+        elif status == "filled":
+            console.print("[yellow]Form filled — not yet submitted.[/yellow]")
+            if screenshot:
+                console.print(f"  Review screenshot: {screenshot}")
+            console.print("  Re-run with [bold]--yes[/bold] to submit.")
+        else:
+            console.print(f"[red]Failed:[/red] {automation.error}")
+
+    except EnvironmentError as e:
+        console.print(
+            f"[red]No LLM API key:[/red] {e}\n"
+            "Set ANTHROPIC_API_KEY or OPENAI_API_KEY."
+        )
+        raise SystemExit(1)
+    except ValueError as e:
+        console.print(f"[red]✗[/red] {e}")
+    finally:
+        session.close()
+
+
 if __name__ == "__main__":
     cli()

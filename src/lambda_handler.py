@@ -192,12 +192,53 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             f"{min_score:.0f}%+:\n" + "\n".join(high_score_matches),
         )
 
+    # Step 6: Auto-apply to top matches (requires jobhunter-ai private package)
+    auto_apply_results: list = []
+    if os.environ.get("AUTO_APPLY_ENABLED", "false").lower() == "true":
+        try:
+            from jobhunter_ai import auto_apply_jobs, init_db_extensions
+
+            from src.database import create_engine_instance
+
+            engine = create_engine_instance()
+            init_db_extensions(engine)
+            min_apply_score = int(os.environ.get("MIN_MATCH_SCORE_APPLY", "85"))
+            session = get_session()
+            try:
+                auto_apply_results = auto_apply_jobs(
+                    session, engine, min_score=min_apply_score
+                )
+            finally:
+                session.close()
+
+            applied = [r for r in auto_apply_results if r.get("status") == "submitted"]
+            logger.info(
+                "Auto-apply: %d/%d jobs submitted",
+                len(applied),
+                len(auto_apply_results),
+            )
+            if applied:
+                _notify(
+                    sns_topic_arn,
+                    f"Jobhunter: auto-applied to {len(applied)} job(s)",
+                    "\n".join(
+                        f"  - job {r['job_id']}: {r['status']}"
+                        for r in auto_apply_results
+                    ),
+                )
+        except ImportError:
+            logger.warning(
+                "jobhunter-ai not installed — auto-apply skipped. "
+                "Install the private package to enable."
+            )
+
     summary = {
         "jobs_scraped": total_new_jobs,
         "matches_computed": total_matches,
         "high_score_matches": len(high_score_matches),
         "scrape_errors": scrape_errors,
         "zero_result_scrapers": zero_result_scrapers,
+        "auto_apply_results": auto_apply_results,
     }
     logger.info("Summary: %s", json.dumps(summary))
     return summary

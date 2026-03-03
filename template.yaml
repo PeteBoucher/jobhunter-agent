@@ -19,11 +19,17 @@ Parameters:
   MinMatchScoreNotify:
     Type: String
     Default: "70"
+  MinMatchScoreApply:
+    Type: String
+    Default: "85"
+  AutoApplyEnabled:
+    Type: String
+    Default: "false"
 
 Globals:
   Function:
     Timeout: 300
-    MemorySize: 256
+    MemorySize: 512
 
 Conditions:
   HasNotificationEmail: !Not [!Equals [!Ref NotificationEmail, ""]]
@@ -76,6 +82,10 @@ Resources:
           ADZUNA_APP_ID: '{{resolve:ssm:/jobhunter/adzuna-app-id}}'
           ADZUNA_APP_KEY: '{{resolve:ssm:/jobhunter/adzuna-app-key}}'
           REED_API_KEY: '{{resolve:ssm:/jobhunter/reed-api-key}}'
+          ANTHROPIC_API_KEY: '{{resolve:ssm:/jobhunter/anthropic-api-key}}'
+          OPENAI_API_KEY: '{{resolve:ssm:/jobhunter/openai-api-key}}'
+          MIN_MATCH_SCORE_APPLY: !Ref MinMatchScoreApply
+          AUTO_APPLY_ENABLED: !Ref AutoApplyEnabled
       Policies:
         - Statement:
             - Effect: Allow
