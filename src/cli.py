@@ -1238,12 +1238,18 @@ def export_applications(format: str, output: str) -> None:
 @click.option(
     "--cv", "cv_path", default=None, help="Path to CV PDF (overrides USER_CV_PATH)"
 )
+@click.option(
+    "--visible",
+    is_flag=True,
+    help="Open a visible browser window (required for LinkedIn and reCAPTCHA sites)",
+)
 def apply_ai(
     job_id: int,
     provider: Optional[str],
     dry_run: bool,
     yes: bool,
     cv_path: Optional[str],
+    visible: bool,
 ) -> None:
     """Apply to a job using AI-driven form automation.
 
@@ -1253,6 +1259,7 @@ def apply_ai(
     Examples:
         job-agent apply-ai 6571 --dry-run
         job-agent apply-ai 6571 --yes
+        job-agent apply-ai 7223 --visible --dry-run   # LinkedIn / reCAPTCHA sites
         job-agent apply-ai 6571 --provider openai --dry-run
     """
     try:
@@ -1274,6 +1281,7 @@ def apply_ai(
             dry_run=dry_run,
             auto_submit=yes,
             cv_path=cv_path,
+            headless=not visible,
         )
         status = automation.status
         screenshot = automation.screenshot_path or ""
