@@ -1296,6 +1296,8 @@ def apply_ai(
             if screenshot:
                 console.print(f"  Review screenshot: {screenshot}")
             console.print("  Re-run with [bold]--yes[/bold] to submit.")
+        elif status == "skipped":
+            console.print(f"[yellow]Skipped:[/yellow] {automation.error}")
         else:
             console.print(f"[red]Failed:[/red] {automation.error}")
 
