@@ -1,0 +1,85 @@
+"use client";
+
+import { useSession, signOut } from "next-auth/react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react";
+
+const navLinks = [
+  { href: "/feed", label: "Jobs" },
+  { href: "/applications", label: "Applications" },
+  { href: "/profile", label: "Profile" },
+];
+
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  useEffect(() => {
+    if (status === "unauthenticated") router.push("/");
+  }, [status, router]);
+
+  if (status === "loading" || !session) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-screen">
+      {/* Sidebar */}
+      <aside className="w-56 shrink-0 border-r border-gray-200 bg-white flex flex-col">
+        <div className="px-6 py-5 border-b border-gray-100">
+          <span className="text-lg font-bold text-blue-600">Jobhunter</span>
+        </div>
+        <nav className="flex-1 px-3 py-4 space-y-1">
+          {navLinks.map((link) => {
+            const active = pathname.startsWith(link.href);
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={`flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                  active
+                    ? "bg-blue-50 text-blue-700"
+                    : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                }`}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
+        </nav>
+        <div className="border-t border-gray-100 px-4 py-4">
+          <div className="mb-3 flex items-center gap-3">
+            {session.user?.image && (
+              <img
+                src={session.user.image}
+                alt="avatar"
+                className="h-8 w-8 rounded-full"
+              />
+            )}
+            <div className="min-w-0">
+              <p className="truncate text-xs font-medium text-gray-800">
+                {session.user?.name}
+              </p>
+              <p className="truncate text-xs text-gray-400">{session.user?.email}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => signOut({ callbackUrl: "/" })}
+            className="w-full rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-200 transition-colors"
+          >
+            Sign out
+          </button>
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <main className="flex-1 overflow-auto">{children}</main>
+    </div>
+  );
+}

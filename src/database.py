@@ -29,4 +29,9 @@ def get_session() -> Session:
 
 def create_engine_instance():
     """Create and return SQLAlchemy engine."""
-    return create_engine(get_database_url(), echo=False)
+    url = get_database_url()
+    kwargs: dict = {"echo": False}
+    if url.startswith("postgresql"):
+        # Neon serverless drops idle connections; pre-ping keeps the pool healthy
+        kwargs.update({"pool_pre_ping": True, "pool_size": 5, "max_overflow": 10})
+    return create_engine(url, **kwargs)

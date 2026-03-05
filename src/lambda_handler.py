@@ -1,7 +1,10 @@
 """AWS Lambda handler for periodic job scraping and matching.
 
-Downloads the SQLite DB from S3, runs scrapers and match computation,
-then uploads the updated DB back to S3. Triggered by EventBridge schedule.
+Scrapes jobs from configured sources, computes per-user match scores, and
+publishes notifications for high-scoring matches. Writes directly to the
+shared PostgreSQL database (configured via DATABASE_URL env var).
+
+Triggered by EventBridge schedule.
 """
 
 import json
@@ -10,23 +13,12 @@ import os
 from typing import Any, Dict
 
 import boto3
-from botocore.exceptions import ClientError
 
 logger = logging.getLogger("jobhunter.lambda")
 logger.setLevel(logging.INFO)
 
-# Lazy-initialized clients (cached for Lambda warm starts)
-_s3_client = None
+# Lazy-initialized SNS client (cached for Lambda warm starts)
 _sns_client = None
-
-LOCAL_DB_PATH = "/tmp/jobs.db"
-
-
-def _get_s3():
-    global _s3_client
-    if _s3_client is None:
-        _s3_client = boto3.client("s3")
-    return _s3_client
 
 
 def _get_sns():
@@ -34,25 +26,6 @@ def _get_sns():
     if _sns_client is None:
         _sns_client = boto3.client("sns")
     return _sns_client
-
-
-def _download_db(bucket: str, key: str) -> bool:
-    """Download jobs.db from S3 to /tmp. Returns True if DB existed."""
-    try:
-        _get_s3().download_file(bucket, key, LOCAL_DB_PATH)
-        logger.info("Downloaded existing DB from s3://%s/%s", bucket, key)
-        return True
-    except ClientError as e:
-        if e.response["Error"]["Code"] in ("404", "NoSuchKey", "403"):
-            logger.info("No existing DB in S3 — starting fresh")
-            return False
-        raise
-
-
-def _upload_db(bucket: str, key: str) -> None:
-    """Upload /tmp/jobs.db back to S3."""
-    _get_s3().upload_file(LOCAL_DB_PATH, bucket, key)
-    logger.info("Uploaded DB to s3://%s/%s", bucket, key)
 
 
 def _notify(topic_arn: str, subject: str, message: str) -> None:
@@ -72,32 +45,23 @@ def _notify(topic_arn: str, subject: str, message: str) -> None:
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Main Lambda entry point.
 
-    1. Download DB from S3
-    2. Scrape jobs from all default sources
-    3. Compute match scores for all users
-    4. Upload DB back to S3
-    5. Notify on high-score matches
+    1. Scrape jobs from all default sources
+    2. Compute match scores for all users
+    3. Notify on high-score matches
     """
-    # Read config from environment
-    s3_bucket = os.environ.get("S3_BUCKET", "")
-    s3_db_key = os.environ.get("S3_DB_KEY", "jobhunter/jobs.db")
     sns_topic_arn = os.environ.get("SNS_TOPIC_ARN", "")
     min_score = float(os.environ.get("MIN_MATCH_SCORE_NOTIFY", "70"))
 
-    # Point SQLAlchemy at /tmp
-    os.environ["DATABASE_URL"] = f"sqlite:///{LOCAL_DB_PATH}"
-
-    # Import after setting DATABASE_URL so database.py picks it up
+    # DATABASE_URL is injected from SSM via template.yaml; src.database reads it.
     from src.database import get_session, init_db
     from src.job_matcher import compute_match_for_user
     from src.job_scrapers.registry import DEFAULT_SOURCES, SCRAPER_MAP
     from src.models import Job, JobMatch, User
 
-    # Step 1: Download DB
-    _download_db(s3_bucket, s3_db_key)
+    # Ensure schema is up to date (idempotent)
     init_db()
 
-    # Step 2: Scrape
+    # Step 1: Scrape
     total_new_jobs = 0
     scrape_errors = []
     zero_result_scrapers = []
@@ -128,7 +92,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         finally:
             session.close()
 
-    # Alert on scraper health issues (exceptions or completely empty responses)
+    # Alert on scraper health issues
     if scrape_errors or zero_result_scrapers:
         lines = []
         if scrape_errors:
@@ -147,7 +111,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "\n".join(lines),
         )
 
-    # Step 3: Match
+    # Step 2: Match
     total_matches = 0
     high_score_matches = []
 
@@ -180,10 +144,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     finally:
         session.close()
 
-    # Step 4: Upload DB (always, even if scraping partially failed)
-    _upload_db(s3_bucket, s3_db_key)
-
-    # Step 5: Notify
+    # Step 3: Notify
     if high_score_matches:
         _notify(
             sns_topic_arn,
@@ -192,7 +153,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             f"{min_score:.0f}%+:\n" + "\n".join(high_score_matches),
         )
 
-    # Step 6: Auto-apply to top matches (requires jobhunter-ai private package)
+    # Step 4: Auto-apply to top matches (requires jobhunter-ai private package)
     auto_apply_results: list = []
     if os.environ.get("AUTO_APPLY_ENABLED", "false").lower() == "true":
         try:

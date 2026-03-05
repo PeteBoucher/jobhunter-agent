@@ -1,0 +1,111 @@
+"use client";
+
+import { useSession } from "next-auth/react";
+import { useState } from "react";
+import useSWR from "swr";
+import { getJobs } from "@/lib/api";
+import { JobCard } from "@/components/JobCard";
+
+export default function FeedPage() {
+  const { data: session } = useSession();
+  const token = (session as any)?.apiToken as string | undefined;
+
+  const [keywords, setKeywords] = useState("");
+  const [remote, setRemote] = useState("");
+  const [minScore, setMinScore] = useState(0);
+  const [sort, setSort] = useState<"score" | "date">("score");
+
+  const { data: jobs, isLoading, error } = useSWR(
+    token ? ["jobs", keywords, remote, minScore, sort] : null,
+    () =>
+      getJobs(token!, {
+        keywords: keywords || undefined,
+        remote: remote || undefined,
+        min_score: minScore > 0 ? minScore : undefined,
+        sort,
+        page_size: 50,
+      })
+  );
+
+  return (
+    <div className="mx-auto max-w-3xl px-4 py-8">
+      <h1 className="mb-6 text-2xl font-bold text-gray-900">Job Feed</h1>
+
+      {/* Filters */}
+      <div className="mb-6 flex flex-wrap gap-3">
+        <input
+          type="text"
+          placeholder="Search keywords..."
+          value={keywords}
+          onChange={(e) => setKeywords(e.target.value)}
+          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+        />
+        <select
+          value={remote}
+          onChange={(e) => setRemote(e.target.value)}
+          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+        >
+          <option value="">Any location</option>
+          <option value="remote">Remote</option>
+          <option value="hybrid">Hybrid</option>
+          <option value="onsite">Onsite</option>
+        </select>
+        <div className="flex items-center gap-2 text-sm">
+          <label className="text-gray-500">Min score</label>
+          <input
+            type="range"
+            min={0}
+            max={90}
+            step={10}
+            value={minScore}
+            onChange={(e) => setMinScore(Number(e.target.value))}
+            className="w-24"
+          />
+          <span className="w-8 text-gray-700">{minScore > 0 ? `${minScore}%` : "—"}</span>
+        </div>
+        <div className="flex rounded-lg border border-gray-300 overflow-hidden text-sm">
+          <button
+            onClick={() => setSort("score")}
+            className={`px-3 py-2 ${sort === "score" ? "bg-blue-600 text-white" : "bg-white text-gray-600"}`}
+          >
+            Best match
+          </button>
+          <button
+            onClick={() => setSort("date")}
+            className={`px-3 py-2 ${sort === "date" ? "bg-blue-600 text-white" : "bg-white text-gray-600"}`}
+          >
+            Newest
+          </button>
+        </div>
+      </div>
+
+      {/* Job list */}
+      {isLoading && (
+        <div className="flex justify-center py-12">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+        </div>
+      )}
+      {error && (
+        <div className="rounded-lg bg-red-50 p-4 text-sm text-red-600">
+          Failed to load jobs. Make sure your profile is set up.
+        </div>
+      )}
+      {jobs && jobs.length === 0 && (
+        <p className="text-center text-gray-400 py-12">
+          No jobs found — try adjusting your filters or{" "}
+          <a href="/profile" className="text-blue-600 underline">
+            upload your CV
+          </a>
+          .
+        </p>
+      )}
+      {jobs && (
+        <div className="space-y-3">
+          {jobs.map((job) => (
+            <JobCard key={job.id} job={job} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

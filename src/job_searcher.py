@@ -30,6 +30,7 @@ class JobSearcher:
         posted_after: Optional[datetime] = None,
         sort_by: str = "date",
         limit: int = 50,
+        user_id: Optional[int] = None,
     ) -> List[Job]:
         """Search jobs with filters.
 
@@ -43,6 +44,8 @@ class JobSearcher:
             posted_after: Only show jobs posted after this date
             sort_by: Sort order - "date" (default) or "score"
             limit: Maximum number of results
+            user_id: Scope JobMatch rows to this user (required for correct
+                multi-user score filtering/sorting)
 
         Returns:
             List of matching jobs
@@ -83,15 +86,14 @@ class JobSearcher:
         if posted_after:
             query = query.filter(Job.posted_date >= posted_after)
 
-        # Match score filter - join to JobMatch table
-        if min_match_score is not None:
-            query = query.join(JobMatch).filter(JobMatch.match_score >= min_match_score)
-
-        # Sort by score or date
-        if sort_by == "score" or min_match_score is not None:
-            # Need JobMatch join for sorting if not already joined
-            if min_match_score is None:
-                query = query.join(JobMatch)
+        # Match score / sort — always join with user scope when user_id is given
+        needs_match_join = min_match_score is not None or sort_by == "score"
+        if needs_match_join:
+            query = query.join(JobMatch, Job.id == JobMatch.job_id)
+            if user_id is not None:
+                query = query.filter(JobMatch.user_id == user_id)
+            if min_match_score is not None:
+                query = query.filter(JobMatch.match_score >= min_match_score)
             results = query.order_by(
                 JobMatch.match_score.desc(), Job.posted_date.desc()
             ).limit(limit)

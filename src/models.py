@@ -15,6 +15,8 @@ class User(Base):
     __tablename__ = "user"
 
     id = Column(Integer, primary_key=True)
+    google_id = Column(String(255), unique=True, index=True)  # Google OAuth "sub" claim
+    email = Column(String(255), unique=True, index=True)
     name = Column(String(255))
     location = Column(String(255))
     title = Column(String(255))

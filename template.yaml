@@ -10,9 +10,6 @@ Parameters:
   ScheduleRate:
     Type: String
     Default: "rate(6 hours)"
-  S3DbKey:
-    Type: String
-    Default: "jobhunter/jobs.db"
   NotificationEmail:
     Type: String
     Default: ""
@@ -79,8 +76,7 @@ Resources:
         Command: ["src.lambda_handler.lambda_handler"]
       Environment:
         Variables:
-          S3_BUCKET: !Ref JobhunterDataBucket
-          S3_DB_KEY: !Ref S3DbKey
+          DATABASE_URL: '{{resolve:ssm:/jobhunter/database-url}}'
           SNS_TOPIC_ARN: !Ref JobhunterNotificationTopic
           MIN_MATCH_SCORE_NOTIFY: !Ref MinMatchScoreNotify
           ADZUNA_APP_ID: '{{resolve:ssm:/jobhunter/adzuna-app-id}}'
@@ -91,16 +87,6 @@ Resources:
           MIN_MATCH_SCORE_APPLY: !Ref MinMatchScoreApply
           AUTO_APPLY_ENABLED: !Ref AutoApplyEnabled
       Policies:
-        - Statement:
-            - Effect: Allow
-              Action:
-                - s3:GetObject
-                - s3:PutObject
-              Resource: !Sub "${JobhunterDataBucket.Arn}/*"
-            - Effect: Allow
-              Action:
-                - s3:ListBucket
-              Resource: !GetAtt JobhunterDataBucket.Arn
         - SNSPublishMessagePolicy:
             TopicName: !GetAtt JobhunterNotificationTopic.TopicName
       Events:
