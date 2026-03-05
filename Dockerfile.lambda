@@ -3,6 +3,23 @@ FROM --platform=linux/arm64 public.ecr.aws/lambda/python:3.11
 COPY requirements-lambda.txt .
 RUN pip install --no-cache-dir -r requirements-lambda.txt
 
+# ── jobhunter-ai private package (optional — needed only for auto-apply) ──
+# Pass your GitHub token at build time:
+#   sam build --parameter-overrides GithubToken=ghp_...
+# Leave blank to skip (auto-apply will be gracefully disabled at runtime).
+ARG GITHUB_TOKEN=
+RUN if [ -n "$GITHUB_TOKEN" ]; then \
+        yum install -y git && \
+        pip install --no-cache-dir \
+            "git+https://${GITHUB_TOKEN}@github.com/peteboucher/jobhunter-ai.git"; \
+    fi
+
+# ── Playwright Chromium (only needed when AUTO_APPLY_ENABLED=true) ──────────
+# Uncomment when you're ready to enable Lambda auto-apply:
+# RUN pip install --no-cache-dir playwright && \
+#     playwright install chromium && \
+#     playwright install-deps chromium
+
 COPY src/ ${LAMBDA_TASK_ROOT}/src/
 RUN chmod -R 755 src/
 

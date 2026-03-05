@@ -25,6 +25,10 @@ Parameters:
   AutoApplyEnabled:
     Type: String
     Default: "false"
+  GithubToken:
+    Type: String
+    Default: ""
+    NoEcho: true
 
 Globals:
   Function:
@@ -109,6 +113,8 @@ Resources:
     Metadata:
       Dockerfile: Dockerfile.lambda
       DockerContext: .
+      DockerBuildArgs:
+        GITHUB_TOKEN: !Ref GithubToken
 
   # --- CloudWatch Alarms ---
   JobhunterErrorAlarm:

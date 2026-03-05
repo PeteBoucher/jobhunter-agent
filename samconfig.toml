@@ -4,7 +4,7 @@ version = 0.1
 stack_name = "jobhunter-dev"
 capabilities = "CAPABILITY_IAM"
 image_repositories = ["JobhunterFunction=624372908505.dkr.ecr.eu-west-1.amazonaws.com/jobhunter"]
-parameter_overrides = "Environment=\"dev\" ScheduleRate=\"rate(12 hours)\" S3DbKey=\"jobhunter/jobs.db\" NotificationEmail=\"petebouch@gmail.com\" MinMatchScoreNotify=\"49\" MinMatchScoreApply=\"85\" AutoApplyEnabled=\"false\""
+parameter_overrides = "Environment=\"dev\" ScheduleRate=\"rate(12 hours)\" S3DbKey=\"jobhunter/jobs.db\" NotificationEmail=\"petebouch@gmail.com\" MinMatchScoreNotify=\"49\" MinMatchScoreApply=\"85\" AutoApplyEnabled=\"false\" GithubToken=\"\""
 confirm_changeset = true
 resolve_s3 = true
 s3_prefix = "jobhunter-dev"
@@ -18,7 +18,7 @@ stack_name = "jobhunter-prod"
 region = "eu-west-1"
 capabilities = "CAPABILITY_IAM"
 image_repositories = ["JobhunterFunction=624372908505.dkr.ecr.eu-west-1.amazonaws.com/jobhunter"]
-parameter_overrides = "Environment=\"prod\" ScheduleRate=\"rate(6 hours)\" S3DbKey=\"jobhunter/jobs.db\" NotificationEmail=\"petebouch@gmail.com\" MinMatchScoreNotify=\"49\" MinMatchScoreApply=\"85\" AutoApplyEnabled=\"false\""
+parameter_overrides = "Environment=\"prod\" ScheduleRate=\"rate(6 hours)\" S3DbKey=\"jobhunter/jobs.db\" NotificationEmail=\"petebouch@gmail.com\" MinMatchScoreNotify=\"49\" MinMatchScoreApply=\"85\" AutoApplyEnabled=\"false\" GithubToken=\"\""
 confirm_changeset = true
 resolve_s3 = true
 s3_prefix = "jobhunter-prod"
