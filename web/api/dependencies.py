@@ -15,9 +15,9 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from src.models import User  # noqa: E402
+from auth import decode_jwt  # noqa: E402
 
-from .auth import decode_jwt  # noqa: E402
+from src.models import User  # noqa: E402
 
 _DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./data/jobs.db")
 

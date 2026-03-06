@@ -2,14 +2,13 @@
 
 from typing import List, Optional
 
+from dependencies import get_current_user, get_db
 from fastapi import APIRouter, Depends, HTTPException, Query
+from schemas.job import JobOut, MatchScoreOut
 from sqlalchemy.orm import Session
 
 from src.job_searcher import JobSearcher
 from src.models import Job, JobMatch, User
-
-from ..dependencies import get_current_user, get_db
-from ..schemas.job import JobOut, MatchScoreOut
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 

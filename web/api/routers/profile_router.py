@@ -3,13 +3,12 @@
 import os
 import sys
 
+from dependencies import get_current_user, get_db
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
+from schemas.user import UserOut, UserUpdate
 from sqlalchemy.orm import Session
 
 from src.models import Job, User, UserPreferences
-
-from ..dependencies import get_current_user, get_db
-from ..schemas.user import UserOut, UserUpdate
 
 # Ensure project root on path for src.* imports
 _ROOT = os.path.dirname(

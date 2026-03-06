@@ -1,14 +1,13 @@
 """Authentication routes: Google OAuth → JWT."""
 
+from auth import issue_jwt, verify_google_token
+from dependencies import get_current_user, get_db
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from schemas.user import UserOut
 from sqlalchemy.orm import Session
 
 from src.models import User
-
-from ..auth import issue_jwt, verify_google_token
-from ..dependencies import get_current_user, get_db
-from ..schemas.user import UserOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

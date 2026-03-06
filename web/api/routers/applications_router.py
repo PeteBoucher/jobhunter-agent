@@ -2,14 +2,13 @@
 
 from typing import List, Optional
 
+from dependencies import get_current_user, get_db
 from fastapi import APIRouter, Depends, HTTPException, Query
+from schemas.application import ApplicationCreate, ApplicationOut, ApplicationUpdate
 from sqlalchemy.orm import Session
 
 from src.application_tracker import ApplicationTracker
 from src.models import Application, User
-
-from ..dependencies import get_current_user, get_db
-from ..schemas.application import ApplicationCreate, ApplicationOut, ApplicationUpdate
 
 router = APIRouter(prefix="/applications", tags=["applications"])
 

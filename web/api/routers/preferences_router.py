@@ -1,12 +1,11 @@
 """User preferences routes."""
 
+from dependencies import get_current_user, get_db
 from fastapi import APIRouter, Depends
+from schemas.user import PreferencesOut, PreferencesUpdate
 from sqlalchemy.orm import Session
 
 from src.models import User, UserPreferences
-
-from ..dependencies import get_current_user, get_db
-from ..schemas.user import PreferencesOut, PreferencesUpdate
 
 router = APIRouter(prefix="/preferences", tags=["preferences"])
 

@@ -17,8 +17,7 @@ if _PROJECT_ROOT not in sys.path:
 
 from fastapi import FastAPI  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
-
-from .routers import (  # noqa: E402
+from routers import (  # noqa: E402
     applications_router,
     auth_router,
     jobs_router,
