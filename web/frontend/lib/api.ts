@@ -142,3 +142,16 @@ export function updateApplication(
 export function deleteApplication(token: string, id: number): Promise<void> {
   return request<void>(`/applications/${id}`, token, { method: "DELETE" });
 }
+
+// ── Account ───────────────────────────────────────────────────────────────────
+
+export async function deleteAccount(token: string): Promise<void> {
+  const res = await fetch(`${API_URL}/profile`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`API ${res.status}: ${body}`);
+  }
+}

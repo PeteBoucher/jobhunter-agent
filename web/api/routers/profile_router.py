@@ -73,6 +73,24 @@ def _recompute_matches(user_id: int, db_url: str) -> None:
         session.close()
 
 
+@router.delete("", status_code=204)
+def delete_account(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Permanently delete the current user's account and all associated data."""
+    from src.models import Application, JobMatch, UserPreferences
+
+    user_id = current_user.id
+    db.query(JobMatch).filter(JobMatch.user_id == user_id).delete()
+    db.query(Application).filter(Application.user_id == user_id).delete()
+    db.query(UserPreferences).filter(UserPreferences.user_id == user_id).delete()
+    # Skills have cascade="all, delete-orphan" so they go with the user
+    db.delete(current_user)
+    db.commit()
+    logger.info("account_deleted user_id=%d", user_id)
+
+
 @router.post("/cv", response_model=UserOut)
 async def upload_cv(
     file: UploadFile,

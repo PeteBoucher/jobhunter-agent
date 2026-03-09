@@ -1,10 +1,10 @@
 "use client";
 
-import { useSession } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import Link from "next/link";
 import { useState } from "react";
 import useSWR from "swr";
-import { getProfile, updateProfile } from "@/lib/api";
+import { deleteAccount, getProfile, updateProfile } from "@/lib/api";
 
 export default function ProfilePage() {
   const { data: session } = useSession();
@@ -20,6 +20,20 @@ export default function ProfilePage() {
   const [title, setTitle] = useState("");
   const [location, setLocation] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  async function handleDeleteAccount() {
+    if (!token) return;
+    setDeleting(true);
+    try {
+      await deleteAccount(token);
+      await signOut({ callbackUrl: "/" });
+    } catch {
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  }
 
   function startEdit() {
     setName(user?.name ?? "");
@@ -146,6 +160,40 @@ export default function ProfilePage() {
         >
           ⚙️ Job preferences
         </Link>
+      </div>
+
+      {/* Danger zone */}
+      <div className="mt-10 rounded-xl border border-red-200 bg-red-50 p-6">
+        <h2 className="mb-1 text-sm font-semibold text-red-700">Danger zone</h2>
+        <p className="mb-4 text-xs text-red-600">
+          Permanently deletes your account, CV, skills, preferences, and application
+          history. This cannot be undone.
+        </p>
+        {!confirmDelete ? (
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-100"
+          >
+            Delete my account
+          </button>
+        ) : (
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-red-700">Are you sure?</span>
+            <button
+              onClick={handleDeleteAccount}
+              disabled={deleting}
+              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              {deleting ? "Deleting…" : "Yes, delete everything"}
+            </button>
+            <button
+              onClick={() => setConfirmDelete(false)}
+              className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

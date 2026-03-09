@@ -42,6 +42,13 @@ export default function LandingPage() {
           Sign in with Google
         </button>
         <p className="mt-6 text-xs text-gray-400">Invite-only — ask Pete for access.</p>
+        <p className="mt-3 text-xs text-gray-400">
+          By signing in you agree to our{" "}
+          <a href="/privacy" className="underline hover:text-gray-600">
+            Privacy Policy
+          </a>
+          .
+        </p>
       </div>
     </main>
   );
