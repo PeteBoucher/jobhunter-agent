@@ -122,13 +122,15 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
           {/* Description */}
-          {job.description && (
+          {job.description ? (
             <section>
               <h2 className="mb-2 text-base font-semibold text-gray-800">Description</h2>
               <div className="prose prose-sm max-w-none whitespace-pre-wrap text-sm text-gray-600">
                 {job.description}
               </div>
             </section>
+          ) : (
+            <p className="text-sm text-gray-400 italic">No description available for this listing.</p>
           )}
 
           {/* Requirements */}
