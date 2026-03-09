@@ -3,7 +3,16 @@
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Column, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+)
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -22,6 +31,7 @@ class User(Base):
     title = Column(String(255))
     cv_text = Column(String)  # Raw CV text
     cv_parsed_json = Column(JSON)  # Parsed structured data
+    is_approved = Column(Boolean, nullable=False, default=False)  # access gate
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

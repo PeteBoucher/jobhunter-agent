@@ -25,6 +25,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             const data = await res.json();
             token.apiToken = data.access_token;
             token.userId = data.user.id;
+            token.isApproved = data.user.is_approved;
           }
         } catch {
           // API may be down; token will be missing and requests will 401
@@ -35,6 +36,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async session({ session, token }) {
       (session as any).apiToken = token.apiToken;
       (session as any).userId = token.userId;
+      (session as any).isApproved = token.isApproved ?? false;
       return session;
     },
   },

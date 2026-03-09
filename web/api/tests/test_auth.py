@@ -82,6 +82,7 @@ class TestGetMe:
             google_id="google-real-789",
             email="real@example.com",
             name="Real User",
+            is_approved=True,
         )
         db_session.add(user)
         db_session.commit()

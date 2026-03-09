@@ -5,14 +5,14 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 export default function LandingPage() {
-  const { status } = useSession();
+  const { data: session, status } = useSession();
   const router = useRouter();
 
   useEffect(() => {
     if (status === "authenticated") {
-      router.push("/feed");
+      router.push((session as any)?.isApproved ? "/feed" : "/pending");
     }
-  }, [status, router]);
+  }, [status, session, router]);
 
   if (status === "loading") {
     return (
@@ -30,7 +30,7 @@ export default function LandingPage() {
           Personalised job match scores from a shared pool of scraped listings.
         </p>
         <button
-          onClick={() => signIn("google", { callbackUrl: "/feed" })}
+          onClick={() => signIn("google", { callbackUrl: "/" })}
           className="flex w-full items-center justify-center gap-3 rounded-lg border border-gray-300 bg-white px-6 py-3 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 transition-colors"
         >
           <svg className="h-5 w-5" viewBox="0 0 24 24">
@@ -41,7 +41,9 @@ export default function LandingPage() {
           </svg>
           Sign in with Google
         </button>
-        <p className="mt-6 text-xs text-gray-400">Invite-only — ask Pete for access.</p>
+        <p className="mt-6 text-xs text-gray-400">
+          Currently in private beta. Sign in to join the waitlist.
+        </p>
         <p className="mt-3 text-xs text-gray-400">
           By signing in you agree to our{" "}
           <a href="/privacy" className="underline hover:text-gray-600">

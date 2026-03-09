@@ -44,6 +44,7 @@ class UserOut(BaseModel):
     name: Optional[str] = None
     location: Optional[str] = None
     title: Optional[str] = None
+    is_approved: bool = False
     created_at: Optional[datetime] = None
     skills: List[SkillOut] = []
     preferences: Optional[PreferencesOut] = None

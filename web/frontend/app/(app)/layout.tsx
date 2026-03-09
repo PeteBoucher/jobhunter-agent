@@ -18,7 +18,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/");
-  }, [status, router]);
+    if (status === "authenticated" && !(session as any)?.isApproved) {
+      router.push("/pending");
+    }
+  }, [status, session, router]);
 
   if (status === "loading" || !session) {
     return (

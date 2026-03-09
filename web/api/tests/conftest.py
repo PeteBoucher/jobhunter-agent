@@ -69,6 +69,7 @@ def test_user(db_session):
         google_id="google-test-123",
         email="test@example.com",
         name="Test User",
+        is_approved=True,
     )
     db_session.add(user)
     db_session.commit()
