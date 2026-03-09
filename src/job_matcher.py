@@ -101,17 +101,21 @@ def compute_match_for_user(session: Session, job: Job, user: User) -> JobMatch:
     # clamp to 0-100
     total = max(0.0, min(100.0, total))
 
-    jm = JobMatch(
-        job_id=job.id,
-        user_id=user.id,
-        match_score=total,
-        skill_score=skill_score,
-        title_score=title_score,
-        experience_score=experience_score,
-        location_or_remote_score=location_score,
-        salary_score=salary_score,
+    jm = (
+        session.query(JobMatch)
+        .filter(JobMatch.job_id == job.id, JobMatch.user_id == user.id)
+        .first()
     )
-    session.add(jm)
+    if jm is None:
+        jm = JobMatch(job_id=job.id, user_id=user.id)
+        session.add(jm)
+
+    jm.match_score = total
+    jm.skill_score = skill_score
+    jm.title_score = title_score
+    jm.experience_score = experience_score
+    jm.location_or_remote_score = location_score
+    jm.salary_score = salary_score
     session.commit()
     return jm
 
