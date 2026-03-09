@@ -4,8 +4,16 @@ from dependencies import get_current_user, get_db
 from fastapi import APIRouter, Depends
 from schemas.user import PreferencesOut, PreferencesUpdate
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from src.models import User, UserPreferences
+
+_JSON_FIELDS = {
+    "target_titles",
+    "target_industries",
+    "preferred_locations",
+    "contract_types",
+}
 
 router = APIRouter(prefix="/preferences", tags=["preferences"])
 
@@ -36,6 +44,8 @@ def update_preferences(
 
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(prefs, field, value)
+        if field in _JSON_FIELDS:
+            flag_modified(prefs, field)
 
     db.commit()
     db.refresh(prefs)

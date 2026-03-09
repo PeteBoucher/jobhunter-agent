@@ -31,6 +31,9 @@ profile = "black"
 line_length = 88
 known_first_party = ["src"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests", "web/api/tests"]
+
 [tool.coverage.run]
 branch = true
 source = ["src"]
