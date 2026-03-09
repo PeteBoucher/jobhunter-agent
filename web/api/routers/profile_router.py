@@ -1,5 +1,6 @@
 """User profile routes: view, update, CV upload."""
 
+import logging
 import os
 import sys
 
@@ -17,6 +18,7 @@ _ROOT = os.path.dirname(
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
+logger = logging.getLogger("jobhunter.api")
 router = APIRouter(prefix="/profile", tags=["profile"])
 
 
@@ -62,6 +64,11 @@ def _recompute_matches(user_id: int, db_url: str) -> None:
         for job in jobs:
             compute_match_for_user(session, job, user)
         session.commit()
+        logger.info("cv_rematch user_id=%d jobs_matched=%d", user_id, len(jobs))
+    except Exception as exc:
+        logger.error(
+            "cv_rematch_error user_id=%d error=%r", user_id, exc, exc_info=True
+        )
     finally:
         session.close()
 
@@ -111,13 +118,22 @@ async def upload_cv(
 
         # Sync skills and preferences
         profile_manager = UserProfile(db)
-        # _sync_skills_from_cv expects the "skills" sub-dict {category: [names]}
         profile_manager._sync_skills_from_cv(current_user, parsed.get("skills", {}))
-        # _auto_populate_preferences expects the full parsed CV dict
         profile_manager._auto_populate_preferences(prefs, parsed)
         db.commit()
 
+        skill_count = sum(len(v) for v in parsed.get("skills", {}).values())
+        logger.info(
+            "cv_upload user=%s size_bytes=%d skills_extracted=%d",
+            current_user.email,
+            len(content),
+            skill_count,
+        )
+
     except Exception as exc:
+        logger.error(
+            "cv_parse_error user=%s error=%r", current_user.email, exc, exc_info=True
+        )
         raise HTTPException(status_code=500, detail=f"CV processing failed: {exc}")
 
     # Trigger background re-matching

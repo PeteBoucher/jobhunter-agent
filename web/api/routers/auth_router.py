@@ -1,5 +1,7 @@
 """Authentication routes: Google OAuth → JWT."""
 
+import logging
+
 from auth import issue_jwt, verify_google_token
 from dependencies import get_current_user, get_db
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -8,6 +10,8 @@ from schemas.user import UserOut
 from sqlalchemy.orm import Session
 
 from src.models import User
+
+logger = logging.getLogger("jobhunter.api")
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -36,11 +40,13 @@ def google_login(body: GoogleLoginRequest, db: Session = Depends(get_db)):
 
     user = db.query(User).filter(User.google_id == google_id).first()
     if not user:
-        # Auto-create on first login
         user = User(google_id=google_id, email=email, name=name)
         db.add(user)
         db.commit()
         db.refresh(user)
+        logger.info("auth new_user email=%s", email)
+    else:
+        logger.info("auth returning_user email=%s", email)
 
     token = issue_jwt(google_id, email)
     return TokenResponse(access_token=token, user=UserOut.model_validate(user))
