@@ -17,21 +17,23 @@ from src.job_scrapers.base_scraper import BaseScraper
 
 logger = logging.getLogger("jobhunter.scrapers.lever")
 
-# Companies using Lever selected for Innovation/QA/Enterprise roles.
+# Companies using Lever with confirmed public job boards.
 DEFAULT_COMPANY_SLUGS = [
-    # QA / testing tooling companies
+    # QA / testing tooling
     "browserstack",
     "saucelabs",
     # Enterprise & consulting
     "capgemini",
     "sap",
-    # European / logistics tech
+    # European tech
     "remote",
     "hotjar",
     "personio",
     "relayr",
-    # Kept from original: large enough to have diverse roles
+    # Media & consumer
     "spotify",
+    # Media delivery & imaging
+    "cloudinary",
 ]
 
 LEVER_API_BASE = "https://api.lever.co/v0/postings"

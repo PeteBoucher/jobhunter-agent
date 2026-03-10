@@ -24,13 +24,18 @@ logger = logging.getLogger("jobhunter.scrapers.reed")
 
 REED_API_BASE = "https://www.reed.co.uk/api/1.0"
 
-# Search terms targeting Innovation, QA, and Enterprise Architecture roles.
+# Broad search terms covering common tech, product, and leadership roles.
 DEFAULT_SEARCH_TERMS = [
-    "innovation lead",
-    "enterprise architect",
-    "quality assurance lead",
+    "software engineer",
+    "product manager",
+    "engineering manager",
+    "data engineer",
+    "devops engineer",
+    "frontend developer",
+    "backend developer",
+    "qa engineer",
+    "solutions architect",
     "digital transformation",
-    "agile coach",
 ]
 
 RESULTS_PER_PAGE = 100

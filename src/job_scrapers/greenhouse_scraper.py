@@ -19,30 +19,53 @@ from src.job_scrapers.base_scraper import BaseScraper
 
 logger = logging.getLogger("jobhunter.scrapers.greenhouse")
 
-# Companies using Greenhouse selected for Innovation/QA/Enterprise Architect roles.
-# Includes enterprise tech, consulting, logistics, and European companies.
+# Companies using Greenhouse with confirmed public job boards.
+# Covers a broad range of industries to serve diverse user profiles.
 DEFAULT_BOARD_TOKENS = [
-    # Enterprise tech & tooling (hire architects, innovation leads)
+    # Enterprise tech & infrastructure
     "cloudflare",
     "hashicorp",
     "pagerduty",
     "servicenow",
     "atlassian",
-    # Consulting & professional services (QA, transformation, architecture)
+    "okta",
+    "postman",
+    "gitlab",
+    "dropbox",
+    "figma",
+    # Consulting & professional services
     "thoughtworks",
     "slalom",
     "publicissapient",
-    # Logistics & supply chain (Peter's domain)
+    # Fintech & financial services
+    "robinhood",
+    "adyen",
+    "n26",
+    # Data & analytics
+    "fivetran",
+    # Media, social & consumer
+    "reddit",
+    "pinterest",
+    "discord",
+    "twitch",
+    "duolingo",
+    "airbnb",
+    # Gaming
+    "riotgames",
+    # Marketplace & delivery
+    "lyft",
+    "intercom",
+    # Healthcare
+    "oscar",
+    # Logistics & supply chain
     "flexport",
     "project44",
     "shippeo",
-    # Large European / global tech (QA leads, innovation)
+    # European tech
     "booking",
     "criteo",
     "deliveroo",
     "typeform",
-    # Kept: has Enterprise Architect & innovation roles confirmed in DB
-    "airbnb",
 ]
 
 GREENHOUSE_API_BASE = "https://boards-api.greenhouse.io/v1/boards"
