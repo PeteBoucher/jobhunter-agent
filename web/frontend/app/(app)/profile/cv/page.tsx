@@ -14,13 +14,20 @@ export default function CVUploadPage() {
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const TEXT_TYPES = [".txt", ".md"];
+
   function handleFile(file: File) {
     setFileName(file.name);
     setResult(null);
     setError(null);
-    const reader = new FileReader();
-    reader.onload = (e) => setPreview((e.target?.result as string) ?? "");
-    reader.readAsText(file);
+    const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+    if (TEXT_TYPES.includes(ext)) {
+      const reader = new FileReader();
+      reader.onload = (e) => setPreview((e.target?.result as string) ?? "");
+      reader.readAsText(file);
+    } else {
+      setPreview("");
+    }
   }
 
   function onDrop(e: React.DragEvent) {
@@ -48,8 +55,8 @@ export default function CVUploadPage() {
     <div className="mx-auto max-w-2xl px-4 py-8">
       <h1 className="mb-2 text-2xl font-bold text-gray-900">Upload CV</h1>
       <p className="mb-6 text-sm text-gray-500">
-        Upload a plain text or Markdown CV. Skills and preferences will be
-        auto-extracted and your job scores will be recalculated in the background.
+        Upload your CV in PDF, Word (DOCX), or plain text/Markdown format. Skills
+        and preferences will be auto-extracted and your job scores recalculated.
       </p>
 
       {/* Drop zone */}
@@ -60,12 +67,13 @@ export default function CVUploadPage() {
         onClick={() => fileRef.current?.click()}
       >
         <p className="text-sm text-gray-500">
-          {fileName ? fileName : "Drag & drop a .txt or .md file, or click to browse"}
+          {fileName ? fileName : "Drag & drop your CV, or click to browse"}
         </p>
+        <p className="mt-1 text-xs text-gray-400">PDF, DOCX, TXT or Markdown · max 5 MB</p>
         <input
           ref={fileRef}
           type="file"
-          accept=".txt,.md,text/plain,text/markdown"
+          accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0];

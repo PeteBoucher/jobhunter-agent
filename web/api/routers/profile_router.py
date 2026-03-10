@@ -91,7 +91,43 @@ def delete_account(
     logger.info("account_deleted user_id=%d", user_id)
 
 
-_MAX_CV_BYTES = 1 * 1024 * 1024  # 1 MB
+_MAX_CV_BYTES = 5 * 1024 * 1024  # 5 MB
+
+_ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md"}
+
+
+def _extract_cv_text(content: bytes, filename: str) -> str:
+    """Extract plain text from PDF, DOCX, or plain text/markdown CV files."""
+    ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+    if ext == ".pdf":
+        import io
+
+        from pypdf import PdfReader
+
+        reader = PdfReader(io.BytesIO(content))
+        pages = [page.extract_text() or "" for page in reader.pages]
+        text = "\n".join(pages).strip()
+        if not text:
+            raise ValueError("No text could be extracted from the PDF")
+        return text
+
+    if ext == ".docx":
+        import io
+
+        from docx import Document
+
+        doc = Document(io.BytesIO(content))
+        text = "\n".join(para.text for para in doc.paragraphs).strip()
+        if not text:
+            raise ValueError("No text could be extracted from the DOCX file")
+        return text
+
+    # Plain text / markdown
+    try:
+        return content.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ValueError("File must be UTF-8 encoded text, PDF, or DOCX")
 
 
 @router.post("/cv", response_model=UserOut)
@@ -101,19 +137,26 @@ async def upload_cv(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Upload a markdown CV file, extract skills/preferences, trigger re-matching."""
+    """Upload a CV (PDF, DOCX, TXT or Markdown), extract skills, trigger re-matching."""
+    filename = file.filename or ""
+    ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in _ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=415,
+            detail="Unsupported file type. Upload a PDF, DOCX, TXT or Markdown file.",
+        )
+
     content = await file.read(_MAX_CV_BYTES + 1)
     if len(content) > _MAX_CV_BYTES:
         raise HTTPException(
             status_code=413,
             detail=f"CV exceeds {_MAX_CV_BYTES // (1024 * 1024)} MB limit",
         )
+
     try:
-        cv_text = content.decode("utf-8")
-    except UnicodeDecodeError:
-        raise HTTPException(
-            status_code=400, detail="CV must be a UTF-8 text or markdown file"
-        )
+        cv_text = _extract_cv_text(content, filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     try:
         from src.cv_parser import CVParser
