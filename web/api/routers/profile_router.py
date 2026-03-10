@@ -102,6 +102,7 @@ def _extract_cv_text(content: bytes, filename: str) -> str:
 
     if ext == ".pdf":
         import io
+        import re
 
         from pypdf import PdfReader
 
@@ -110,6 +111,8 @@ def _extract_cv_text(content: bytes, filename: str) -> str:
         text = "\n".join(pages).strip()
         if not text:
             raise ValueError("No text could be extracted from the PDF")
+        # pypdf inserts extra spaces between characters; collapse to single spaces
+        text = "\n".join(re.sub(r"  +", " ", line) for line in text.split("\n"))
         return text
 
     if ext == ".docx":

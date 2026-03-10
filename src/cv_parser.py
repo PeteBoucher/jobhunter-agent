@@ -113,6 +113,20 @@ class CVParser:
         match = re.search(pattern, self.cv_text, re.DOTALL)
 
         if not match:
+            # Fallback: plain-text "Skills" header (e.g. PDF-extracted CVs)
+            plain_pattern = r"[Ss]kills?\s*\n(.*?)(?=\n[A-Z][^\n]{0,30}\n|\Z)"
+            match = re.search(plain_pattern, self.cv_text, re.DOTALL)
+            if not match:
+                return skills
+            raw = match.group(1)
+            # Skills are typically comma-separated in plain-text CVs;
+            # collapse internal whitespace in case text came from pypdf
+            items = [
+                re.sub(r"\s+", " ", s).strip().rstrip(".,")
+                for s in re.split(r"[,\n]+", raw)
+                if s.strip() and len(s.strip()) > 2
+            ]
+            skills["technical"] = items
             return skills
 
         skills_text = match.group(1)
