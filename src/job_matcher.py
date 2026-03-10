@@ -74,11 +74,16 @@ def _score_location_remote(job: Job, user_prefs: Optional[UserPreferences]) -> f
 
 
 def _score_salary(job: Job, user_prefs: Optional[UserPreferences]) -> float:
+    # No user salary preference → not filtering by salary, full marks
     if not user_prefs or not user_prefs.salary_min:
-        return 0.0
-    # reward if job salary meets user's minimum
-    if job.salary_min and job.salary_min >= user_prefs.salary_min:
         return 10.0
+    # Job has no salary listed → can't confirm a mismatch, benefit of the doubt
+    if not job.salary_min:
+        return 10.0
+    # Job explicitly meets the minimum → full marks
+    if job.salary_min >= user_prefs.salary_min:
+        return 10.0
+    # Job salary is explicitly below minimum → penalise
     return 0.0
 
 
