@@ -7,6 +7,7 @@ a single source of truth instead of duplicating the mapping.
 from typing import Dict, List, Type
 
 from src.job_scrapers.adzuna_scraper import AdzunaScraper
+from src.job_scrapers.ashby_scraper import AshbyScraper
 from src.job_scrapers.base_scraper import BaseScraper
 from src.job_scrapers.coinbase_scraper import CoinbaseScraper
 from src.job_scrapers.github_scraper import GitHubJobsScraper
@@ -21,6 +22,7 @@ from src.job_scrapers.uber_scraper import UberScraper
 
 # All available scrapers keyed by source name
 SCRAPER_MAP: Dict[str, Type[BaseScraper]] = {
+    "ashby": AshbyScraper,
     "greenhouse": GreenhouseScraper,
     "lever": LeverScraper,
     "linkedin": LinkedInScraper,
@@ -36,6 +38,7 @@ SCRAPER_MAP: Dict[str, Type[BaseScraper]] = {
 
 # Default sources to scrape (the ones that actually return data)
 DEFAULT_SOURCES: List[str] = [
+    "ashby",
     "greenhouse",
     "lever",
     "adzuna",
