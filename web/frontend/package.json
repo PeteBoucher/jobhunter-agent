@@ -9,7 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@auth/core": "^0.41.0",
+    "@auth/core": "^0.41.1",
     "@hello-pangea/dnd": "^18.0.1",
     "dompurify": "^3.3.2",
     "next": "14.2.35",
