@@ -11,7 +11,7 @@
   "dependencies": {
     "@auth/core": "^0.41.0",
     "@hello-pangea/dnd": "^18.0.1",
-    "next": "14.2.35",
+    "next": "16.1.6",
     "next-auth": "^5.0.0-beta.30",
     "react": "^18",
     "react-dom": "^18",
