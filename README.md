@@ -1,155 +1,119 @@
-# Job Application Tracking Agent
+# Jobhunter
 
-An intelligent CLI tool that automates job searching, CV profile building, job matching, and application tracking across multiple job platforms.
+A hosted web app + CLI tool that scrapes job listings, scores them against your CV, and tracks your applications. Currently in private beta.
 
-## Current Status
+## Architecture
 
-The project is **fully functional** with working job scrapers fetching real listings:
-
-- ✅ **Greenhouse scraper** - fetches jobs from 15 top tech companies (Stripe, Cloudflare, Airbnb, Figma, Discord, Datadog, etc.)
-- ✅ **Lever scraper** - fetches jobs from Spotify, Palantir, Plaid
-- ✅ **Adzuna scraper** - aggregates jobs from Indeed, Reed, Monster via free API (UK/US/EU)
-- ✅ **The Muse scraper** - curated jobs from well-known tech companies (no auth required)
-- ✅ **LinkedIn scraper** - guest endpoint with rate-limit handling and user-agent rotation
-- ✅ **Smart CV parsing** - extracts skills, experience, and auto-populates matching preferences
-- ✅ **Job matching engine** - 5-dimension scoring (title, skills, experience, location, salary)
-- ✅ Background worker for periodic scraping and matching
-- ✅ Centralized scraper registry for easy extension
-- ✅ Metrics collection and Prometheus exporter
-- ✅ Structured JSON logging
-- ✅ Full test coverage (142+ tests)
-- ✅ **AWS Lambda + EventBridge** deployment via SAM (S3-backed SQLite, SNS notifications)
-- ✅ Deployment configurations (systemd, Docker, AWS SAM)
-
-### Legacy Scrapers
-
-The GitHub Jobs and Microsoft Careers scrapers remain in the codebase but return empty results due to deprecated APIs. They are still available via `--sources github` or `--sources microsoft` if the APIs are restored.
-
-## Features
-
-- 📄 **CV Parsing**: Extract skills, experience, and preferences from CV markdown files
-- 🔍 **Real Job Data**: Greenhouse, Lever, Adzuna, and The Muse APIs fetch thousands of live listings
-- 🎯 **Smart Job Matching**: 5-dimension scoring (title 30pts, skills 40pts, experience 10pts, location 10pts, salary 10pts)
-- 🤖 **Background Worker**: APScheduler-based periodic scraping and job matching
-- ☁️ **Serverless Deployment**: AWS Lambda + EventBridge with S3-backed SQLite and SNS notifications
-- 📊 **Metrics & Monitoring**: Prometheus exporter with custom scrapers and job counts
-- 📝 **Structured Logging**: JSON-formatted logs for production observability
-- 💾 **SQLite Database**: Local development storage with PostgreSQL support for production
-- 🔧 **CLI Interface**: Rich terminal UI with Click framework
-
-## Quick Start
-
-### Installation
-
-```bash
-# Clone and setup
-git clone <repo>
-cd jobhunter-agent
-
-# Create virtual environment
-python3.10 -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Initialize database
-job-agent init
+```
+[Vercel — Next.js]  ←── REST + JWT ──→  [Render — FastAPI]
+                                                 │
+                                         SQLAlchemy (sync)
+                                                 │
+                                    [Neon — PostgreSQL]
+                                                 ↑
+                                    [AWS Lambda — scraper]
+                                    (EventBridge schedule)
 ```
 
-### Basic Usage
+Jobs are scraped once into a shared pool. Each user has their own profile, match scores, and application tracking. The Lambda runs on a schedule (every 6h in prod), scrapes all sources, and writes directly to Neon.
 
-```bash
-# Upload and parse your CV (auto-extracts skills + preferences)
-job-agent profile upload path/to/cv.md
+## What's working
 
-# View your profile
-job-agent profile show
+- **Google sign-in** — OAuth via next-auth; new users land on `/pending` waitlist
+- **Job feed** — personalised match scores based on your CV and preferences
+- **Job detail** — full description, score breakdown, apply button
+- **CV upload** — paste/upload markdown; skills auto-extracted and jobs re-scored
+- **Preferences** — target titles, salary, remote preference, location
+- **Applications kanban** — drag cards across Saved → Applied → Interview → Offer/Rejected
+- **Shared scraping** — Lambda scrapes Greenhouse, Lever, Adzuna, The Muse on schedule
+- **CLI** — full local CLI still works for power users and debugging
 
-# Re-extract skills/preferences after CV parser improvements
-job-agent profile refresh
+### Scrapers
 
-# Scrape jobs from all default sources (Greenhouse + Lever + Adzuna + The Muse)
-job-agent scrape
+| Scraper | Source | Notes |
+|---------|--------|-------|
+| Greenhouse | 15 companies (Stripe, Cloudflare, Airbnb, Figma, Discord, Datadog, …) | ATS API |
+| Lever | Spotify, Palantir, Plaid | ATS API |
+| Adzuna | Indeed, Reed, Monster aggregate | Free API key required |
+| The Muse | Curated tech companies | No auth required |
+| LinkedIn | Guest endpoint | Rate-limited |
+| GitHub Jobs | — | Deprecated, returns empty |
+| Microsoft Careers | — | Deprecated, returns empty |
 
-# Scrape specific sources
-job-agent scrape --sources greenhouse
-job-agent scrape --sources lever
-job-agent scrape --sources adzuna
-job-agent scrape --sources themuse
+### Job matching algorithm
 
-# Scrape with keyword filtering
-job-agent scrape --keywords "python" --keywords "backend"
+5-dimension scoring (100pts total):
 
-# Match jobs to your profile
-job-agent match
+| Dimension | Points | Method |
+|-----------|--------|--------|
+| Title | 30 | SequenceMatcher against CV target titles |
+| Skills | 40 | CV skills matched against job requirements |
+| Experience | 10 | Inferred from work history (3+ roles = senior) |
+| Location/remote | 10 | Remote preference + location match |
+| Salary | 10 | Job salary meets CV minimum |
 
-# Search stored jobs (shows match scores when available)
-job-agent jobs search --keywords "engineer"
-job-agent jobs search --keywords "python" --remote remote
-job-agent jobs search --keywords "software" --min-score 30
-job-agent jobs search --remote remote --location spain --sort score
-
-# View job details
-job-agent jobs view 42
-
-# Record an application
-job-agent applications apply 42 --notes "Applied via company website"
-
-# Start background worker (scrapes every 6h, matches every 12h)
-job-agent worker
-
-# View scraping metrics
-job-agent metrics
-
-# Export Prometheus metrics
-job-agent prometheus
-```
-
-## Project Structure
+## Project structure
 
 ```
 jobhunter-agent/
-├── src/
-│   ├── cli.py                 # Click CLI commands
-│   ├── job_scrapers/          # Job scraper implementations
-│   │   ├── base_scraper.py    # Abstract base scraper with retry/backoff
-│   │   ├── registry.py        # Centralized scraper registration
-│   │   ├── greenhouse_scraper.py  # Greenhouse ATS API (15 companies)
-│   │   ├── lever_scraper.py   # Lever ATS API (3 companies)
-│   │   ├── adzuna_scraper.py  # Adzuna aggregator API (UK/US/EU)
-│   │   ├── themuse_scraper.py # The Muse curated jobs API
-│   │   ├── linkedin_scraper.py # LinkedIn guest endpoint
-│   │   ├── github_scraper.py  # GitHub Jobs (deprecated)
-│   │   └── microsoft_scraper.py # Microsoft Careers (deprecated)
-│   ├── job_matcher.py         # Job matching engine
-│   ├── models.py              # SQLAlchemy models
-│   ├── database.py            # Database initialization
-│   ├── worker.py              # Background worker with APScheduler
-│   ├── lambda_handler.py      # AWS Lambda entry point
-│   ├── metrics.py             # Metrics persistence and querying
-│   ├── prometheus_exporter.py # Prometheus metrics export
-│   ├── logging_config.py      # JSON logging setup
-│   ├── incremental.py         # Incremental scraping + notifications
-│   └── user_profile.py        # CV parsing and profile management
-├── tests/                      # Comprehensive test suite (142+ tests)
+├── src/                        # Core Python library
+│   ├── cli.py
+│   ├── models.py               # SQLAlchemy models
+│   ├── database.py
+│   ├── job_scrapers/           # BaseScraper + registry + implementations
+│   ├── job_matcher.py
+│   ├── job_searcher.py
+│   ├── application_tracker.py
+│   ├── lambda_handler.py       # Lambda entry point
+│   └── user_profile.py
+├── web/
+│   ├── api/                    # FastAPI (deploys to Render)
+│   │   ├── main.py
+│   │   ├── auth.py
+│   │   ├── dependencies.py
+│   │   ├── routers/
+│   │   ├── schemas/
+│   │   └── tests/
+│   └── frontend/               # Next.js (deploys to Vercel)
+│       ├── app/
+│       ├── components/
+│       └── lib/
+├── alembic/                    # DB migrations
+├── tests/                      # CLI / scraper tests
+├── template.yaml               # SAM template (Lambda + EventBridge + SNS)
+├── samconfig.toml
 ├── requirements.txt
-├── requirements-lambda.txt     # Minimal deps for Lambda
-├── .env.example
-├── Dockerfile                  # Local development container
-├── Dockerfile.lambda           # AWS Lambda container (arm64)
-├── template.yaml               # SAM template (Lambda + EventBridge + S3 + SNS)
-├── samconfig.toml              # SAM deploy config (dev/prod)
-├── docker-compose.yml
-├── DEPLOYMENT.md              # Deployment guide
-└── README.md (this file)
+├── requirements-lambda.txt
+└── pyproject.toml              # pytest, black, mypy config
 ```
 
-## Adding New Job Sources
+## CLI quick start
 
-All scrapers are registered in `src/job_scrapers/registry.py`. To add a new scraper:
+For local use without the web app:
 
-1. Create a new scraper class inheriting from `BaseScraper`:
+```bash
+# Setup
+python3.10 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+# Add your CV
+job-agent profile upload path/to/cv.md
+
+# Scrape and match
+job-agent scrape
+job-agent match
+
+# Search
+job-agent jobs search --keywords "python" --min-score 30
+job-agent jobs view 42
+
+# Track applications
+job-agent applications apply 42 --notes "Applied via website"
+```
+
+## Adding a new scraper
+
+1. Create `src/job_scrapers/mycompany_scraper.py` inheriting `BaseScraper`:
 
 ```python
 from src.job_scrapers.base_scraper import BaseScraper
@@ -159,120 +123,86 @@ class MyCompanyScraper(BaseScraper):
         return "mycompany"
 
     def _fetch_jobs(self, **kwargs):
-        # Fetch from API and return list of raw dicts
+        # Fetch from API, return list of raw dicts
         pass
 
     def _parse_job(self, raw_job):
-        # Convert to standardized format with fields:
-        # source_job_id, title, company, location, description, apply_url, etc.
+        # Return standardised dict: source_job_id, title, company,
+        # location, description, apply_url, …
         pass
 ```
 
-2. Register it in `src/job_scrapers/registry.py`:
+2. Register in `src/job_scrapers/registry.py`:
 
 ```python
 from src.job_scrapers.mycompany_scraper import MyCompanyScraper
-
 SCRAPER_MAP["mycompany"] = MyCompanyScraper
 ```
 
-### Adzuna API Setup
+### Adzuna API key
 
-Adzuna requires a free API key. Sign up at [developer.adzuna.com](https://developer.adzuna.com).
+Sign up at [developer.adzuna.com](https://developer.adzuna.com). For local use:
 
-For local use, set environment variables:
 ```bash
 export ADZUNA_APP_ID=your_app_id
 export ADZUNA_APP_KEY=your_app_key
 ```
 
-For Lambda deployment, credentials are stored in AWS SSM Parameter Store (`/jobhunter/adzuna-app-id` and `/jobhunter/adzuna-app-key`) and resolved at deploy time.
-
-The Adzuna scraper gracefully returns empty results if credentials are not configured.
-
-### Adding Companies to Existing Scrapers
-
-To add more Greenhouse or Lever companies, pass custom board lists:
-
-```python
-# Greenhouse - use the company's board token (URL slug)
-scraper = GreenhouseScraper(session, board_tokens=["stripe", "cloudflare", "mycompany"])
-
-# Lever - use the company's Lever slug
-scraper = LeverScraper(session, company_slugs=["spotify", "palantir"])
-```
-
-## Documentation
-
-- [DEPLOYMENT.md](DEPLOYMENT.md) - Production deployment guide with systemd and Docker
-- [PROJECT_PLAN.md](PROJECT_PLAN.md) - Comprehensive project plan and roadmap
+For Lambda, credentials are in AWS SSM (`/jobhunter/adzuna-app-id`, `/jobhunter/adzuna-app-key`).
 
 ## Testing
 
-Run the full test suite:
-
 ```bash
-pytest -v                              # All tests
-pytest tests/test_greenhouse_scraper.py  # Greenhouse scraper tests
-pytest tests/test_lever_scraper.py       # Lever scraper tests
-pytest tests/test_adzuna_scraper.py      # Adzuna scraper tests
-pytest tests/test_themuse_scraper.py     # The Muse scraper tests
-pytest tests/test_scrapers.py            # Legacy scraper tests
-pytest tests/test_job_matcher.py         # Matcher tests
+pytest -v                        # All tests (CLI + web API)
+pytest tests/ -v                 # CLI/scraper tests only
+pytest web/api/tests/ -v         # FastAPI router tests only
 ```
+
+Web API tests use `TestClient` + in-memory SQLite — no Neon connection needed.
 
 ## Deployment
 
-### AWS Lambda (Recommended)
-
-The app deploys to AWS Lambda with EventBridge for scheduled scraping via SAM:
+### Lambda (scraper)
 
 ```bash
-# Build the Docker image
+export DOCKER_HOST=unix:///Users/pete/.docker/run/docker.sock
 sam build
-
-# Deploy dev (scrapes every 12 hours)
-sam deploy --config-env default
-
-# Deploy prod (scrapes every 6 hours)
-sam deploy --config-env prod
+sam deploy --config-env default   # Dev — 12h schedule
+sam deploy --config-env prod      # Prod — 6h schedule
 ```
 
-Architecture: EventBridge triggers Lambda on schedule → Lambda downloads SQLite DB from S3 → runs scrapers + match computation → uploads DB back to S3 → sends SNS notifications for high-score matches.
+Lambda writes to Neon via `DATABASE_URL` from SSM (`/jobhunter/database-url`).
 
-### Local Deployment
+### Web app
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for local deployment options:
-- systemd service setup
-- Docker containerization
-- docker-compose for multi-service deployment
-- Prometheus metrics collection
+Render (API) and Vercel (frontend) deploy automatically on `git push origin master`.
 
-## Architecture Highlights
+| Service | Config |
+|---------|--------|
+| Render | Root: `web/api`, start: `uvicorn main:app --host 0.0.0.0 --port $PORT` |
+| Vercel | Root: `web/frontend`, env: `NEXT_PUBLIC_API_URL`, `NEXTAUTH_URL`, Google OAuth keys |
+| Neon | Connection string in Render env vars + SSM `/jobhunter/database-url` |
 
-### Job Matching Algorithm
-- **Title matching** (30pts): SequenceMatcher similarity against target titles from CV
-- **Skill matching** (40pts): User skills extracted from CV matched against job requirements
-- **Experience level** (10pts): Inferred from work history length (senior if 3+ roles)
-- **Location/remote** (10pts): Remote preference and location matching
-- **Salary alignment** (10pts): Job salary meets user minimum
-- Profile auto-populates from CV: skills, target titles, experience level, remote preference
+### DB migrations
 
-### Background Worker
-- APScheduler for periodic job scraping and matching
-- Configurable scheduling intervals
-- Automatic metrics collection
-- SimpleNotifier for high-match job alerts
+```bash
+DATABASE_URL=postgresql://... alembic upgrade head
+```
 
-### Metrics System
-- Scraper success/failure tracking
-- Job count persistence
-- Prometheus-compatible metrics export
-- Custom collectors for database stats
+## User management
 
-## Contributing
+New sign-ups land on `/pending`. To approve a user, run in the Neon console:
 
-This project is under active development. For planned features, see PROJECT_PLAN.md.
+```sql
+UPDATE "user" SET is_approved = true WHERE email = 'friend@example.com';
+```
+
+User signs out and back in to pick up the change.
+
+## Documentation
+
+- [WORKFLOW.md](WORKFLOW.md) — development workflow, feedback process, deploy checklist
+- [DEPLOYMENT.md](DEPLOYMENT.md) — local deployment options (systemd, Docker)
 
 ## License
 

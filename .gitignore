@@ -59,3 +59,11 @@ htmlcov/
 # Temporary files
 *.tmp
 temp/
+
+# Build artifacts
+.aws-sam/
+
+# Claude Code
+.claude/
+.agents/
+PLAN_*.md
