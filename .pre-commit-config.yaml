@@ -17,6 +17,12 @@ repos:
       - id: mypy
         additional_dependencies: ["types-requests"]
         exclude: ^(alembic/|web/)
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.5
+    hooks:
+      - id: bandit
+        args: ["-ll", "--quiet"]   # medium+ severity only
+        exclude: ^tests/           # skip assert-heavy test files
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.4.0
     hooks:
