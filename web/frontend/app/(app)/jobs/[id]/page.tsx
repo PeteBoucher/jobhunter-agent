@@ -1,5 +1,6 @@
 "use client";
 
+import DOMPurify from "dompurify";
 import { useSession } from "next-auth/react";
 import { useState } from "react";
 import useSWR from "swr";
@@ -125,9 +126,12 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
           {job.description ? (
             <section>
               <h2 className="mb-2 text-base font-semibold text-gray-800">Description</h2>
-              <div className="prose prose-sm max-w-none whitespace-pre-wrap text-sm text-gray-600">
-                {job.description}
-              </div>
+              <div
+                className="prose prose-sm max-w-none text-sm text-gray-600"
+                dangerouslySetInnerHTML={{
+                  __html: DOMPurify.sanitize(job.description),
+                }}
+              />
             </section>
           ) : (
             <p className="text-sm text-gray-400 italic">No description available for this listing.</p>
