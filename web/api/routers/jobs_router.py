@@ -33,7 +33,7 @@ def list_jobs(
     remote: Optional[str] = Query(None, description="remote / hybrid / onsite"),
     min_score: Optional[float] = Query(None, alias="min_score"),
     sort: str = Query("score", description="score or date"),
-    page: int = Query(1, ge=1),
+    page: int = Query(1, ge=1, le=500),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

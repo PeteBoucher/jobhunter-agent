@@ -91,6 +91,9 @@ def delete_account(
     logger.info("account_deleted user_id=%d", user_id)
 
 
+_MAX_CV_BYTES = 1 * 1024 * 1024  # 1 MB
+
+
 @router.post("/cv", response_model=UserOut)
 async def upload_cv(
     file: UploadFile,
@@ -99,7 +102,12 @@ async def upload_cv(
     db: Session = Depends(get_db),
 ):
     """Upload a markdown CV file, extract skills/preferences, trigger re-matching."""
-    content = await file.read()
+    content = await file.read(_MAX_CV_BYTES + 1)
+    if len(content) > _MAX_CV_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"CV exceeds {_MAX_CV_BYTES // (1024 * 1024)} MB limit",
+        )
     try:
         cv_text = content.decode("utf-8")
     except UnicodeDecodeError:
@@ -152,7 +160,7 @@ async def upload_cv(
         logger.error(
             "cv_parse_error user=%s error=%r", current_user.email, exc, exc_info=True
         )
-        raise HTTPException(status_code=500, detail=f"CV processing failed: {exc}")
+        raise HTTPException(status_code=500, detail="CV processing failed")
 
     # Trigger background re-matching
     db_url = os.environ.get("DATABASE_URL", "sqlite:///./data/jobs.db")

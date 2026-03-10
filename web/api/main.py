@@ -43,6 +43,8 @@ app = FastAPI(
 # CORS — allow the Next.js frontend (localhost:3000 in dev, Vercel in prod)
 _raw_origins = os.environ.get("CORS_ORIGINS", "http://localhost:3000")
 _origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+if "*" in _origins:
+    raise RuntimeError("CORS_ORIGINS must not be '*' — set explicit allowed origins")
 
 app.add_middleware(
     CORSMiddleware,
@@ -51,6 +53,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers[
+        "Strict-Transport-Security"
+    ] = "max-age=31536000; includeSubDomains"
+    return response
 
 
 @app.middleware("http")
