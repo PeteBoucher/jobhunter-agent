@@ -123,6 +123,19 @@ sam deploy --config-env prod
 
 ECR: `624372908505.dkr.ecr.eu-west-1.amazonaws.com/jobhunter`
 
+## Service Regions
+
+All services are intentionally co-located in Europe to minimise latency:
+
+| Service | Region | Notes |
+|---|---|---|
+| Neon (PostgreSQL) | `aws-eu-west-2` (London) | Primary database |
+| AWS Lambda | `eu-west-1` (Ireland) | ~10ms from Neon |
+| Render (FastAPI) | `eu-central` (Frankfurt) | ~20ms from Neon |
+| Vercel Functions | `lhr1` (London) | Pinned in `web/frontend/vercel.json` |
+
+Vercel defaults to `east-us-1` (Virginia) — the `regions` override in `vercel.json` is intentional. Do not remove it.
+
 ### Invoke Lambda manually
 
 ```bash
@@ -150,8 +163,8 @@ black, isort, flake8, and mypy all run on commit. If black reformats a file, re-
 
 ## Key Architecture Notes
 
-- **Scrapers**: `BaseScraper` ABC in `src/job_scrapers/`. Registry in `src/job_scrapers/registry.py`. Default sources: greenhouse, lever, adzuna, themuse.
-- **Lambda flow**: download DB from S3 → scrape new jobs → compute matches → upload DB to S3 → SNS notification if matches above threshold.
-- **Lambda timeout**: 300s. Matching a large backlog of unmatched jobs (e.g. first run after new user profile) will time out. Run `job-agent match` locally and upload the DB manually in that case.
-- **Lambda memory**: ~236MB used out of 256MB — bump to 512MB if OOM errors appear.
-- **User profile**: stored in the `user` table. The prod profile is Peter Boucher — Senior / Remote / Innovation Lead / QA Analyst.
+- **Scrapers**: `BaseScraper` ABC in `src/job_scrapers/`. Registry in `src/job_scrapers/registry.py`. Default sources: ashby, greenhouse, lever, adzuna, themuse, reed, linkedin.
+- **Lambda flow**: scrape new jobs → compute matches → SNS notification if matches above threshold. Writes directly to Neon (no S3 SQLite).
+- **Lambda timeout**: 300s. Matching a large backlog of unmatched jobs will time out. Run matching locally against Neon `DATABASE_URL` if needed.
+- **Lambda memory**: 512MB.
+- **Multi-user**: multiple users supported. Each user has their own `JobMatch` rows. Prod users managed via `is_approved` flag in the `user` table.
