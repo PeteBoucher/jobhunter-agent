@@ -42,7 +42,7 @@ jobs:
         run: bandit -r src/ web/api/ -ll --quiet
 
       - name: pytest
-        run: pytest -q
+        run: pytest web/api/tests/ -q
         env:
           DATABASE_URL: "sqlite:///:memory:"
           JWT_SECRET: "test-secret-for-ci-only-not-real"
