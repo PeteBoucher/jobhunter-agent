@@ -24,5 +24,15 @@ class ApplicationOut(BaseModel):
     notes: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    job_title: Optional[str] = None
+    job_company: Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+    @classmethod
+    def model_validate(cls, obj, **kwargs):
+        instance = super().model_validate(obj, **kwargs)
+        if hasattr(obj, "job") and obj.job:
+            instance.job_title = obj.job.title
+            instance.job_company = obj.job.company
+        return instance

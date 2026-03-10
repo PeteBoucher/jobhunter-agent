@@ -15,8 +15,13 @@ const COLUMNS: { status: ApplicationStatus; label: string; colour: string }[] = 
 
 function AppCard({ app }: { app: Application }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
-      <p className="text-sm font-medium text-gray-800">Job #{app.job_id}</p>
+    <a href={`/jobs/${app.job_id}`} className="block rounded-lg border border-gray-200 bg-white p-3 shadow-sm hover:border-blue-300 hover:shadow-md transition-shadow">
+      <p className="text-sm font-medium text-gray-800 line-clamp-2">
+        {app.job_title ?? `Job #${app.job_id}`}
+      </p>
+      {app.job_company && (
+        <p className="mt-0.5 text-xs text-gray-500">{app.job_company}</p>
+      )}
       {app.notes && (
         <p className="mt-1 text-xs text-gray-400 line-clamp-2">{app.notes}</p>
       )}
@@ -25,7 +30,7 @@ function AppCard({ app }: { app: Application }) {
           {new Date(app.application_date).toLocaleDateString()}
         </p>
       )}
-    </div>
+    </a>
   );
 }
 

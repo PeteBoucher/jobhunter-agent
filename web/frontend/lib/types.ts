@@ -66,6 +66,8 @@ export interface Application {
   notes: string | null;
   created_at: string | null;
   updated_at: string | null;
+  job_title: string | null;
+  job_company: string | null;
 }
 
 export type ApplicationStatus =
