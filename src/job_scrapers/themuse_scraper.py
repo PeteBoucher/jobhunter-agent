@@ -22,11 +22,8 @@ logger = logging.getLogger("jobhunter.scrapers.themuse")
 THEMUSE_API_URL = "https://www.themuse.com/api/public/jobs"
 
 DEFAULT_CATEGORIES = [
-    "Operations & Strategy",
-    "Project & Program Management",
-    "Management & Leadership",
-    "IT",
-    "Quality Assurance & Testing",
+    "Management",
+    "Software Engineering",
 ]
 
 
