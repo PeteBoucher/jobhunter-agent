@@ -14,9 +14,12 @@ export default function FeedPage() {
   const [remote, setRemote] = useState("");
   const [minScore, setMinScore] = useState(0);
   const [sort, setSort] = useState<"score" | "date">("score");
+  const [hideRejected, setHideRejected] = useState(true);
+
+  const excludeStatuses = hideRejected ? ["rejected"] : [];
 
   const { data: jobs, isLoading, error } = useSWR(
-    token ? ["jobs", keywords, remote, minScore, sort] : null,
+    token ? ["jobs", keywords, remote, minScore, sort, hideRejected] : null,
     () =>
       getJobs(token!, {
         keywords: keywords || undefined,
@@ -24,6 +27,7 @@ export default function FeedPage() {
         min_score: minScore > 0 ? minScore : undefined,
         sort,
         page_size: 50,
+        exclude_statuses: excludeStatuses.length ? excludeStatuses : undefined,
       })
   );
 
@@ -77,6 +81,15 @@ export default function FeedPage() {
             Newest
           </button>
         </div>
+        <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={hideRejected}
+            onChange={(e) => setHideRejected(e.target.checked)}
+            className="rounded"
+          />
+          Hide rejected
+        </label>
       </div>
 
       {/* Job list */}

@@ -8,7 +8,7 @@ from schemas.job import JobOut, MatchScoreOut
 from sqlalchemy.orm import Session
 
 from src.job_searcher import JobSearcher
-from src.models import Job, JobMatch, User
+from src.models import Application, Job, JobMatch, User
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -35,6 +35,10 @@ def list_jobs(
     sort: str = Query("score", description="score or date"),
     page: int = Query(1, ge=1, le=500),
     page_size: int = Query(20, ge=1, le=100),
+    exclude_statuses: List[str] = Query(
+        default=[],
+        description="Hide jobs where user has an application with this status",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -50,6 +54,19 @@ def list_jobs(
         limit=page_size * page,  # over-fetch then slice
         user_id=current_user.id,
     )
+
+    if exclude_statuses:
+        excluded_job_ids = {
+            row.job_id
+            for row in db.query(Application.job_id)
+            .filter(
+                Application.user_id == current_user.id,
+                Application.status.in_(exclude_statuses),
+            )
+            .all()
+        }
+        jobs = [j for j in jobs if j.id not in excluded_job_ids]
+
     start = (page - 1) * page_size
     page_jobs = jobs[start : start + page_size]
     return [_attach_match(j, current_user.id, db) for j in page_jobs]

@@ -18,7 +18,7 @@ repos:
         additional_dependencies: ["types-requests"]
         exclude: ^(alembic/|web/)
   - repo: https://github.com/PyCQA/bandit
-    rev: 1.7.5
+    rev: 1.7.10
     hooks:
       - id: bandit
         args: ["-ll", "--quiet"]   # medium+ severity only

@@ -42,6 +42,7 @@ export interface JobsParams {
   sort?: "score" | "date";
   page?: number;
   page_size?: number;
+  exclude_statuses?: string[];
 }
 
 export function getJobs(token: string, params: JobsParams = {}): Promise<Job[]> {
@@ -53,6 +54,7 @@ export function getJobs(token: string, params: JobsParams = {}): Promise<Job[]> 
   if (params.sort) qs.set("sort", params.sort);
   if (params.page) qs.set("page", String(params.page));
   if (params.page_size) qs.set("page_size", String(params.page_size));
+  params.exclude_statuses?.forEach((s) => qs.append("exclude_statuses", s));
   return request<Job[]>(`/jobs?${qs}`, token);
 }
 
