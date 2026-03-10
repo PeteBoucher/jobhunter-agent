@@ -114,17 +114,18 @@ class AshbyScraper(BaseScraper):
 
         location = raw_job.get("location")
 
-        # Determine remote status from workplaceType or location string
+        # Determine remote status; workplaceType is authoritative over isRemote
+        # because Ashby can set isRemote=true on hybrid jobs.
         remote = None
         workplace_type = (raw_job.get("workplaceType") or "").lower()
-        if raw_job.get("isRemote") or "remote" in workplace_type:
-            remote = "remote"
-        elif "hybrid" in workplace_type:
+        if "hybrid" in workplace_type:
             remote = "hybrid"
-        elif location and "remote" in location.lower():
+        elif "remote" in workplace_type or raw_job.get("isRemote"):
             remote = "remote"
         elif location and "hybrid" in location.lower():
             remote = "hybrid"
+        elif location and "remote" in location.lower():
+            remote = "remote"
 
         department = raw_job.get("department") or raw_job.get("team")
 
