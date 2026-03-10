@@ -12,7 +12,7 @@ pandas==2.0.1
 # API & Web Scraping
 requests==2.31.0
 beautifulsoup4==4.12.2
-playwright==1.35.0
+playwright==1.58.0
 selenium==4.9.1
 
 # NLP & Text Processing
