@@ -63,5 +63,5 @@ jobs:
       - name: Audit Python dependencies
         run: |
           pip install pip-audit -q
-          pip install -r requirements.txt -q
+          pip install -r web/api/requirements.txt -q
           pip-audit --desc on
