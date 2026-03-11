@@ -53,15 +53,10 @@ class TestBaseScraper:
         with pytest.raises(TypeError):
             BaseScraper(session)
 
-    def test_job_exists_returns_none_for_new_job(self, github_scraper):
-        """Test that _job_exists returns None for non-existent job."""
-        parsed_data = {
-            "source_job_id": "job-123",
-            "title": "Test Job",
-            "company": "Test Company",
-        }
-        result = github_scraper._job_exists(parsed_data)
-        assert result is None
+    def test_load_existing_ids_empty_for_new_source(self, github_scraper):
+        """Test that _load_existing_ids returns empty set when no jobs exist."""
+        result = github_scraper._load_existing_ids()
+        assert result == set()
 
     def test_create_job_object(self, github_scraper):
         """Test creating a Job object from parsed data."""

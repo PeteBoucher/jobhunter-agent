@@ -50,8 +50,6 @@ def test_metrics_recorded(tmp_path):
     metrics = session.execute(
         text("SELECT action, value FROM scraper_metrics WHERE source = 'dummy'")
     ).fetchall()
-    assert any(row[0] == "fetch_attempt" for row in metrics)
-    assert any(row[0] == "jobs_parsed" for row in metrics)
     assert any(row[0] == "jobs_added" for row in metrics)
 
     session.close()

@@ -97,27 +97,13 @@ class BaseScraper(ABC):
             last_exc: Optional[BaseException] = None
             raw_jobs: Optional[List[Any]] = None
             for attempt in range(max_retries):
-                # record attempt
-                try:
-                    self._record_metric("fetch_attempt", 1, f"attempt={attempt}")
-                except Exception:
-                    logger.debug("Failed to record fetch_attempt metric")
                 try:
                     raw_jobs = self._fetch_jobs(**kwargs)
                     self.last_raw_count = len(raw_jobs)
-                    # success
-                    try:
-                        self._record_metric("fetch_success", 1, f"attempt={attempt}")
-                    except Exception:
-                        logger.debug("Failed to record fetch_success metric")
                     break
                 except Exception as e:
                     last_exc = e
                     if attempt < max_retries - 1:
-                        try:
-                            self._record_metric("retry", 1, f"attempt={attempt}")
-                        except Exception:
-                            logger.debug("Failed to record retry metric")
                         sleep_time = backoff * (2**attempt)
                         time.sleep(sleep_time)
                         continue
@@ -129,52 +115,41 @@ class BaseScraper(ABC):
                     f"Failed to fetch jobs from {self.source_name}: {last_exc}"
                 )
 
+            # Load all existing source_job_ids for this source in one query
+            existing_ids: set = self._load_existing_ids()
+
             jobs: List[Job] = []
+            parse_errors = 0
 
             for raw_job in raw_jobs:
                 try:
-                    # Parse job data
                     parsed_data = self._parse_job(raw_job)
-
-                    # count parsed
-                    try:
-                        self._record_metric(
-                            "jobs_parsed", 1, parsed_data.get("source_job_id")
-                        )
-                    except Exception:
-                        logger.debug("Failed to record jobs_parsed metric")
-
-                    # Check if job already exists
-                    existing_job = self._job_exists(parsed_data)
-                    if existing_job:
+                    if parsed_data.get("source_job_id") in existing_ids:
                         continue
-
-                    # Create Job object
-                    job = self._create_job_object(parsed_data)
-                    jobs.append(job)
-
+                    jobs.append(self._create_job_object(parsed_data))
                 except Exception as e:
                     logger.exception(f"Error parsing job from {self.source_name}: {e}")
-                    try:
-                        self._record_metric("parse_error", 1, str(e))
-                    except Exception:
-                        logger.debug("Failed to record parse_error metric")
+                    parse_errors += 1
                     continue
-            # Save all jobs to database
+
+            # Save all new jobs in a single commit
             if jobs:
                 self.session.add_all(jobs)
                 self.session.commit()
-                try:
-                    self._record_metric("jobs_added", len(jobs), None)
-                except Exception:
-                    logger.debug("Failed to record jobs_added metric")
+
+            # Record a single summary metric for the run
+            try:
+                self._record_metric(
+                    "jobs_added",
+                    len(jobs),
+                    f"raw={len(raw_jobs)} errors={parse_errors}",
+                )
+            except Exception:
+                logger.debug("Failed to record jobs_added metric")
+
             return jobs
 
         except Exception as e:
-            try:
-                self._record_metric("fetch_fail", 1, str(e))
-            except Exception:
-                logger.debug("Failed to record fetch_fail metric")
             self.session.rollback()
             raise RuntimeError(f"Error scraping {self.source_name}: {e}") from e
 
@@ -203,23 +178,14 @@ class BaseScraper(ABC):
             except Exception:
                 pass
 
-    def _job_exists(self, parsed_data: dict) -> Optional[Job]:
-        """Check if job already exists in database.
-
-        Args:
-            parsed_data: Parsed job data
-
-        Returns:
-            Existing Job object or None if doesn't exist
-        """
-        return (
-            self.session.query(Job)
-            .filter(
-                Job.source == self.source_name,
-                Job.source_job_id == parsed_data.get("source_job_id"),
-            )
-            .first()
+    def _load_existing_ids(self) -> set:
+        """Load all known source_job_ids for this source in one query."""
+        rows = (
+            self.session.query(Job.source_job_id)
+            .filter(Job.source == self.source_name)
+            .all()
         )
+        return {row[0] for row in rows}
 
     def _create_job_object(self, parsed_data: dict) -> Job:
         """Create a Job object from parsed data.

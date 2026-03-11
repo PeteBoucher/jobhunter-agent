@@ -297,19 +297,17 @@ class LeverScraper(BaseScraper):
                     continue
                 filtered.append(job)
 
-        try:
-            self._record_metric("fetch_attempt", 1, f"keywords={keywords}")
-        except Exception:
-            pass
+        existing_ids = self._load_existing_ids()
 
         jobs_added = 0
         for raw_job in filtered:
             try:
                 parsed = self._parse_job(raw_job)
-                if self._job_exists(parsed):
+                if parsed.get("source_job_id") in existing_ids:
                     continue
                 job = self._create_job_object(parsed)
                 self.session.add(job)
+                existing_ids.add(parsed.get("source_job_id"))
                 jobs_added += 1
             except Exception as e:
                 logger.warning(f"Error parsing Lever job: {e}")
