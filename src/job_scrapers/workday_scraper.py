@@ -13,9 +13,16 @@ To add a new company: verify the endpoint manually, then add a WorkdayPortal
 entry to WORKDAY_PORTALS below.
 
 Confirmed working portals (as of 2025-03):
-  Maersk   — maersk.wd3  / Maersk_Careers  (~500 jobs)
-  Airbus   — ag.wd3      / Airbus           (~2000 jobs)
-  Shell    — shell.wd3   / shellcareers     (~180 jobs)
+  Maersk        — maersk.wd3          / Maersk_Careers                   (~500 jobs)
+  Airbus        — ag.wd3              / Airbus                           (~2000 jobs)
+  Shell         — shell.wd3           / shellcareers                      (~180 jobs)
+  AstraZeneca   — astrazeneca.wd3     / Careers                          (~1100 jobs)
+  BP            — bpinternational.wd3 / bpCareers                         (~400 jobs)
+  Unilever      — unilever.wd3        / Unilever_Experienced_Professionals (~420 jobs)
+  GSK           — gsk.wd5             / GSKCareers                       (~1600 jobs)
+  Netflix       — netflix.wd1         / Netflix                           (~790 jobs)
+  Adobe         — adobe.wd5           / external_experienced             (~1100 jobs)
+  Accenture     — accenture.wd103     / AccentureCareers                  (~2000 jobs)
 """
 
 import logging
@@ -33,11 +40,13 @@ from src.job_scrapers.base_scraper import BaseScraper
 logger = logging.getLogger("jobhunter.scrapers.workday")
 
 # Throttle between per-job description fetches to be polite
-DESCRIPTION_DELAY = 0.15  # seconds
+DESCRIPTION_DELAY = 0.1  # seconds
 
-# Workday returns pages of 20; cap total per portal to avoid Lambda timeouts
+# Workday returns pages of 20; cap total per portal to avoid Lambda timeouts.
+# Lower than original 300 because we now have 10 portals — first-run description
+# fetches are capped at MAX_JOBS_PER_PORTAL × DESCRIPTION_DELAY seconds each.
 PAGE_SIZE = 20
-MAX_JOBS_PER_PORTAL = 300
+MAX_JOBS_PER_PORTAL = 100
 
 
 @dataclass
@@ -86,6 +95,59 @@ WORKDAY_PORTALS: List[WorkdayPortal] = [
         portal="shellcareers",
         company="Shell",
         industry="Energy",
+        size="Enterprise (100k+)",
+    ),
+    WorkdayPortal(
+        slug="astrazeneca",
+        portal="Careers",
+        company="AstraZeneca",
+        industry="Pharmaceutical",
+        size="Enterprise (100k+)",
+    ),
+    WorkdayPortal(
+        slug="bpinternational",
+        portal="bpCareers",
+        company="BP",
+        industry="Energy",
+        size="Enterprise (100k+)",
+    ),
+    WorkdayPortal(
+        slug="unilever",
+        portal="Unilever_Experienced_Professionals",
+        company="Unilever",
+        industry="Consumer Goods",
+        size="Enterprise (100k+)",
+    ),
+    WorkdayPortal(
+        slug="gsk",
+        portal="GSKCareers",
+        company="GSK",
+        wd="wd5",
+        industry="Pharmaceutical",
+        size="Enterprise (100k+)",
+    ),
+    WorkdayPortal(
+        slug="netflix",
+        portal="Netflix",
+        company="Netflix",
+        wd="wd1",
+        industry="Technology / Media",
+        size="Large (10k+)",
+    ),
+    WorkdayPortal(
+        slug="adobe",
+        portal="external_experienced",
+        company="Adobe",
+        wd="wd5",
+        industry="Technology",
+        size="Large (10k+)",
+    ),
+    WorkdayPortal(
+        slug="accenture",
+        portal="AccentureCareers",
+        company="Accenture",
+        wd="wd103",
+        industry="Consulting / Technology",
         size="Enterprise (100k+)",
     ),
 ]
