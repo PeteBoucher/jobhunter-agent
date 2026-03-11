@@ -14,6 +14,7 @@ from src.job_scrapers.github_scraper import GitHubJobsScraper
 from src.job_scrapers.greenhouse_scraper import GreenhouseScraper
 from src.job_scrapers.lever_scraper import LeverScraper
 from src.job_scrapers.linkedin_scraper import LinkedInScraper
+from src.job_scrapers.maersk_scraper import MaerskScraper
 from src.job_scrapers.microsoft_scraper import MicrosoftScraper
 from src.job_scrapers.reed_scraper import ReedScraper
 from src.job_scrapers.revolut_scraper import RevolutScraper
@@ -29,6 +30,7 @@ SCRAPER_MAP: Dict[str, Type[BaseScraper]] = {
     "microsoft": MicrosoftScraper,
     "github": GitHubJobsScraper,
     "coinbase": CoinbaseScraper,
+    "maersk": MaerskScraper,
     "revolut": RevolutScraper,
     "uber": UberScraper,
     "adzuna": AdzunaScraper,
@@ -45,4 +47,5 @@ DEFAULT_SOURCES: List[str] = [
     "themuse",
     "reed",
     "linkedin",
+    "maersk",
 ]
