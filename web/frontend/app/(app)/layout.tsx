@@ -43,9 +43,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen">
-      {/* Sidebar */}
-      <aside className="w-56 shrink-0 border-r border-gray-200 bg-white flex flex-col">
+    <div className="flex h-screen overflow-hidden">
+      {/* Sidebar — desktop only */}
+      <aside className="hidden md:flex w-56 shrink-0 border-r border-gray-200 bg-white flex-col">
         <div className="px-6 py-5 border-b border-gray-100">
           <span className="text-lg font-bold text-blue-600">Jobhunter</span>
         </div>
@@ -93,7 +93,45 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto">{children}</main>
+      <div className="flex flex-1 flex-col h-full overflow-hidden">
+        {/* Mobile top bar */}
+        <header className="md:hidden flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 shrink-0">
+          <span className="text-lg font-bold text-blue-600">Jobhunter</span>
+          {session.user?.image && (
+            <img
+              src={session.user.image}
+              alt="avatar"
+              className="h-8 w-8 rounded-full"
+            />
+          )}
+        </header>
+
+        <main className="flex-1 overflow-auto">{children}</main>
+
+        {/* Bottom nav — mobile only */}
+        <nav className="md:hidden shrink-0 flex border-t border-gray-200 bg-white">
+          {navLinks.map((link) => {
+            const active = pathname.startsWith(link.href);
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={`flex flex-1 flex-col items-center py-2 text-xs font-medium transition-colors ${
+                  active ? "text-blue-600" : "text-gray-500"
+                }`}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
+          <button
+            onClick={() => signOut({ callbackUrl: "/" })}
+            className="flex flex-1 flex-col items-center py-2 text-xs font-medium text-gray-500"
+          >
+            Sign out
+          </button>
+        </nav>
+      </div>
     </div>
   );
 }

@@ -61,7 +61,7 @@ export default function ApplicationsPage() {
   const offers = byStatus("offer").length;
 
   return (
-    <div className="px-4 py-8">
+    <div className="px-4 py-8 pb-24 md:pb-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Applications</h1>
         <div className="flex gap-4 text-sm text-gray-500">

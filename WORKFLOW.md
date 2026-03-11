@@ -137,8 +137,8 @@ Web API tests use FastAPI `TestClient` + in-memory SQLite with `StaticPool`. The
 ```bash
 export DOCKER_HOST=unix:///Users/pete/.docker/run/docker.sock  # Required on Mac
 sam build
-sam deploy --config-env default   # Dev (12h schedule)
-sam deploy --config-env prod      # Prod (6h schedule)
+sam deploy --config-env default --no-confirm-changeset  # Dev (12h schedule)
+sam deploy --config-env prod --no-confirm-changeset     # Prod (6h schedule)
 ```
 
 Lambda writes directly to Neon PostgreSQL via `DATABASE_URL` from SSM (`/jobhunter/database-url`).
