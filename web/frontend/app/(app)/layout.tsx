@@ -4,6 +4,7 @@ import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
+import posthog from "posthog-js";
 
 const navLinks = [
   { href: "/feed", label: "Jobs" },
@@ -17,9 +18,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
-    if (status === "unauthenticated") router.push("/");
-    if (status === "authenticated" && !(session as any)?.isApproved) {
-      router.push("/pending");
+    if (status === "unauthenticated") {
+      posthog.reset();
+      router.push("/");
+    }
+    if (status === "authenticated") {
+      if (!(session as any)?.isApproved) {
+        router.push("/pending");
+      } else if (session.user?.email) {
+        posthog.identify(session.user.email, {
+          name: session.user.name ?? undefined,
+          email: session.user.email,
+        });
+      }
     }
   }, [status, session, router]);
 

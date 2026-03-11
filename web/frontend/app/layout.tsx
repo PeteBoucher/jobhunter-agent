@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { SessionProvider } from "next-auth/react";
+import PostHogProvider from "./providers/PostHogProvider";
 
 export const metadata: Metadata = {
   title: "Jobhunter",
@@ -15,7 +16,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-gray-50 text-gray-900 antialiased">
-        <SessionProvider>{children}</SessionProvider>
+        <PostHogProvider>
+          <SessionProvider>{children}</SessionProvider>
+        </PostHogProvider>
       </body>
     </html>
   );
