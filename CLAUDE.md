@@ -52,7 +52,7 @@ Problem → Plan → Approve → Execute → Test → Document → Commit → De
 8. **Deploy** — Any code change that affects Lambda behaviour must be built and deployed to prod:
    ```bash
    DOCKER_HOST=unix:///Users/pete/.docker/run/docker.sock sam build
-   sam deploy --config-env prod
+   sam deploy --config-env prod --no-confirm-changeset
    ```
    Config-only changes (SSM values, samconfig.toml) do not require a rebuild.
 
@@ -108,10 +108,10 @@ DOCKER_HOST=unix:///Users/pete/.docker/run/docker.sock sam build
 
 ```bash
 # Dev (schedule disabled)
-sam deploy --config-env default
+sam deploy --config-env default --no-confirm-changeset
 
 # Prod (schedule enabled, runs every 6h)
-sam deploy --config-env prod
+sam deploy --config-env prod --no-confirm-changeset
 ```
 
 ### Stacks
