@@ -165,7 +165,7 @@ black, isort, flake8, and mypy all run on commit. If black reformats a file, re-
 
 - **Scrapers**: `BaseScraper` ABC in `src/job_scrapers/`. Registry in `src/job_scrapers/registry.py`. Default sources: ashby, greenhouse, lever, adzuna, themuse, reed, linkedin.
 - **Lambda flow**: scrape new jobs → compute matches → SNS notification if matches above threshold. Writes directly to Neon (no S3 SQLite).
-- **Lambda timeout**: 300s. Matching a large backlog of unmatched jobs will time out. Run matching locally against Neon `DATABASE_URL` if needed.
+- **Lambda timeout**: 600s. Matching a large backlog of unmatched jobs will time out. Run matching locally against Neon `DATABASE_URL` if needed.
 - **Lambda memory**: 512MB.
 - **Multi-user**: multiple users supported. Each user has their own `JobMatch` rows. Prod users managed via `is_approved` flag in the `user` table.
 - **Mobile layout**: `(app)/layout.tsx` uses `h-screen overflow-hidden` + flex column. Sidebar is `hidden md:flex`. Mobile gets a top bar (logo + avatar) and a bottom nav bar (`shrink-0`, not `fixed`). The `<main>` is `flex-1 overflow-auto` — content scrolls inside, nav stays pinned. Do not use `position: fixed` for the bottom nav — `overflow-x-auto` on child pages breaks fixed positioning.

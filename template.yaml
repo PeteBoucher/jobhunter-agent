@@ -29,7 +29,7 @@ Parameters:
 
 Globals:
   Function:
-    Timeout: 300
+    Timeout: 600
     MemorySize: 512
 
 Conditions:
