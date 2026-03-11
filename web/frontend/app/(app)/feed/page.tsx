@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { getJobs } from "@/lib/api";
 import { JobCard } from "@/components/JobCard";
@@ -9,12 +9,25 @@ import { JobCard } from "@/components/JobCard";
 export default function FeedPage() {
   const { data: session } = useSession();
   const token = (session as any)?.apiToken as string | undefined;
+  const searchParams = useSearchParams();
+  const router = useRouter();
 
-  const [keywords, setKeywords] = useState("");
-  const [remote, setRemote] = useState("");
-  const [minScore, setMinScore] = useState(0);
-  const [sort, setSort] = useState<"score" | "date">("score");
-  const [hideRejected, setHideRejected] = useState(true);
+  // Read filter state from URL; fall back to sensible defaults
+  const keywords = searchParams.get("keywords") ?? "";
+  const remote = searchParams.get("remote") ?? "";
+  const minScore = Number(searchParams.get("minScore") ?? 0);
+  const sort = (searchParams.get("sort") ?? "score") as "score" | "date";
+  const hideRejected = searchParams.get("hideRejected") !== "false";
+
+  function setParam(key: string, value: string, defaultValue: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value === defaultValue) {
+      params.delete(key);
+    } else {
+      params.set(key, value);
+    }
+    router.replace(`/feed?${params.toString()}`);
+  }
 
   const excludeStatuses = hideRejected ? ["rejected"] : [];
 
@@ -28,7 +41,8 @@ export default function FeedPage() {
         sort,
         page_size: 50,
         exclude_statuses: excludeStatuses.length ? excludeStatuses : undefined,
-      })
+      }),
+    { revalidateOnFocus: false }
   );
 
   return (
@@ -41,12 +55,12 @@ export default function FeedPage() {
           type="text"
           placeholder="Search keywords..."
           value={keywords}
-          onChange={(e) => setKeywords(e.target.value)}
+          onChange={(e) => setParam("keywords", e.target.value, "")}
           className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
         />
         <select
           value={remote}
-          onChange={(e) => setRemote(e.target.value)}
+          onChange={(e) => setParam("remote", e.target.value, "")}
           className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
         >
           <option value="">Any location</option>
@@ -62,20 +76,20 @@ export default function FeedPage() {
             max={90}
             step={10}
             value={minScore}
-            onChange={(e) => setMinScore(Number(e.target.value))}
+            onChange={(e) => setParam("minScore", e.target.value, "0")}
             className="w-24"
           />
           <span className="w-8 text-gray-700">{minScore > 0 ? `${minScore}%` : "—"}</span>
         </div>
         <div className="flex rounded-lg border border-gray-300 overflow-hidden text-sm">
           <button
-            onClick={() => setSort("score")}
+            onClick={() => setParam("sort", "score", "score")}
             className={`px-3 py-2 ${sort === "score" ? "bg-blue-600 text-white" : "bg-white text-gray-600"}`}
           >
             Best match
           </button>
           <button
-            onClick={() => setSort("date")}
+            onClick={() => setParam("sort", "date", "score")}
             className={`px-3 py-2 ${sort === "date" ? "bg-blue-600 text-white" : "bg-white text-gray-600"}`}
           >
             Newest
@@ -85,7 +99,9 @@ export default function FeedPage() {
           <input
             type="checkbox"
             checked={hideRejected}
-            onChange={(e) => setHideRejected(e.target.checked)}
+            onChange={(e) =>
+              setParam("hideRejected", String(e.target.checked), "true")
+            }
             className="rounded"
           />
           Hide rejected
