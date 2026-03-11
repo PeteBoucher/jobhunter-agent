@@ -345,6 +345,58 @@ def list_users_cmd() -> None:
         session.close()
 
 
+@profile.command("approve")
+def approve_users() -> None:
+    """Approve all pending beta users and print welcome email list.
+
+    Shows users awaiting approval, approves them all, then prints a
+    formatted name/email list ready to paste into a bulk email tool.
+
+    Example:
+        job-agent profile approve
+    """
+    session = get_session()
+    try:
+        pending = (
+            session.query(User)
+            .filter(User.is_approved.is_(False))
+            .order_by(User.created_at)
+            .all()
+        )
+
+        if not pending:
+            console.print("[green]✓[/green] No users awaiting approval.")
+            return
+
+        table = Table(title=f"{len(pending)} users awaiting approval")
+        table.add_column("ID", style="cyan")
+        table.add_column("Name", style="magenta")
+        table.add_column("Email")
+        table.add_column("Signed up", style="dim")
+
+        for u in pending:
+            signed_up = u.created_at.strftime("%Y-%m-%d %H:%M") if u.created_at else "—"
+            table.add_row(str(u.id), u.name or "—", u.email, signed_up)
+
+        console.print(table)
+
+        for u in pending:
+            u.is_approved = True
+        session.commit()
+
+        console.print(f"\n[green]✓[/green] Approved {len(pending)} users.\n")
+        console.print("[bold]Welcome email list:[/bold]")
+        for u in pending:
+            console.print(f"- {u.name} <{u.email}>")
+
+    except Exception as e:
+        console.print(f"[red]✗[/red] Error approving users: {e}")
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
 @profile.command()
 @click.option(
     "--user-id",
