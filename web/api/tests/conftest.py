@@ -14,7 +14,7 @@ import sys
 # load_dotenv() (called in main.py) respects existing env vars by default,
 # so these will not be overwritten by the real .env file.
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
-os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("JWT_SECRET", "test-secret-key-at-least-32-bytes!!")
 os.environ.setdefault("GOOGLE_CLIENT_ID", "test-client-id")
 
 # Add web/api/ to sys.path for absolute imports (auth, dependencies, routers, schemas)
