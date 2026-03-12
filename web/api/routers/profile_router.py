@@ -48,21 +48,24 @@ def update_profile(
 
 def _recompute_matches(user_id: int, db_url: str) -> None:
     """Background task: recompute match scores for all jobs for a user."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
+    from src.database import create_engine_instance
     from src.job_matcher import compute_match_for_user
 
-    engine = create_engine(db_url)
+    engine = create_engine_instance()
     SessionLocal = sessionmaker(bind=engine)
     session = SessionLocal()
+    BATCH = 200
     try:
         user = session.query(User).filter(User.id == user_id).first()
         if not user:
             return
         jobs = session.query(Job).all()
-        for job in jobs:
+        for i, job in enumerate(jobs, 1):
             compute_match_for_user(session, job, user)
+            if i % BATCH == 0:
+                session.commit()
         session.commit()
         logger.info("cv_rematch user_id=%d jobs_matched=%d", user_id, len(jobs))
     except Exception as exc:
