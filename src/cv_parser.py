@@ -39,10 +39,31 @@ class CVParser:
         return info
 
     def _extract_name(self) -> Optional[str]:
-        """Extract full name (usually in first heading)."""
+        """Extract full name (Markdown heading or first non-empty line for PDFs)."""
         for line in self.lines[:10]:
             if line.startswith("# "):
                 return line.replace("# ", "").strip()
+        # Fallback for plain-text PDF extraction (no Markdown headings present):
+        # first non-empty line that looks like a name (2-4 alpha words).
+        has_markdown = any(line.lstrip().startswith("#") for line in self.lines[:20])
+        if not has_markdown:
+            _SKIP = {
+                "classification",
+                "confidential",
+                "curriculum",
+                "vitae",
+                "resume",
+                "cv",
+            }
+            for line in self.lines[:5]:
+                stripped = line.strip()
+                words = stripped.split()
+                if (
+                    2 <= len(words) <= 4
+                    and all(w.replace("-", "").isalpha() for w in words)
+                    and stripped.lower() not in _SKIP
+                ):
+                    return stripped
         return None
 
     def _extract_email(self) -> Optional[str]:
@@ -59,18 +80,25 @@ class CVParser:
 
     def _extract_location(self) -> Optional[str]:
         """Extract location from contact section."""
-        # Look for "- **Location**:" pattern
+        # Look for "- **Location**:" pattern (Markdown)
         pattern = r"\*\*Location\*\*:\s*([^\n]+)"
         match = re.search(pattern, self.cv_text)
         if match:
             return match.group(1).strip()
 
-        # Fallback: look for "location:" in first 500 chars
+        # Look for "location:" label in first 20 lines
         for line in self.lines[:20]:
             if "location" in line.lower():
                 match = re.search(r":\s*(.+?)$", line)
                 if match:
                     return match.group(1).strip()
+
+        # Fallback for plain-text PDFs: look for "City, Country" pattern in
+        # first 10 lines (short line with a comma between two capitalised words)
+        for line in self.lines[:10]:
+            stripped = line.strip()
+            if re.match(r"^[A-ZÄÖÜ][a-zA-ZäöüÄÖÜ\-]+,\s+[A-Z][a-zA-Z]+$", stripped):
+                return stripped
         return None
 
     def _extract_title(self) -> Optional[str]:

@@ -107,14 +107,13 @@ def _extract_cv_text(content: bytes, filename: str) -> str:
         import io
         import re
 
-        from pypdf import PdfReader
+        import pdfplumber
 
-        reader = PdfReader(io.BytesIO(content))
-        pages = [page.extract_text() or "" for page in reader.pages]
+        with pdfplumber.open(io.BytesIO(content)) as pdf:
+            pages = [page.extract_text() or "" for page in pdf.pages]
         text = "\n".join(pages).strip()
         if not text:
             raise ValueError("No text could be extracted from the PDF")
-        # pypdf inserts extra spaces between characters; collapse to single spaces
         text = "\n".join(re.sub(r"  +", " ", line) for line in text.split("\n"))
         return text
 
