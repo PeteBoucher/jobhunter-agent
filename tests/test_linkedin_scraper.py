@@ -75,6 +75,12 @@ SAMPLE_LINKEDIN_HTML = """
 class TestLinkedInScraper:
     """Tests for LinkedIn scraper."""
 
+    @pytest.fixture(autouse=True)
+    def no_sleep(self, monkeypatch):
+        monkeypatch.setattr(
+            "src.job_scrapers.linkedin_scraper.time.sleep", lambda _: None
+        )
+
     def test_source_name(self, scraper):
         assert scraper._get_source_name() == "linkedin"
 

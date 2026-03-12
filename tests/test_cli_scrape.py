@@ -1,11 +1,17 @@
 from click.testing import CliRunner
 
 
-def test_scrape_cli_monkeypatched(monkeypatch):
+def test_scrape_cli_monkeypatched(monkeypatch, tmp_path):
     """Ensure `job-agent scrape` runs and handles scrapers without network calls.
 
     We monkeypatch the SCRAPER_MAP in the registry to use dummy scrapers.
     """
+    # Use an in-memory SQLite DB so the test never dials out to Neon
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/test.db")
+
+    from src.database import init_db
+
+    init_db()
 
     # Dummy scraper
     class DummyScraper:
