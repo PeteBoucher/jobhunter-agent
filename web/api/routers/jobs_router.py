@@ -43,6 +43,15 @@ def list_jobs(
     current_user: User = Depends(get_current_user),
 ):
     """Return paginated jobs with this user's match scores."""
+    # For hybrid/onsite, fall back to the user's profile location when no
+    # explicit location filter was provided — remote jobs don't need this.
+    if remote in ("hybrid", "onsite") and not location:
+        location = current_user.location or (
+            current_user.preferences.preferred_locations[0]
+            if current_user.preferences and current_user.preferences.preferred_locations
+            else None
+        )
+
     searcher = JobSearcher(db)
     # page_size + offset emulated via limit; JobSearcher doesn't have native pagination
     jobs = searcher.search(
