@@ -24,7 +24,8 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install -r web/api/requirements.txt
-          pip install black==23.3.0 isort==5.12.0 flake8==6.0.0 mypy==1.2.0 types-requests bandit pytest
+          pip install black==23.3.0 isort==5.12.0 flake8==6.0.0 mypy==1.2.0 types-requests bandit pytest pytest-mock
+          pip install boto3 prometheus_client apscheduler
 
       - name: black
         run: black --check .
