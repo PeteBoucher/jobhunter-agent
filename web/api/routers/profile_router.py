@@ -164,10 +164,28 @@ async def upload_cv(
         raise HTTPException(status_code=400, detail=str(exc))
 
     try:
+        from cv_parser_llm import parse_cv_with_llm
+
         from src.cv_parser import CVParser
         from src.user_profile import UserProfile
 
         parsed = CVParser(cv_text).parse()
+
+        # Fall back to LLM when the regex parser yields too little data
+        # (common for multi-column PDFs and non-Markdown CVs).
+        _skills = parsed.get("skills", {})
+        _total_skills = sum(len(v) for v in _skills.values() if isinstance(v, list))
+        _has_name = bool(parsed.get("personal_info", {}).get("name"))
+        if not _has_name or _total_skills < 3:
+            logger.info(
+                "cv_parse_poor_result user=%s skills=%d name=%s; trying LLM",
+                current_user.email,
+                _total_skills,
+                _has_name,
+            )
+            llm_result = parse_cv_with_llm(cv_text)
+            if llm_result:
+                parsed = llm_result
 
         current_user.cv_text = cv_text
         current_user.cv_parsed_json = parsed
