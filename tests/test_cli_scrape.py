@@ -24,14 +24,14 @@ def test_scrape_cli_monkeypatched(monkeypatch, tmp_path):
         def scrape_by_keywords(self, keywords):
             return 0
 
-    # Patch the registry used by the CLI
-    dummy_map = {"greenhouse": DummyScraper, "lever": DummyScraper}
-    monkeypatch.setattr("src.job_scrapers.registry.SCRAPER_MAP", dummy_map)
-    monkeypatch.setattr(
-        "src.job_scrapers.registry.DEFAULT_SOURCES", ["greenhouse", "lever"]
-    )
-
+    # Patch the names as bound in src.cli (not the registry originals), because
+    # src.cli may already be cached and holds its own references via
+    # `from src.job_scrapers.registry import SCRAPER_MAP, DEFAULT_SOURCES`.
     from src.cli import cli
+
+    dummy_map = {"greenhouse": DummyScraper, "lever": DummyScraper}
+    monkeypatch.setattr("src.cli.SCRAPER_MAP", dummy_map)
+    monkeypatch.setattr("src.cli.DEFAULT_SOURCES", ["greenhouse", "lever"])
 
     runner = CliRunner()
     result = runner.invoke(cli, ["scrape"])
