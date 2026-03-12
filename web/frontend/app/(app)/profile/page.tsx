@@ -4,7 +4,7 @@ import { signOut, useSession } from "next-auth/react";
 import Link from "next/link";
 import { useState } from "react";
 import useSWR from "swr";
-import { deleteAccount, getProfile, updateProfile } from "@/lib/api";
+import { deleteAccount, deleteSkill, getProfile, updateProfile } from "@/lib/api";
 
 export default function ProfilePage() {
   const { data: session } = useSession();
@@ -22,6 +22,18 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deletingSkillId, setDeletingSkillId] = useState<number | null>(null);
+
+  async function handleDeleteSkill(skillId: number) {
+    if (!token) return;
+    setDeletingSkillId(skillId);
+    try {
+      await deleteSkill(token, skillId);
+      await mutate();
+    } finally {
+      setDeletingSkillId(null);
+    }
+  }
 
   async function handleDeleteAccount() {
     if (!token) return;
@@ -131,17 +143,22 @@ export default function ProfilePage() {
         <div className="mt-6 rounded-xl border border-gray-200 bg-white p-6">
           <h2 className="mb-3 text-sm font-semibold text-gray-700">Skills ({user.skills.length})</h2>
           <div className="flex flex-wrap gap-2">
-            {user.skills.slice(0, 30).map((s) => (
+            {user.skills.map((s) => (
               <span
                 key={s.id}
-                className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs text-blue-700"
+                className="group flex items-center gap-1 rounded-full bg-blue-50 pl-2.5 pr-1.5 py-0.5 text-xs text-blue-700"
               >
                 {s.skill_name}
+                <button
+                  onClick={() => handleDeleteSkill(s.id)}
+                  disabled={deletingSkillId === s.id}
+                  className="ml-0.5 rounded-full p-0.5 text-blue-400 hover:bg-blue-200 hover:text-blue-700 disabled:opacity-40"
+                  aria-label={`Remove ${s.skill_name}`}
+                >
+                  {deletingSkillId === s.id ? "…" : "×"}
+                </button>
               </span>
             ))}
-            {user.skills.length > 30 && (
-              <span className="text-xs text-gray-400">+{user.skills.length - 30} more</span>
-            )}
           </div>
         </div>
       )}

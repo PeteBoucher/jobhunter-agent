@@ -1,4 +1,4 @@
-"""Tests for profile router: GET /profile, PUT /profile, DELETE /profile."""
+"""Tests for profile router: GET/PUT/DELETE /profile and DELETE /profile/skills/{id}."""
 from src.models import Application, Job, JobMatch, User, UserPreferences
 
 
@@ -118,7 +118,9 @@ class TestDeleteAccount:
         )
         assert remaining == 0
 
-    def test_does_not_delete_other_users(self, client, db_session, test_user):
+    def test_does_not_delete_other_users(
+        self, client, db_session, test_user
+    ):  # noqa: E501
         other = User(
             google_id="other-999", email="other@example.com", name="Other User"
         )
@@ -130,3 +132,34 @@ class TestDeleteAccount:
 
         still_there = db_session.query(User).filter(User.id == other_id).first()
         assert still_there is not None
+
+
+class TestDeleteSkill:
+    def _add_skill(self, db_session, user, name="Python"):
+        from src.models import Skill
+
+        skill = Skill(skill_name=name, proficiency=4, category="technical", user=user)
+        db_session.add(skill)
+        db_session.commit()
+        db_session.refresh(skill)
+        return skill
+
+    def test_removes_skill_from_db(self, client, db_session, test_user):
+        skill = self._add_skill(db_session, test_user)
+        resp = client.delete(f"/profile/skills/{skill.id}")
+        assert resp.status_code == 204
+        from src.models import Skill
+
+        assert db_session.query(Skill).filter_by(id=skill.id).first() is None
+
+    def test_returns_404_for_unknown_skill(self, client):
+        resp = client.delete("/profile/skills/99999")
+        assert resp.status_code == 404
+
+    def test_cannot_delete_another_users_skill(self, client, db_session):
+        other = User(google_id="other-888", email="other2@example.com", name="Other")
+        db_session.add(other)
+        db_session.commit()
+        skill = self._add_skill(db_session, other, name="Go")
+        resp = client.delete(f"/profile/skills/{skill.id}")
+        assert resp.status_code == 404  # not leaked as 403

@@ -94,6 +94,26 @@ def delete_account(
     logger.info("account_deleted user_id=%d", user_id)
 
 
+@router.delete("/skills/{skill_id}", status_code=204)
+def delete_skill(
+    skill_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Remove a single skill from the current user's profile."""
+    from src.models import Skill
+
+    skill = (
+        db.query(Skill)
+        .filter(Skill.id == skill_id, Skill.user_id == current_user.id)
+        .first()
+    )
+    if not skill:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    db.delete(skill)
+    db.commit()
+
+
 _MAX_CV_BYTES = 5 * 1024 * 1024  # 5 MB
 
 _ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md"}

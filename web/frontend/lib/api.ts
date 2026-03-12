@@ -145,6 +145,12 @@ export function deleteApplication(token: string, id: number): Promise<void> {
   return request<void>(`/applications/${id}`, token, { method: "DELETE" });
 }
 
+// ── Skills ────────────────────────────────────────────────────────────────────
+
+export function deleteSkill(token: string, skillId: number): Promise<void> {
+  return request<void>(`/profile/skills/${skillId}`, token, { method: "DELETE" });
+}
+
 // ── Account ───────────────────────────────────────────────────────────────────
 
 export async function deleteAccount(token: string): Promise<void> {
