@@ -171,17 +171,25 @@ async def upload_cv(
 
         parsed = CVParser(cv_text).parse()
 
-        # Fall back to LLM when the regex parser yields too little data
-        # (common for multi-column PDFs and non-Markdown CVs).
+        # Use LLM for PDFs (regex is unreliable on multi-column/binary layouts)
+        # and as a fallback for other formats when the regex parse yields too
+        # little data (no name, title, location, or fewer than 3 skills).
+        _info = parsed.get("personal_info", {})
         _skills = parsed.get("skills", {})
         _total_skills = sum(len(v) for v in _skills.values() if isinstance(v, list))
-        _has_name = bool(parsed.get("personal_info", {}).get("name"))
-        if not _has_name or _total_skills < 3:
+        _poor_parse = (
+            not _info.get("name")
+            or not _info.get("title")
+            or not _info.get("location")
+            or _total_skills < 3
+        )
+        if ext == ".pdf" or _poor_parse:
             logger.info(
-                "cv_parse_poor_result user=%s skills=%d name=%s; trying LLM",
+                "cv_parse_using_llm user=%s ext=%s skills=%d poor=%s",
                 current_user.email,
+                ext,
                 _total_skills,
-                _has_name,
+                _poor_parse,
             )
             llm_result = parse_cv_with_llm(cv_text)
             if llm_result:
