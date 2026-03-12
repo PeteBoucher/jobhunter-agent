@@ -1,9 +1,11 @@
 "use client";
 
 import { useSession } from "next-auth/react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useState } from "react";
 import useSWR from "swr";
-import { getJobs } from "@/lib/api";
+import { getJobs, getProfile } from "@/lib/api";
 import { JobCard } from "@/components/JobCard";
 
 export default function FeedPage() {
@@ -11,6 +13,14 @@ export default function FeedPage() {
   const token = (session as any)?.apiToken as string | undefined;
   const searchParams = useSearchParams();
   const router = useRouter();
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+
+  const { data: profile } = useSWR(
+    token ? ["profile"] : null,
+    () => getProfile(token!),
+    { revalidateOnFocus: false }
+  );
+  const showCVBanner = !bannerDismissed && profile !== undefined && profile.skills.length === 0;
 
   // Read filter state from URL; fall back to sensible defaults
   const keywords = searchParams.get("keywords") ?? "";
@@ -48,6 +58,32 @@ export default function FeedPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
       <h1 className="mb-6 text-2xl font-bold text-gray-900">Job Feed</h1>
+
+      {/* CV onboarding banner */}
+      {showCVBanner && (
+        <div className="mb-6 flex items-start gap-4 rounded-xl border border-blue-200 bg-blue-50 p-4">
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-blue-800">Upload your CV to unlock match scores</p>
+            <p className="mt-1 text-sm text-blue-700">
+              Without a CV every job shows the same score. Upload once and we&apos;ll re-score
+              your entire feed against your skills automatically.
+            </p>
+            <Link
+              href="/profile/cv"
+              className="mt-3 inline-block rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+            >
+              Upload CV →
+            </Link>
+          </div>
+          <button
+            onClick={() => setBannerDismissed(true)}
+            aria-label="Dismiss"
+            className="shrink-0 text-blue-400 hover:text-blue-600 text-lg leading-none"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="mb-6 flex flex-wrap gap-3">
