@@ -36,14 +36,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   if (status === "loading" || !session) {
     return (
-      <div className="flex h-screen items-center justify-center">
+      <div className="flex h-dvh items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-dvh overflow-hidden">
       {/* Sidebar — desktop only */}
       <aside className="hidden md:flex w-56 shrink-0 border-r border-gray-200 bg-white flex-col">
         <div className="px-6 py-5 border-b border-gray-100">
