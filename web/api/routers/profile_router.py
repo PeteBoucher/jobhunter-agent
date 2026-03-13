@@ -218,13 +218,13 @@ async def upload_cv(
         current_user.cv_text = cv_text
         current_user.cv_parsed_json = parsed
 
-        # Update name/title/location from CV if not set
+        # Update name/title/location from CV (always overwrite with latest parse)
         personal = parsed.get("personal_info", {})
-        if not current_user.name and personal.get("name"):
+        if personal.get("name"):
             current_user.name = personal["name"]
-        if not current_user.title and personal.get("title"):
+        if personal.get("title"):
             current_user.title = personal["title"]
-        if not current_user.location and personal.get("location"):
+        if personal.get("location"):
             current_user.location = personal["location"]
 
         db.commit()

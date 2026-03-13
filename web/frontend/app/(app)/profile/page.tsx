@@ -2,9 +2,15 @@
 
 import { signOut, useSession } from "next-auth/react";
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import useSWR from "swr";
-import { deleteAccount, deleteSkill, getProfile, updateProfile } from "@/lib/api";
+import {
+  deleteAccount,
+  deleteSkill,
+  getProfile,
+  updateProfile,
+  uploadCV,
+} from "@/lib/api";
 
 export default function ProfilePage() {
   const { data: session } = useSession();
@@ -15,14 +21,26 @@ export default function ProfilePage() {
     () => getProfile(token!)
   );
 
+  // Profile edit
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [location, setLocation] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Account deletion
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Skills
   const [deletingSkillId, setDeletingSkillId] = useState<number | null>(null);
+
+  // CV upload
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<{ skillCount: number } | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   async function handleDeleteSkill(skillId: number) {
     if (!token) return;
@@ -66,6 +84,29 @@ export default function ProfilePage() {
     }
   }
 
+  async function handleUpload(file: File) {
+    if (!token) return;
+    setUploading(true);
+    setUploadResult(null);
+    setUploadError(null);
+    try {
+      const updated = await uploadCV(token, file);
+      setUploadResult({ skillCount: updated.skills.length });
+      await mutate();
+    } catch (err: any) {
+      setUploadError(err.message ?? "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleUpload(file);
+  }
+
   if (!user) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -88,6 +129,7 @@ export default function ProfilePage() {
         )}
       </div>
 
+      {/* Profile fields */}
       <div className="rounded-xl border border-gray-200 bg-white p-6 space-y-4">
         {editing ? (
           <>
@@ -138,10 +180,100 @@ export default function ProfilePage() {
         )}
       </div>
 
-      {/* Skills summary */}
+      {/* CV upload */}
+      <div className="mt-6">
+        <h2 className="mb-3 text-sm font-semibold text-gray-700">CV</h2>
+
+        <div
+          className={`relative rounded-xl border-2 border-dashed p-8 text-center transition-colors ${
+            dragging
+              ? "border-blue-400 bg-blue-50"
+              : uploading
+              ? "border-gray-200 bg-gray-50"
+              : "cursor-pointer border-gray-300 bg-white hover:border-blue-300 hover:bg-blue-50/40"
+          }`}
+          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={onDrop}
+          onClick={() => !uploading && fileRef.current?.click()}
+        >
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleUpload(f);
+              e.target.value = "";
+            }}
+          />
+
+          {uploading ? (
+            <div className="flex flex-col items-center gap-3">
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+              <p className="text-sm font-medium text-gray-700">Analysing your CV…</p>
+              <p className="text-xs text-gray-400">This usually takes 5–10 seconds</p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2">
+              <svg
+                className="h-8 w-8 text-gray-400"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.5}
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775 5.25 5.25 0 0 1 10.338-2.32 5.75 5.75 0 0 1 .087 11.096"
+                />
+              </svg>
+              <p className="text-sm font-medium text-gray-700">
+                {dragging ? "Drop to upload" : "Drop your CV here, or click to browse"}
+              </p>
+              <p className="text-xs text-gray-400">PDF, DOCX, TXT or Markdown · max 5 MB</p>
+            </div>
+          )}
+        </div>
+
+        {uploadResult && (
+          <div className="mt-3 flex items-start gap-3 rounded-lg bg-green-50 p-4">
+            <svg
+              className="mt-0.5 h-4 w-4 shrink-0 text-green-600"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+            </svg>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-green-800">
+                CV uploaded — {uploadResult.skillCount} skills extracted
+              </p>
+              <p className="mt-0.5 flex items-center gap-1.5 text-xs text-green-700">
+                <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
+                Rescoring your job matches in the background
+              </p>
+            </div>
+          </div>
+        )}
+
+        {uploadError && (
+          <div className="mt-3 rounded-lg bg-red-50 p-4 text-sm text-red-600">
+            {uploadError}
+          </div>
+        )}
+      </div>
+
+      {/* Skills */}
       {user.skills.length > 0 && (
         <div className="mt-6 rounded-xl border border-gray-200 bg-white p-6">
-          <h2 className="mb-3 text-sm font-semibold text-gray-700">Skills ({user.skills.length})</h2>
+          <h2 className="mb-3 text-sm font-semibold text-gray-700">
+            Skills ({user.skills.length})
+          </h2>
           <div className="flex flex-wrap gap-2">
             {user.skills.map((s) => (
               <span
@@ -163,19 +295,22 @@ export default function ProfilePage() {
         </div>
       )}
 
-      {/* Links */}
-      <div className="mt-6 flex gap-4">
-        <Link
-          href="/profile/cv"
-          className="flex-1 rounded-xl border border-gray-200 bg-white p-4 text-center text-sm font-medium text-gray-700 hover:border-blue-300 hover:bg-blue-50"
-        >
-          📄 Upload CV
-        </Link>
+      {/* Job preferences link */}
+      <div className="mt-6">
         <Link
           href="/profile/preferences"
-          className="flex-1 rounded-xl border border-gray-200 bg-white p-4 text-center text-sm font-medium text-gray-700 hover:border-blue-300 hover:bg-blue-50"
+          className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-4 text-sm font-medium text-gray-700 hover:border-blue-300 hover:bg-blue-50"
         >
-          ⚙️ Job preferences
+          <span>⚙️ Job preferences</span>
+          <svg
+            className="h-4 w-4 text-gray-400"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+          </svg>
         </Link>
       </div>
 
