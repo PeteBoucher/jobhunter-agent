@@ -13,6 +13,19 @@ const COUNTRIES = Object.entries(countries.getNames("en", { select: "official" }
   .map(([code, name]) => ({ code, name }))
   .sort((a, b) => a.name.localeCompare(b.name));
 
+/** Try to extract ISO2 codes from free-text location strings.
+ *  Splits each location on commas and checks each part against the country name list. */
+function inferCountriesFromLocations(locations: string[]): string[] {
+  const codes = new Set<string>();
+  for (const loc of locations) {
+    for (const part of loc.split(",")) {
+      const code = countries.getAlpha2Code(part.trim(), "en");
+      if (code) codes.add(code);
+    }
+  }
+  return Array.from(codes);
+}
+
 
 function TagInput({
   values,
@@ -133,7 +146,13 @@ export default function PreferencesPage() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    if (prefs) setForm(prefs);
+    if (!prefs) return;
+    const loaded = { ...prefs };
+    if (!loaded.preferred_countries?.length && loaded.preferred_locations?.length) {
+      const inferred = inferCountriesFromLocations(loaded.preferred_locations);
+      if (inferred.length) loaded.preferred_countries = inferred;
+    }
+    setForm(loaded);
   }, [prefs]);
 
   function set<K extends keyof Preferences>(key: K, val: Preferences[K]) {
