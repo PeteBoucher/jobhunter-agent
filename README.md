@@ -22,21 +22,24 @@ Jobs are scraped once into a shared pool. Each user has their own profile, match
 - **Google sign-in** — OAuth via next-auth; new users land on `/pending` waitlist
 - **Job feed** — personalised match scores based on your CV and preferences
 - **Job detail** — full description, score breakdown, apply button
-- **CV upload** — paste/upload markdown; skills auto-extracted and jobs re-scored
-- **Preferences** — target titles, salary, remote preference, location
+- **CV upload** — markdown, PDF, or DOCX; skills auto-extracted via LLM and jobs re-scored
+- **Preferences** — target titles, salary, remote preference, locations (city-level), countries to search (ISO2)
 - **Applications kanban** — drag cards across Saved → Applied → Interview → Offer/Rejected
-- **Shared scraping** — Lambda scrapes Greenhouse, Lever, Adzuna, The Muse on schedule
+- **Shared scraping** — Lambda scrapes all sources every 6h; search terms and countries derived automatically from user preferences
 - **CLI** — full local CLI still works for power users and debugging
 
 ### Scrapers
 
 | Scraper | Source | Notes |
 |---------|--------|-------|
-| Greenhouse | 15 companies (Stripe, Cloudflare, Airbnb, Figma, Discord, Datadog, …) | ATS API |
-| Lever | Spotify, Palantir, Plaid | ATS API |
-| Adzuna | Indeed, Reed, Monster aggregate | Free API key required |
+| Greenhouse | Stripe, Cloudflare, Airbnb, Figma, Discord, Datadog, Adyen, and more | ATS API |
+| Lever | Spotify, Palantir, Plaid, and more | ATS API |
+| Ashby | Modern ATS used by many startups | ATS API |
+| Adzuna | Indeed, Reed, Monster aggregate | API key in SSM; countries derived from user preferences |
 | The Muse | Curated tech companies | No auth required |
-| LinkedIn | Guest endpoint | Rate-limited |
+| Reed | UK job board | API key required |
+| LinkedIn | Guest search endpoint | Rate-limited; no auth |
+| Workday | Enterprise ATS | Configured per-company |
 | GitHub Jobs | — | Deprecated, returns empty |
 | Microsoft Careers | — | Deprecated, returns empty |
 
@@ -46,11 +49,11 @@ Jobs are scraped once into a shared pool. Each user has their own profile, match
 
 | Dimension | Points | Method |
 |-----------|--------|--------|
-| Title | 30 | SequenceMatcher against CV target titles |
-| Skills | 40 | CV skills matched against job requirements |
-| Experience | 10 | Inferred from work history (3+ roles = senior) |
-| Location/remote | 10 | Remote preference + location match |
-| Salary | 10 | Job salary meets CV minimum |
+| Title | 30 | Word-level Jaccard + character similarity against target titles |
+| Skills | 40 | Fraction of job requirements covered by CV skills |
+| Experience | 10 | Seniority match between job level and user preference |
+| Location/remote | 10 | Remote preference OR location substring match |
+| Salary | 10 | Gradient — job salary vs user minimum |
 
 ## Project structure
 
@@ -96,7 +99,7 @@ For local use without the web app:
 python3.10 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# Add your CV
+# Add your CV (markdown, PDF, or DOCX)
 job-agent profile upload path/to/cv.md
 
 # Scrape and match
@@ -167,7 +170,7 @@ Web API tests use `TestClient` + in-memory SQLite — no Neon connection needed.
 ```bash
 export DOCKER_HOST=unix:///Users/pete/.docker/run/docker.sock
 sam build
-sam deploy --config-env default   # Dev — 12h schedule
+sam deploy --config-env default   # Dev — schedule disabled
 sam deploy --config-env prod      # Prod — 6h schedule
 ```
 
