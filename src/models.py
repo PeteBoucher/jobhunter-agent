@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text,
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -83,10 +84,10 @@ class Job(Base):
     id = Column(Integer, primary_key=True)
     source = Column(String(50))  # linkedin, glassdoor, github, stackoverflow, etc.
     source_job_id = Column(String(255))  # External job ID
-    title = Column(String(255))
-    company = Column(String(255))
-    department = Column(String(255))
-    location = Column(String(255))
+    title = Column(Text)
+    company = Column(Text)
+    department = Column(Text)
+    location = Column(Text)
     remote = Column(String(20))  # onsite, hybrid, remote
     salary_min = Column(Float)
     salary_max = Column(Float)
@@ -96,7 +97,7 @@ class Job(Base):
     apply_url = Column(String(500))
     posted_date = Column(DateTime)
     scraped_at = Column(DateTime, default=datetime.utcnow)
-    company_industry = Column(String(255))
+    company_industry = Column(Text)
     company_size = Column(String(50))
     source_type = Column(String(20), default="aggregator")  # aggregator, company_portal
 
