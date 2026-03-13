@@ -168,7 +168,6 @@ Web API tests use `TestClient` + in-memory SQLite — no Neon connection needed.
 ### Lambda (scraper)
 
 ```bash
-export DOCKER_HOST=unix:///Users/pete/.docker/run/docker.sock
 sam build
 sam deploy --config-env default   # Dev — schedule disabled
 sam deploy --config-env prod      # Prod — 6h schedule
