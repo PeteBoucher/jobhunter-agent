@@ -136,6 +136,22 @@ class TestSearchTermsFromPrefs:
         codes = scraper._countries_from_prefs(LOCATION_TO_COUNTRY_CODE)
         assert codes.count("gb") == 1
 
+    def test_countries_from_copenhagen_location(self, session):
+        session.add(UserPreferences(preferred_locations=["Copenhagen, Denmark"]))
+        session.add(UserPreferences(preferred_locations=["copenhagen"]))
+        session.commit()
+        scraper = AdzunaScraper(session, app_id="x", app_key="x")
+        codes = scraper._countries_from_prefs(LOCATION_TO_COUNTRY_CODE)
+        assert codes.count("dk") == 1
+
+    def test_countries_from_berlin_location(self, session):
+        session.add(UserPreferences(preferred_locations=["Lüneburg, Germany"]))
+        session.add(UserPreferences(preferred_locations=["Berlin"]))
+        session.commit()
+        scraper = AdzunaScraper(session, app_id="x", app_key="x")
+        codes = scraper._countries_from_prefs(LOCATION_TO_COUNTRY_CODE)
+        assert codes.count("de") == 1
+
     def test_countries_fallback_when_no_match(self, session):
         session.add(UserPreferences(preferred_locations=["Remote"]))
         session.commit()
