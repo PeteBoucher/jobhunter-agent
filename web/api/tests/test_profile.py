@@ -152,6 +152,12 @@ class TestDeleteSkill:
 
         assert db_session.query(Skill).filter_by(id=skill.id).first() is None
 
+    def test_returns_204_no_body(self, client, db_session, test_user):
+        skill = self._add_skill(db_session, test_user)
+        resp = client.delete(f"/profile/skills/{skill.id}")
+        assert resp.status_code == 204
+        assert resp.content == b""
+
     def test_returns_404_for_unknown_skill(self, client):
         resp = client.delete("/profile/skills/99999")
         assert resp.status_code == 404
@@ -163,3 +169,24 @@ class TestDeleteSkill:
         skill = self._add_skill(db_session, other, name="Go")
         resp = client.delete(f"/profile/skills/{skill.id}")
         assert resp.status_code == 404  # not leaked as 403
+
+    def test_only_target_skill_removed(self, client, db_session, test_user):
+        """Deleting one skill leaves sibling skills untouched."""
+        from src.models import Skill
+
+        s1 = self._add_skill(db_session, test_user, name="Python")
+        s2 = self._add_skill(db_session, test_user, name="SQL")
+        client.delete(f"/profile/skills/{s1.id}")
+        assert db_session.query(Skill).filter_by(id=s2.id).first() is not None
+
+    def test_profile_reflects_removal(self, client, db_session, test_user):
+        """GET /profile after deletion no longer includes the removed skill."""
+        skill = self._add_skill(db_session, test_user, name="Kubernetes")
+        client.delete(f"/profile/skills/{skill.id}")
+        resp = client.get("/profile")
+        skill_names = [s["skill_name"] for s in resp.json()["skills"]]
+        assert "Kubernetes" not in skill_names
+
+    def test_requires_authentication(self, auth_client):
+        resp = auth_client.delete("/profile/skills/1")
+        assert resp.status_code in (401, 403)

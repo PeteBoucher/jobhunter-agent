@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createApplication,
+  deleteSkill,
   getJob,
   getJobs,
   updateApplication,
@@ -69,6 +70,38 @@ describe("updateApplication", () => {
     await updateApplication(TOKEN, 7, "offer");
     expect(spy.mock.calls[0][0]).toContain("/applications/7");
     expect(spy.mock.calls[0][1]?.method).toBe("PATCH");
+  });
+});
+
+describe("deleteSkill", () => {
+  it("sends DELETE to the correct URL", async () => {
+    const spy = mockFetch(null, 204);
+    await deleteSkill(TOKEN, 42);
+    expect(spy.mock.calls[0][0]).toContain("/profile/skills/42");
+    expect(spy.mock.calls[0][1]?.method).toBe("DELETE");
+  });
+
+  it("sends Authorization header", async () => {
+    const spy = mockFetch(null, 204);
+    await deleteSkill(TOKEN, 7);
+    expect(spy.mock.calls[0][1]?.headers).toMatchObject({
+      Authorization: "Bearer test-token",
+    });
+  });
+
+  it("resolves on 204 (no error thrown)", async () => {
+    mockFetch(null, 204);
+    await expect(deleteSkill(TOKEN, 1)).resolves.toBeDefined();
+  });
+
+  it("throws on 404 (skill not found)", async () => {
+    mockFetch({ detail: "Skill not found" }, 404);
+    await expect(deleteSkill(TOKEN, 999)).rejects.toThrow("API 404");
+  });
+
+  it("throws on 401 (unauthenticated)", async () => {
+    mockFetch({ detail: "Not authenticated" }, 401);
+    await expect(deleteSkill(TOKEN, 1)).rejects.toThrow("API 401");
   });
 });
 
