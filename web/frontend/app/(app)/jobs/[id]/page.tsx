@@ -33,15 +33,17 @@ function descriptionHtml(raw: string): string {
 
   // Promote short, unpunctuated <p> tags to <h3> headings.
   // Heuristic: ≤80 chars, ≤8 words, no trailing sentence punctuation, no <br>.
+  // Trailing colons are stripped ("YOUR QUALIFICATIONS:" → heading without colon).
   return html.replace(/<p>([\s\S]*?)<\/p>/g, (match, inner) => {
     const text = inner.replace(/<[^>]+>/g, "").trim();
+    const stripped = text.replace(/:$/, "");
     const isHeading =
-      text.length > 0 &&
-      text.length <= 80 &&
-      text.split(/\s+/).length <= 8 &&
-      !/[.!?,;:)"']$/.test(text) &&
+      stripped.length > 0 &&
+      stripped.length <= 80 &&
+      stripped.split(/\s+/).length <= 8 &&
+      !/[.!?,;)"']$/.test(stripped) &&
       !/<br/i.test(inner);
-    return isHeading ? `<h3>${inner}</h3>` : match;
+    return isHeading ? `<h3>${stripped}</h3>` : match;
   });
 }
 
