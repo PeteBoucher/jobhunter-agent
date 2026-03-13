@@ -38,11 +38,15 @@ _USER_AGENTS = [
 ]
 
 DEFAULT_SEARCH_TERMS = [
-    "innovation lead",
+    "product manager",
+    "product owner",
+    "programme manager",
+    "project manager",
+    "software engineering manager",
     "enterprise architect",
-    "quality assurance lead",
-    "digital transformation",
-    "agile coach",
+    "innovation lead",
+    "risk manager",
+    "software engineer",
 ]
 
 DEFAULT_LOCATIONS = [

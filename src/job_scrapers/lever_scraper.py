@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import requests
+from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 
 from src.job_scrapers.base_scraper import BaseScraper
@@ -118,7 +119,15 @@ class LeverScraper(BaseScraper):
         # Description - Lever provides descriptionPlain or description (HTML)
         description = raw_job.get("descriptionPlain", "")
         if not description:
-            description = raw_job.get("description", "")
+            html_desc = raw_job.get("description", "")
+            if html_desc and "<" in html_desc:
+                description = (
+                    BeautifulSoup(html_desc, "html.parser")
+                    .get_text(separator="\n")
+                    .strip()
+                )
+            else:
+                description = html_desc
 
         # Extract requirements from lists (Lever provides structured lists)
         requirements = self._extract_requirements_from_lists(raw_job)
@@ -186,6 +195,11 @@ class LeverScraper(BaseScraper):
             ):
                 items = lst.get("content", "")
                 if isinstance(items, str):
+                    # content is HTML — strip tags so <li> etc. don't leak
+                    if "<" in items:
+                        items = BeautifulSoup(items, "html.parser").get_text(
+                            separator="\n"
+                        )
                     # Split by newlines or list markers
                     for line in items.split("\n"):
                         line = line.strip().lstrip("•-*")

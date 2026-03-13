@@ -23,14 +23,18 @@ ADZUNA_API_BASE = "https://api.adzuna.com/v1/api/jobs"
 
 DEFAULT_COUNTRIES = ["gb", "es"]
 
-# Search terms tailored to the user's target roles.
+# Broad search terms covering the range of roles users are targeting.
 # Each term is searched independently and results are deduplicated.
 DEFAULT_SEARCH_TERMS = [
-    "innovation lead",
+    "product manager",
+    "product owner",
+    "programme manager",
+    "project manager",
+    "software engineering manager",
     "enterprise architect",
-    "quality assurance lead",
-    "digital transformation",
-    "agile coach",
+    "innovation lead",
+    "risk manager",
+    "software engineer",
 ]
 
 
