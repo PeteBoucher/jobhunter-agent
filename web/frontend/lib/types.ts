@@ -9,6 +9,7 @@ export interface Preferences {
   target_titles: string[] | null;
   target_industries: string[] | null;
   preferred_locations: string[] | null;
+  preferred_countries?: string[];
   salary_min: number | null;
   salary_max: number | null;
   experience_level: string | null;

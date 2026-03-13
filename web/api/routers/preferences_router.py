@@ -12,6 +12,7 @@ _JSON_FIELDS = {
     "target_titles",
     "target_industries",
     "preferred_locations",
+    "preferred_countries",
     "contract_types",
 }
 

@@ -50,7 +50,10 @@ class UserPreferences(Base):
     user_id = Column(Integer, ForeignKey("user.id"), unique=True)
     target_titles = Column(JSON)  # List of target job titles
     target_industries = Column(JSON)  # List of industries
-    preferred_locations = Column(JSON)  # List of locations
+    preferred_locations = Column(
+        JSON
+    )  # List of locations (free text, used for matching)
+    preferred_countries = Column(JSON)  # List of ISO2 country codes e.g. ["GB", "ES"]
     salary_min = Column(Float)
     salary_max = Column(Float)
     experience_level = Column(String(50))  # Junior, Mid, Senior, Lead

@@ -17,6 +17,7 @@ class PreferencesOut(BaseModel):
     target_titles: Optional[List[str]] = None
     target_industries: Optional[List[str]] = None
     preferred_locations: Optional[List[str]] = None
+    preferred_countries: Optional[List[str]] = None
     salary_min: Optional[float] = None
     salary_max: Optional[float] = None
     experience_level: Optional[str] = None
@@ -30,6 +31,7 @@ class PreferencesUpdate(BaseModel):
     target_titles: Optional[List[str]] = None
     target_industries: Optional[List[str]] = None
     preferred_locations: Optional[List[str]] = None
+    preferred_countries: Optional[List[str]] = None
     salary_min: Optional[float] = None
     salary_max: Optional[float] = None
     experience_level: Optional[str] = None

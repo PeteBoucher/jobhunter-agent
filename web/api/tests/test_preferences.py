@@ -117,3 +117,8 @@ class TestUpdatePreferences:
         assert data["preferred_locations"] == ["Berlin", "Remote"]
         assert data["contract_types"] == ["Full-time", "Contract"]
         assert data["target_industries"] == ["Tech", "Finance"]
+
+    def test_preferred_countries_accepted(self, client):
+        resp = client.put("/preferences", json={"preferred_countries": ["GB", "DK"]})
+        assert resp.status_code == 200
+        assert resp.json()["preferred_countries"] == ["GB", "DK"]

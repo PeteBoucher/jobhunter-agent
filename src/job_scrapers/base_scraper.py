@@ -208,29 +208,22 @@ class BaseScraper(ABC):
         logger.debug("search_terms_from_prefs source=fallback count=%d", len(default))
         return default
 
-    def _countries_from_prefs(
-        self,
-        location_to_code: dict,
-        fallback: Optional[List[str]] = None,
-    ) -> List[str]:
-        """Return deduplicated country codes derived from users' preferred_locations.
+    def _countries_from_prefs(self, fallback: Optional[List[str]] = None) -> List[str]:
+        """Return deduplicated ISO2 country codes from all users' preferred_countries.
 
-        *location_to_code* is a dict mapping location substrings (lowercase) to
-        API country codes, e.g. ``{"uk": "gb", "spain": "es"}``.
-        Falls back to *fallback* (or ``["gb"]``) when nothing matches.
+        Falls back to *fallback* (or ["gb"]) when no preferences exist yet.
         """
-        rows = self.session.query(UserPreferences.preferred_locations).all()
+        rows = self.session.query(UserPreferences.preferred_countries).all()
         codes: List[str] = []
         seen: set = set()
-        for (locations,) in rows:
-            if not locations:
+        for (countries,) in rows:
+            if not countries:
                 continue
-            for loc in locations:
-                loc_lower = loc.lower()
-                for keyword, code in location_to_code.items():
-                    if keyword in loc_lower and code not in seen:
-                        seen.add(code)
-                        codes.append(code)
+            for code in countries:
+                c = code.lower().strip()
+                if c and c not in seen:
+                    seen.add(c)
+                    codes.append(c)
         if codes:
             logger.debug("countries_from_prefs source=db count=%d", len(codes))
             return codes

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.database import get_session, init_db
-from src.job_scrapers.adzuna_scraper import LOCATION_TO_COUNTRY_CODE, AdzunaScraper
+from src.job_scrapers.adzuna_scraper import AdzunaScraper
 from src.models import Job, UserPreferences
 
 
@@ -122,42 +122,40 @@ class TestSearchTermsFromPrefs:
         assert terms == ["Engineer"]
 
     def test_countries_from_uk_location(self, session):
-        session.add(UserPreferences(preferred_locations=["London, UK"]))
+        session.add(UserPreferences(preferred_countries=["GB"]))
         session.commit()
         scraper = AdzunaScraper(session, app_id="x", app_key="x")
-        codes = scraper._countries_from_prefs(LOCATION_TO_COUNTRY_CODE)
+        codes = scraper._countries_from_prefs()
         assert "gb" in codes
 
     def test_countries_deduplicates(self, session):
-        session.add(UserPreferences(preferred_locations=["London, UK"]))
-        session.add(UserPreferences(preferred_locations=["United Kingdom"]))
+        session.add(UserPreferences(preferred_countries=["GB"]))
+        session.add(UserPreferences(preferred_countries=["GB"]))
         session.commit()
         scraper = AdzunaScraper(session, app_id="x", app_key="x")
-        codes = scraper._countries_from_prefs(LOCATION_TO_COUNTRY_CODE)
+        codes = scraper._countries_from_prefs()
         assert codes.count("gb") == 1
 
-    def test_countries_from_copenhagen_location(self, session):
-        session.add(UserPreferences(preferred_locations=["Copenhagen, Denmark"]))
-        session.add(UserPreferences(preferred_locations=["copenhagen"]))
+    def test_countries_fallback_when_no_match(self, session):
+        session.add(UserPreferences(preferred_countries=None))
         session.commit()
         scraper = AdzunaScraper(session, app_id="x", app_key="x")
-        codes = scraper._countries_from_prefs(LOCATION_TO_COUNTRY_CODE)
-        assert codes.count("dk") == 1
+        codes = scraper._countries_from_prefs(fallback=["gb"])
+        assert codes == ["gb"]
+
+    def test_countries_from_copenhagen_location(self, session):
+        session.add(UserPreferences(preferred_countries=["DK"]))
+        session.commit()
+        scraper = AdzunaScraper(session, app_id="x", app_key="x")
+        codes = scraper._countries_from_prefs()
+        assert "dk" in codes
 
     def test_countries_from_berlin_location(self, session):
-        session.add(UserPreferences(preferred_locations=["Lüneburg, Germany"]))
-        session.add(UserPreferences(preferred_locations=["Berlin"]))
+        session.add(UserPreferences(preferred_countries=["DE"]))
         session.commit()
         scraper = AdzunaScraper(session, app_id="x", app_key="x")
-        codes = scraper._countries_from_prefs(LOCATION_TO_COUNTRY_CODE)
-        assert codes.count("de") == 1
-
-    def test_countries_fallback_when_no_match(self, session):
-        session.add(UserPreferences(preferred_locations=["Remote"]))
-        session.commit()
-        scraper = AdzunaScraper(session, app_id="x", app_key="x")
-        codes = scraper._countries_from_prefs(LOCATION_TO_COUNTRY_CODE, fallback=["gb"])
-        assert codes == ["gb"]
+        codes = scraper._countries_from_prefs()
+        assert "de" in codes
 
     def test_scraper_init_uses_db_terms_when_none_passed(self, session):
         session.add(UserPreferences(target_titles=["CTO"]))

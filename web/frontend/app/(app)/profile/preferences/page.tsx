@@ -6,6 +6,31 @@ import useSWR from "swr";
 import { getPreferences, updatePreferences } from "@/lib/api";
 import type { Preferences } from "@/lib/types";
 
+const COUNTRIES = [
+  { code: "GB", name: "United Kingdom" },
+  { code: "IE", name: "Ireland" },
+  { code: "ES", name: "Spain" },
+  { code: "FR", name: "France" },
+  { code: "DE", name: "Germany" },
+  { code: "DK", name: "Denmark" },
+  { code: "NL", name: "Netherlands" },
+  { code: "PT", name: "Portugal" },
+  { code: "IT", name: "Italy" },
+  { code: "SE", name: "Sweden" },
+  { code: "NO", name: "Norway" },
+  { code: "FI", name: "Finland" },
+  { code: "BE", name: "Belgium" },
+  { code: "CH", name: "Switzerland" },
+  { code: "AT", name: "Austria" },
+  { code: "PL", name: "Poland" },
+  { code: "US", name: "United States" },
+  { code: "CA", name: "Canada" },
+  { code: "AU", name: "Australia" },
+  { code: "NZ", name: "New Zealand" },
+  { code: "IN", name: "India" },
+  { code: "SG", name: "Singapore" },
+];
+
 function TagInput({
   values,
   onChange,
@@ -50,6 +75,63 @@ function TagInput({
           Add
         </button>
       </div>
+    </div>
+  );
+}
+
+function CountrySelect({
+  values,
+  onChange,
+}: {
+  values: string[];
+  onChange: (v: string[]) => void;
+}) {
+  const [selectVal, setSelectVal] = useState("");
+
+  function add(code: string) {
+    if (code && !values.includes(code)) {
+      onChange([...values, code]);
+    }
+    setSelectVal("");
+  }
+
+  const selected = new Set(values);
+  const available = COUNTRIES.filter((c) => !selected.has(c.code));
+
+  return (
+    <div>
+      <div className="flex flex-wrap gap-2 mb-2">
+        {values.map((code) => {
+          const country = COUNTRIES.find((c) => c.code === code);
+          const name = country ? country.name : code;
+          return (
+            <span
+              key={code}
+              className="flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs text-blue-700"
+            >
+              {name}
+              <button
+                onClick={() => onChange(values.filter((x) => x !== code))}
+                className="text-blue-400 hover:text-blue-700"
+              >
+                ×
+              </button>
+            </span>
+          );
+        })}
+      </div>
+      <select
+        value={selectVal}
+        onChange={(e) => add(e.target.value)}
+        className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
+      >
+        <option value="">— select a country —</option>
+        {available.map((c) => (
+          <option key={c.code} value={c.code}>
+            {c.name}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
@@ -106,6 +188,13 @@ export default function PreferencesPage() {
             values={form.preferred_locations ?? []}
             onChange={(v) => set("preferred_locations", v)}
             placeholder="e.g. Barcelona"
+          />
+        </Section>
+
+        <Section label="Countries to search">
+          <CountrySelect
+            values={form.preferred_countries ?? []}
+            onChange={(v) => set("preferred_countries", v)}
           />
         </Section>
 
