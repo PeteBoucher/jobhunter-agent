@@ -110,7 +110,7 @@ def parse_cv_with_llm(text: str) -> Dict[str, Any]:
         client = anthropic.Anthropic(api_key=api_key)
         response = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=1024,
+            max_tokens=4096,
             tools=[_PARSE_CV_TOOL],
             tool_choice={"type": "tool", "name": "parse_cv"},
             messages=[
@@ -120,6 +120,10 @@ def parse_cv_with_llm(text: str) -> Dict[str, Any]:
                 }
             ],
         )
+        if response.stop_reason == "max_tokens":
+            logger.warning(
+                "llm_cv_parse_truncated — increase max_tokens or reduce CV length"
+            )
         result: Dict[str, Any] = response.content[0].input
         skill_count = sum(
             len(v) for v in result.get("skills", {}).values() if isinstance(v, list)
