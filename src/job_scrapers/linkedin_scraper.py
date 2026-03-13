@@ -37,18 +37,6 @@ _USER_AGENTS = [
     ),
 ]
 
-DEFAULT_SEARCH_TERMS = [
-    "product manager",
-    "product owner",
-    "programme manager",
-    "project manager",
-    "software engineering manager",
-    "enterprise architect",
-    "innovation lead",
-    "risk manager",
-    "software engineer",
-]
-
 DEFAULT_LOCATIONS = [
     "United Kingdom",
     "Spain",
@@ -79,7 +67,7 @@ class LinkedInScraper(BaseScraper):
         locations: Optional[List[str]] = None,
     ):
         super().__init__(session)
-        self.search_terms = search_terms or DEFAULT_SEARCH_TERMS
+        self.search_terms = search_terms or self._search_terms_from_prefs()
         self.locations = locations or DEFAULT_LOCATIONS
 
     def _get_source_name(self) -> str:

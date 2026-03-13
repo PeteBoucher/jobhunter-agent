@@ -8,7 +8,7 @@ from typing import Any, List, Optional
 
 from sqlalchemy.orm import Session
 
-from src.models import Job, ScraperMetric
+from src.models import Job, ScraperMetric, UserPreferences
 
 # Configure module logger
 logger = logging.getLogger("jobhunter.scrapers")
@@ -177,6 +177,66 @@ class BaseScraper(ABC):
                 self.session.rollback()
             except Exception:
                 pass
+
+    def _search_terms_from_prefs(
+        self, fallback: Optional[List[str]] = None
+    ) -> List[str]:
+        """Return deduplicated search terms derived from all users' target_titles.
+
+        Falls back to *fallback* (or a minimal generic list) when no preferences
+        exist yet — e.g. before the first user signs up.
+        """
+        rows = self.session.query(UserPreferences.target_titles).all()
+        terms: List[str] = []
+        seen: set = set()
+        for (titles,) in rows:
+            if not titles:
+                continue
+            for t in titles:
+                key = t.lower().strip()
+                if key and key not in seen:
+                    seen.add(key)
+                    terms.append(t.strip())
+        if terms:
+            logger.debug("search_terms_from_prefs source=db count=%d", len(terms))
+            return terms
+        default = fallback or [
+            "product manager",
+            "software engineer",
+            "project manager",
+        ]
+        logger.debug("search_terms_from_prefs source=fallback count=%d", len(default))
+        return default
+
+    def _countries_from_prefs(
+        self,
+        location_to_code: dict,
+        fallback: Optional[List[str]] = None,
+    ) -> List[str]:
+        """Return deduplicated country codes derived from users' preferred_locations.
+
+        *location_to_code* is a dict mapping location substrings (lowercase) to
+        API country codes, e.g. ``{"uk": "gb", "spain": "es"}``.
+        Falls back to *fallback* (or ``["gb"]``) when nothing matches.
+        """
+        rows = self.session.query(UserPreferences.preferred_locations).all()
+        codes: List[str] = []
+        seen: set = set()
+        for (locations,) in rows:
+            if not locations:
+                continue
+            for loc in locations:
+                loc_lower = loc.lower()
+                for keyword, code in location_to_code.items():
+                    if keyword in loc_lower and code not in seen:
+                        seen.add(code)
+                        codes.append(code)
+        if codes:
+            logger.debug("countries_from_prefs source=db count=%d", len(codes))
+            return codes
+        default = fallback or ["gb"]
+        logger.debug("countries_from_prefs source=fallback count=%d", len(default))
+        return default
 
     def _load_existing_ids(self) -> set:
         """Load all known source_job_ids for this source in one query."""

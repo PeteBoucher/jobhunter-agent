@@ -24,19 +24,6 @@ logger = logging.getLogger("jobhunter.scrapers.reed")
 
 REED_API_BASE = "https://www.reed.co.uk/api/1.0"
 
-# Broad search terms covering common tech, product, and leadership roles.
-DEFAULT_SEARCH_TERMS = [
-    "software engineer",
-    "product manager",
-    "engineering manager",
-    "data engineer",
-    "devops engineer",
-    "frontend developer",
-    "backend developer",
-    "qa engineer",
-    "solutions architect",
-    "digital transformation",
-]
 
 RESULTS_PER_PAGE = 100
 
@@ -57,7 +44,7 @@ class ReedScraper(BaseScraper):
     ):
         super().__init__(session)
         self.api_key = api_key or os.environ.get("REED_API_KEY", "")
-        self.search_terms = search_terms or DEFAULT_SEARCH_TERMS
+        self.search_terms = search_terms or self._search_terms_from_prefs()
 
     def _get_source_name(self) -> str:
         return "reed"

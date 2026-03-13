@@ -21,21 +21,27 @@ logger = logging.getLogger("jobhunter.scrapers.adzuna")
 
 ADZUNA_API_BASE = "https://api.adzuna.com/v1/api/jobs"
 
-DEFAULT_COUNTRIES = ["gb", "es"]
-
-# Broad search terms covering the range of roles users are targeting.
-# Each term is searched independently and results are deduplicated.
-DEFAULT_SEARCH_TERMS = [
-    "product manager",
-    "product owner",
-    "programme manager",
-    "project manager",
-    "software engineering manager",
-    "enterprise architect",
-    "innovation lead",
-    "risk manager",
-    "software engineer",
-]
+# Maps location substrings (lowercase) to Adzuna country codes.
+LOCATION_TO_COUNTRY_CODE = {
+    "uk": "gb",
+    "united kingdom": "gb",
+    "england": "gb",
+    "london": "gb",
+    "scotland": "gb",
+    "wales": "gb",
+    "ireland": "ie",
+    "spain": "es",
+    "france": "fr",
+    "germany": "de",
+    "netherlands": "nl",
+    "portugal": "pt",
+    "italy": "it",
+    "canada": "ca",
+    "australia": "au",
+    "new zealand": "nz",
+    "united states": "us",
+    "usa": "us",
+}
 
 
 class AdzunaScraper(BaseScraper):
@@ -54,8 +60,10 @@ class AdzunaScraper(BaseScraper):
         app_key: Optional[str] = None,
     ):
         super().__init__(session)
-        self.countries = countries or DEFAULT_COUNTRIES
-        self.search_terms = search_terms or DEFAULT_SEARCH_TERMS
+        self.countries = countries or self._countries_from_prefs(
+            LOCATION_TO_COUNTRY_CODE, fallback=["gb", "es"]
+        )
+        self.search_terms = search_terms or self._search_terms_from_prefs()
         self.app_id = app_id or os.environ.get("ADZUNA_APP_ID", "")
         self.app_key = app_key or os.environ.get("ADZUNA_APP_KEY", "")
 
