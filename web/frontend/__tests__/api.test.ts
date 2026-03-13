@@ -89,9 +89,9 @@ describe("deleteSkill", () => {
     });
   });
 
-  it("resolves on 204 (no error thrown)", async () => {
+  it("resolves to undefined on 204", async () => {
     mockFetch(null, 204);
-    await expect(deleteSkill(TOKEN, 1)).resolves.toBeDefined();
+    await expect(deleteSkill(TOKEN, 1)).resolves.toBeUndefined();
   });
 
   it("throws on 404 (skill not found)", async () => {
