@@ -1,35 +1,18 @@
 "use client";
 
+import countries from "i18n-iso-countries";
+import enLocale from "i18n-iso-countries/langs/en.json";
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { getPreferences, updatePreferences } from "@/lib/api";
 import type { Preferences } from "@/lib/types";
 
-const COUNTRIES = [
-  { code: "GB", name: "United Kingdom" },
-  { code: "IE", name: "Ireland" },
-  { code: "ES", name: "Spain" },
-  { code: "FR", name: "France" },
-  { code: "DE", name: "Germany" },
-  { code: "DK", name: "Denmark" },
-  { code: "NL", name: "Netherlands" },
-  { code: "PT", name: "Portugal" },
-  { code: "IT", name: "Italy" },
-  { code: "SE", name: "Sweden" },
-  { code: "NO", name: "Norway" },
-  { code: "FI", name: "Finland" },
-  { code: "BE", name: "Belgium" },
-  { code: "CH", name: "Switzerland" },
-  { code: "AT", name: "Austria" },
-  { code: "PL", name: "Poland" },
-  { code: "US", name: "United States" },
-  { code: "CA", name: "Canada" },
-  { code: "AU", name: "Australia" },
-  { code: "NZ", name: "New Zealand" },
-  { code: "IN", name: "India" },
-  { code: "SG", name: "Singapore" },
-];
+countries.registerLocale(enLocale);
+const COUNTRIES = Object.entries(countries.getNames("en", { select: "official" }))
+  .map(([code, name]) => ({ code, name }))
+  .sort((a, b) => a.name.localeCompare(b.name));
+
 
 function TagInput({
   values,
