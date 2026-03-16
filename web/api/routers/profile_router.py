@@ -61,13 +61,20 @@ def _recompute_matches(user_id: int, db_url: str) -> None:
         user = session.query(User).filter(User.id == user_id).first()
         if not user:
             return
-        jobs = session.query(Job).all()
-        for i, job in enumerate(jobs, 1):
-            compute_match_for_user(session, job, user)
-            if i % BATCH == 0:
-                session.commit()
-        session.commit()
-        logger.info("cv_rematch user_id=%d jobs_matched=%d", user_id, len(jobs))
+        total = session.query(Job).count()
+        matched = 0
+        offset = 0
+        while offset < total:
+            jobs = session.query(Job).order_by(Job.id).offset(offset).limit(BATCH).all()
+            if not jobs:
+                break
+            for job in jobs:
+                compute_match_for_user(session, job, user)
+                matched += 1
+            session.commit()
+            session.expire_all()  # free memory from this batch
+            offset += BATCH
+        logger.info("cv_rematch user_id=%d jobs_matched=%d", user_id, matched)
     except Exception as exc:
         logger.error(
             "cv_rematch_error user_id=%d error=%r", user_id, exc, exc_info=True
