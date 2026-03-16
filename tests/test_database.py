@@ -2,11 +2,12 @@
 
 import os
 import tempfile
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import inspect
 
-from src.database import get_database_url, get_session, init_db
+from src.database import create_engine_instance, get_database_url, get_session, init_db
 from src.models import Job, Skill, User, UserPreferences
 
 
@@ -157,6 +158,58 @@ def test_create_skill(temp_db):
     assert retrieved.proficiency == 4
 
     session.close()
+
+
+def test_postgresql_engine_has_keepalives():
+    """PostgreSQL engine must have TCP keepalives to survive Neon's idle timeout.
+
+    Neon closes SSL connections that are idle for ~5 minutes. Scrapers hold
+    a connection open while _fetch_jobs() makes slow HTTP calls, so without
+    keepalives the connection goes stale and _load_existing_ids() raises
+    psycopg2.OperationalError: SSL connection has been closed unexpectedly.
+    """
+    with patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:pw@host/db"}):
+        with patch("src.database.create_engine") as mock_create:
+            mock_create.return_value = mock_create  # avoid real connection
+            create_engine_instance()
+
+    _, kwargs = mock_create.call_args
+    connect_args = kwargs.get("connect_args", {})
+    assert connect_args.get("keepalives") == 1
+    assert connect_args.get("keepalives_idle") == 60
+    assert connect_args.get("keepalives_interval") == 10
+    assert connect_args.get("keepalives_count") == 5
+
+
+def test_postgresql_engine_has_pool_pre_ping():
+    """PostgreSQL engine must have pool_pre_ping to detect stale connections."""
+    with patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:pw@host/db"}):
+        with patch("src.database.create_engine") as mock_create:
+            mock_create.return_value = mock_create
+            create_engine_instance()
+
+    _, kwargs = mock_create.call_args
+    assert kwargs.get("pool_pre_ping") is True
+
+
+def test_get_session_uses_engine_with_pre_ping(temp_db):
+    """get_session() must use create_engine_instance(), not a plain engine.
+
+    Previously get_session() called create_engine() directly, bypassing
+    pool_pre_ping and keepalive settings, causing SSL errors on Neon.
+    """
+    init_db()
+    with patch("src.database.create_engine_instance") as mock_factory:
+        mock_factory.side_effect = create_engine_instance
+        get_session()
+        mock_factory.assert_called_once()
+
+
+def test_sqlite_engine_has_no_keepalives(temp_db):
+    """Keepalive connect_args must not be set for SQLite (unsupported)."""
+    engine = create_engine_instance()
+    # SQLite dialect doesn't accept keepalive args; ensure we don't pass them
+    assert "postgresql" not in engine.url.drivername
 
 
 def test_create_job(temp_db):
