@@ -1,10 +1,13 @@
 """Jobhunter FastAPI application."""
 
 import logging
+import logging.handlers
 import os
+import queue
 import sys
 import time
 
+import requests
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -28,10 +31,71 @@ from routers import (  # noqa: E402
     profile_router,
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
+
+class _LokiLogHandler(logging.Handler):
+    """Non-blocking log handler that ships records to Grafana Cloud Loki.
+
+    Reads LOKI_URL, LOKI_USER, LOKI_TOKEN from env.
+    Silently drops records if the endpoint is unreachable — never crashes the API.
+    """
+
+    def __init__(self):
+        super().__init__()
+        loki_url = os.environ.get("LOKI_URL", "").rstrip("/")
+        self._url = loki_url + "/loki/api/v1/push"
+        self._user = os.environ.get("LOKI_USER", "")
+        self._token = os.environ.get("LOKI_TOKEN", "")
+        self._session = requests.Session()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = self.format(record)
+            ts_ns = str(int(record.created * 1e9))
+            payload = {
+                "streams": [
+                    {
+                        "stream": {
+                            "service": "jobhunter-api",
+                            "level": record.levelname.lower(),
+                            "logger": record.name,
+                        },
+                        "values": [[ts_ns, msg]],
+                    }
+                ]
+            }
+            self._session.post(
+                self._url,
+                json=payload,
+                auth=(self._user, self._token),
+                timeout=2,
+            )
+        except Exception:
+            self.handleError(record)
+
+
+def _setup_logging() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+    loki_url = os.environ.get("LOKI_URL")
+    if loki_url:
+        # Ship logs to Loki; queue keeps it non-blocking
+        loki_handler = _LokiLogHandler()
+        loki_handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+        )
+        log_queue: queue.Queue = queue.Queue(maxsize=1000)
+        queue_handler = logging.handlers.QueueHandler(log_queue)
+        listener = logging.handlers.QueueListener(
+            log_queue, loki_handler, respect_handler_level=True
+        )
+        listener.start()
+        logging.getLogger().addHandler(queue_handler)
+        logging.getLogger("jobhunter").info("Loki log shipping enabled → %s", loki_url)
+
+
+_setup_logging()
 logger = logging.getLogger("jobhunter.api")
 
 app = FastAPI(

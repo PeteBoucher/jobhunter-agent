@@ -436,6 +436,99 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 10,
+      "title": "API request rate",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "fillOpacity": 20
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-jobhunter-logs"
+          },
+          "expr": "sum(rate({service=\"jobhunter-api\"} |= \"request method\" [1m]))",
+          "legendFormat": "req/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-jobhunter-logs"
+          },
+          "expr": "sum(rate({service=\"jobhunter-api\", level=\"error\"} [1m]))",
+          "legendFormat": "errors/s",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "API errors & warnings",
+      "type": "logs",
+      "gridPos": {
+        "x": 12,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-jobhunter-logs"
+          },
+          "expr": "{service=\"jobhunter-api\"} |= \"ERROR\" or {service=\"jobhunter-api\"} |= \"WARNING\"",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "API all logs",
+      "type": "logs",
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 24,
+        "h": 8
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": false,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "grafanacloud-jobhunter-logs"
+          },
+          "expr": "{service=\"jobhunter-api\"}",
+          "refId": "A"
+        }
+      ]
     }
   ]
 }
