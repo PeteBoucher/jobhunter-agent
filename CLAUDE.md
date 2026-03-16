@@ -161,6 +161,25 @@ Do **not** use `{{resolve:ssm-secure:...}}` — Lambda environment variables don
 
 black, isort, flake8, and mypy all run on commit. If black reformats a file, re-stage and commit again.
 
+## Observability
+
+### Grafana Cloud
+
+Lambda logs → Grafana via CloudWatch data source. Dashboard at `grafana/lambda-dashboard.json` — import manually via Grafana UI when updated.
+
+FastAPI (Render) logs → Grafana via Loki push. Env vars required on the Render service:
+- `LOKI_URL` = `https://logs-prod-012.grafana.net`
+- `LOKI_USER` = `1518410`
+- `LOKI_TOKEN` = Grafana Cloud API token with `logs:write` scope
+
+Loki data source in Grafana: `grafanacloud-jobhunter-logs`.
+
+### SNS alerts
+
+Lambda scraper sends SNS alerts on match threshold. Topic: `jobhunter-alerts` (eu-west-1). Email subscription confirmed.
+
+---
+
 ## Key Architecture Notes
 
 - **Scrapers**: `BaseScraper` ABC in `src/job_scrapers/`. Registry in `src/job_scrapers/registry.py`. Default sources: ashby, greenhouse, lever, adzuna, themuse, reed, linkedin.
@@ -168,4 +187,5 @@ black, isort, flake8, and mypy all run on commit. If black reformats a file, re-
 - **Lambda timeout**: 600s. Matching a large backlog of unmatched jobs will time out. Run matching locally against Neon `DATABASE_URL` if needed.
 - **Lambda memory**: 512MB.
 - **Multi-user**: multiple users supported. Each user has their own `JobMatch` rows. Prod users managed via `is_approved` flag in the `user` table.
+- **Neon idle SSL timeout**: Neon closes idle connections after ~5 min. `create_engine_instance()` sets TCP keepalives (`keepalives_idle=60`) and `pool_pre_ping=True` to prevent `SSL connection has been closed unexpectedly` errors. Do not bypass `create_engine_instance()` with a bare `create_engine()` call.
 - **Mobile layout**: `(app)/layout.tsx` uses `h-screen overflow-hidden` + flex column. Sidebar is `hidden md:flex`. Mobile gets a top bar (logo + avatar) and a bottom nav bar (`shrink-0`, not `fixed`). The `<main>` is `flex-1 overflow-auto` — content scrolls inside, nav stays pinned. Do not use `position: fixed` for the bottom nav — `overflow-x-auto` on child pages breaks fixed positioning.
