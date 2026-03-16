@@ -498,7 +498,7 @@
             "type": "loki",
             "uid": "grafanacloud-jobhunter-logs"
           },
-          "expr": "{service=\"jobhunter-api\"} |= \"ERROR\" or {service=\"jobhunter-api\"} |= \"WARNING\"",
+          "expr": "{service=\"jobhunter-api\"} |~ \"ERROR|WARNING\"",
           "refId": "A"
         }
       ]
