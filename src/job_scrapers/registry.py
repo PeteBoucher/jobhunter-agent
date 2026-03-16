@@ -18,6 +18,7 @@ from src.job_scrapers.microsoft_scraper import MicrosoftScraper
 from src.job_scrapers.reed_scraper import ReedScraper
 from src.job_scrapers.revolut_scraper import RevolutScraper
 from src.job_scrapers.themuse_scraper import TheMuseScraper
+from src.job_scrapers.thoughtworks_scraper import ThoughtworksScraper
 from src.job_scrapers.uber_scraper import UberScraper
 from src.job_scrapers.workday_scraper import WorkdayScraper
 
@@ -32,6 +33,7 @@ SCRAPER_MAP: Dict[str, Type[BaseScraper]] = {
     "coinbase": CoinbaseScraper,
     "workday": WorkdayScraper,
     "revolut": RevolutScraper,
+    "thoughtworks": ThoughtworksScraper,
     "uber": UberScraper,
     "adzuna": AdzunaScraper,
     "themuse": TheMuseScraper,
@@ -48,4 +50,5 @@ DEFAULT_SOURCES: List[str] = [
     "reed",
     "linkedin",
     "workday",
+    "thoughtworks",
 ]
