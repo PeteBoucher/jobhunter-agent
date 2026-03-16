@@ -1,0 +1,5 @@
+# Accidentally installed packages (pip install --target .)
+web/
+__pycache__/
+*.pyc
+*.pyo
