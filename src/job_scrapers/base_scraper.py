@@ -118,10 +118,11 @@ class BaseScraper(ABC):
             # Release the DB connection back to the pool before making further
             # queries. _fetch_jobs() can run for a long time (e.g. LinkedIn with
             # many HTTP requests + sleep delays), leaving the connection idle long
-            # enough for Neon to close the SSL link. Closing the session here
-            # returns the connection to the pool; pool_pre_ping will then
-            # revalidate it on the next checkout below.
-            self.session.close()
+            # enough for Neon to close the SSL link. invalidate() drops the
+            # connection without attempting a rollback (session.close() tries to
+            # rollback, which itself raises if the SSL link is already dead).
+            # pool_pre_ping will then open a fresh connection on the next checkout.
+            self.session.invalidate()
 
             # Load all existing source_job_ids for this source in one query
             existing_ids: set = self._load_existing_ids()
