@@ -6,7 +6,7 @@ rich==13.3.2
 python-dotenv==1.0.0
 
 # Database & Data Handling
-sqlalchemy==2.0.15
+sqlalchemy==2.0.48
 pandas==2.0.1
 
 # API & Web Scraping
