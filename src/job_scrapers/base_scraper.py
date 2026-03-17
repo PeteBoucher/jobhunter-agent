@@ -10,14 +10,7 @@ from sqlalchemy.orm import Session
 
 from src.models import Job, ScraperMetric, UserPreferences
 
-# Configure module logger
 logger = logging.getLogger("jobhunter.scrapers")
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
 
 
 class BaseScraper(ABC):
