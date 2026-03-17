@@ -3,7 +3,7 @@ click==8.3.1
 rich==13.3.2
 
 # Environment Management
-python-dotenv==1.0.0
+python-dotenv==1.2.2
 
 # Database & Data Handling
 sqlalchemy==2.0.15
