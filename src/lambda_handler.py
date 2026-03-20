@@ -51,6 +51,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     sns_topic_arn = os.environ.get("SNS_TOPIC_ARN", "")
     min_score = float(os.environ.get("MIN_MATCH_SCORE_NOTIFY", "70"))
+    max_match_per_run = int(os.environ.get("MAX_MATCH_PER_RUN", "500"))
 
     # DATABASE_URL is injected from SSM via template.yaml; src.database reads it.
     from src.database import get_session, init_db
@@ -118,9 +119,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     session = get_session()
     try:
         users = session.query(User).all()
-        # Only match newly scraped jobs (no existing JobMatch)
+        # Only match newly scraped jobs (no existing JobMatch).
+        # Limit per run so the Lambda doesn't time out on large backlogs;
+        # subsequent runs will drain the remainder. Most recent first.
         jobs = (
-            session.query(Job).outerjoin(JobMatch).filter(JobMatch.id.is_(None)).all()
+            session.query(Job)
+            .outerjoin(JobMatch)
+            .filter(JobMatch.id.is_(None))
+            .order_by(Job.scraped_at.desc())
+            .limit(max_match_per_run)
+            .all()
         )
 
         if users and jobs:
@@ -133,6 +141,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             f"  - {job.company}: {job.title} ({jm.match_score:.0f}%)"
                         )
             logger.info("Computed %d job matches", total_matches)
+            if len(jobs) == max_match_per_run:
+                logger.warning(
+                    "Hit MAX_MATCH_PER_RUN limit (%d); unmatched jobs remain "
+                    "and will be processed in subsequent runs",
+                    max_match_per_run,
+                )
         else:
             logger.info(
                 "Skipping match: %d users, %d unmatched jobs",
