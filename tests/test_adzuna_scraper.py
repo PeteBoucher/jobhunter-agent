@@ -170,6 +170,26 @@ class TestAdzunaScraper:
     def test_source_name(self, scraper):
         assert scraper._get_source_name() == "adzuna"
 
+    def test_unsupported_countries_filtered_out(self, session):
+        """gi and dk are not in Adzuna's supported country list."""
+        scraper = AdzunaScraper(
+            session, countries=["gb", "gi", "dk"], app_id="x", app_key="x"
+        )
+        assert scraper.countries == ["gb"]
+
+    def test_supported_countries_pass_through(self, session):
+        """All supported codes should survive filtering unchanged."""
+        scraper = AdzunaScraper(
+            session, countries=["gb", "es", "de"], app_id="x", app_key="x"
+        )
+        assert scraper.countries == ["gb", "es", "de"]
+
+    def test_all_unsupported_countries_yields_empty_list(self, session):
+        scraper = AdzunaScraper(
+            session, countries=["gi", "dk"], app_id="x", app_key="x"
+        )
+        assert scraper.countries == []
+
     def test_parse_job_basic(self, scraper):
         raw_job = SAMPLE_ADZUNA_RESPONSE["results"][0].copy()
         raw_job["_country"] = "gb"

@@ -21,6 +21,33 @@ logger = logging.getLogger("jobhunter.scrapers.adzuna")
 
 ADZUNA_API_BASE = "https://api.adzuna.com/v1/api/jobs"
 
+# Countries supported by the Adzuna API (ISO2 lowercase).
+# Requests for unsupported codes return 404.
+ADZUNA_SUPPORTED_COUNTRIES = frozenset(
+    [
+        "gb",
+        "us",
+        "at",
+        "au",
+        "be",
+        "br",
+        "ca",
+        "ch",
+        "de",
+        "es",
+        "fr",
+        "in",
+        "it",
+        "mx",
+        "nl",
+        "nz",
+        "pl",
+        "ru",
+        "sg",
+        "za",
+    ]
+)
+
 
 class AdzunaScraper(BaseScraper):
     """Scraper for Adzuna job aggregator API.
@@ -38,7 +65,11 @@ class AdzunaScraper(BaseScraper):
         app_key: Optional[str] = None,
     ):
         super().__init__(session)
-        self.countries = countries or self._countries_from_prefs(fallback=["gb", "es"])
+        raw_countries = countries or self._countries_from_prefs(fallback=["gb", "es"])
+        self.countries = [c for c in raw_countries if c in ADZUNA_SUPPORTED_COUNTRIES]
+        skipped = [c for c in raw_countries if c not in ADZUNA_SUPPORTED_COUNTRIES]
+        if skipped:
+            logger.warning("Adzuna: skipping unsupported countries: %s", skipped)
         self.search_terms = search_terms or self._search_terms_from_prefs()
         self.app_id = app_id or os.environ.get("ADZUNA_APP_ID", "")
         self.app_key = app_key or os.environ.get("ADZUNA_APP_KEY", "")
