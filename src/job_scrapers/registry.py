@@ -47,7 +47,6 @@ DEFAULT_SOURCES: List[str] = [
     "lever",
     "adzuna",
     "themuse",
-    "reed",
     "linkedin",
     "workday",
     "thoughtworks",
