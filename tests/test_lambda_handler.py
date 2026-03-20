@@ -109,3 +109,67 @@ def test_notify_skipped_without_topic_arn(mock_sns_client):
 
     _notify("", "Subject", "Message")
     mock_sns_client.publish.assert_not_called()
+
+
+def test_matching_is_scoped_per_user(
+    mock_sns_client, mock_scrapers, tmp_path, monkeypatch
+):
+    """Regression: jobs matched for user A must also be matched for user B.
+
+    Previously the query found jobs with *no* JobMatch row globally, so once
+    user A's matches were written, those jobs were invisible to user B.
+    """
+    db_path = str(tmp_path / "multi_user.db")
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
+
+    from src.database import get_session, init_db
+    from src.models import Job, User, UserPreferences
+
+    init_db()
+    session = get_session()
+
+    # Two approved users with minimal preferences
+    for uid, email in [(1, "alice@example.com"), (2, "bob@example.com")]:
+        u = User(id=uid, email=email, is_approved=True)
+        prefs = UserPreferences(
+            user_id=uid,
+            target_titles=["Engineer"],
+            experience_level="senior",
+            remote_preference="remote",
+        )
+        session.add(u)
+        session.add(prefs)
+
+    # Two jobs with no existing matches
+    for i in range(2):
+        session.add(
+            Job(
+                source="greenhouse",
+                source_job_id=f"job-{i}",
+                title="Software Engineer",
+                company="Acme",
+                description="We need a senior engineer.",
+            )
+        )
+    session.commit()
+    session.close()
+
+    from src.lambda_handler import lambda_handler
+
+    result = lambda_handler({}, None)
+
+    # Both users should have been scored against both jobs
+    session = get_session()
+    from src.models import JobMatch
+
+    matches_by_user = {
+        row.user_id: row.cnt
+        for row in session.query(
+            JobMatch.user_id, __import__("sqlalchemy").func.count().label("cnt")
+        ).group_by(JobMatch.user_id)
+    }
+    session.close()
+
+    assert matches_by_user.get(1) == 2, "User 1 should have 2 matches"
+    assert matches_by_user.get(2) == 2, "User 2 should have 2 matches"
+    assert result["matches_computed"] == 4
