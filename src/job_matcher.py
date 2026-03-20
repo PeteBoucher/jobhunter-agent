@@ -3,6 +3,13 @@
 Scores jobs against a user profile across five dimensions:
 title similarity, skill coverage, experience level, location/remote fit,
 and salary alignment.
+
+Scoring weights (max pts per dimension, must sum to 100):
+  title      25 pts  — Jaccard word overlap + character similarity
+  skills     35 pts  — fraction of job requirements covered by user skills
+  experience 15 pts  — seniority level alignment
+  location   15 pts  — remote preference OR location substring match
+  salary     10 pts  — gradient fit within preferred range
 """
 import re
 from difflib import SequenceMatcher
@@ -13,8 +20,14 @@ from sqlalchemy.orm import Session
 from src.models import Job, JobMatch, Skill, User, UserPreferences
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Constants
 # ---------------------------------------------------------------------------
+
+_MAX_TITLE = 25.0
+_MAX_SKILLS = 35.0
+_MAX_EXPERIENCE = 15.0
+_MAX_LOCATION = 15.0
+_MAX_SALARY = 10.0
 
 _STOPWORDS = {"the", "a", "an", "and", "or", "of", "in", "at", "for", "to", "with"}
 
@@ -42,6 +55,15 @@ _SENIORITY_KEYWORDS: List[tuple] = [
 ]
 
 _USER_SENIORITY = {"junior": 1, "mid": 2, "senior": 3, "lead": 3}
+
+# Delimiters used when CV parsers concatenate multiple skills into one string.
+# Splits on: pipe, bullet (●), 2+ spaces, or " . " (dot surrounded by spaces).
+_SKILL_SPLIT_RE = re.compile(r"[|●\n]+|(?:\s+\.\s+)|\s{2,}")
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def _similarity(a: str, b: str) -> float:
@@ -81,13 +103,61 @@ def _location_terms(locs: List[str]) -> List[str]:
     return terms
 
 
+def _normalize_skills(user_skills: List[Skill]) -> List[str]:
+    """Extract individual skill tokens from potentially concatenated CV-parsed strings.
+
+    CV parsers often produce strings like:
+      "Product Strategy . Backlog Prioritization . User Research"
+      "● Programming Languages: C++, Rust, Python"
+      "Excel | Power BI | Salesforce"
+
+    This function splits on common delimiters, strips section headers (anything
+    containing ':'), and deduplicates case-insensitively.
+    """
+    seen: set = set()
+    result: List[str] = []
+    for s in user_skills:
+        if not s.skill_name:
+            continue
+        parts = _SKILL_SPLIT_RE.split(s.skill_name)
+        for part in parts:
+            part = part.strip(" .:•-●")
+            # Skip empty, single-char, or section-header fragments
+            if not part or ":" in part or len(part) < 2:
+                continue
+            key = part.lower()
+            if key not in seen:
+                seen.add(key)
+                result.append(key)
+    return result
+
+
+def _skill_matches(req: str, skill: str) -> bool:
+    """True if *skill* meaningfully covers *req*.
+
+    Checks (in order):
+    1. Exact substring: is skill a substring of the requirement?
+    2. Word-level overlap: do they share at least one non-stopword token?
+
+    Deliberately does NOT check `req in skill` to avoid false positives
+    when a skill string is long (e.g. a partially-split multi-skill blob).
+    """
+    req_l = req.lower()
+    skill_l = skill.lower()
+    if skill_l in req_l:
+        return True
+    req_words = set(re.sub(r"[^a-z0-9]", " ", req_l).split()) - _STOPWORDS
+    skill_words = set(re.sub(r"[^a-z0-9]", " ", skill_l).split()) - _STOPWORDS
+    return bool(req_words & skill_words) if (req_words and skill_words) else False
+
+
 # ---------------------------------------------------------------------------
 # Dimension scorers
 # ---------------------------------------------------------------------------
 
 
 def _score_title(job_title: Optional[str], target_titles: Optional[List[str]]) -> float:
-    """Word-level Jaccard similarity, max over all target titles. Up to 30 pts."""
+    """Word-level Jaccard similarity, max over all target titles. Up to 25 pts."""
     if not job_title or not target_titles:
         return 0.0
     job_words = _title_words(job_title)
@@ -100,36 +170,48 @@ def _score_title(job_title: Optional[str], target_titles: Optional[List[str]]) -
         # Also include character-level similarity for partial-word matches
         char_sim = _similarity(job_title, t)
         best = max(best, jaccard, char_sim)
-    return best * 30.0
+    return best * _MAX_TITLE
 
 
 def _score_skills(requirements: Optional[List[str]], user_skills: List[Skill]) -> float:
-    """Fraction of job requirements covered by user skills. Up to 40 pts."""
-    if not requirements or not user_skills:
+    """Fraction of job requirements covered by user skills. Up to 35 pts.
+
+    When a job lists no requirements (common for LinkedIn/Ashby scrapers that
+    don't parse the description), a neutral partial score is returned rather
+    than zero so that these jobs can still rank on title, location and experience.
+    """
+    if not requirements:
+        # No requirements listed — give neutral partial credit (40 % of max)
+        return _MAX_SKILLS * 0.4
+    if not user_skills:
         return 0.0
     reqs = [r.lower() for r in requirements]
-    skill_names = [s.skill_name.lower() for s in user_skills if s.skill_name]
+    skill_names = _normalize_skills(user_skills)
     if not skill_names:
         return 0.0
-    req_matches = sum(1 for r in reqs if any(sk in r or r in sk for sk in skill_names))
+    req_matches = sum(
+        1 for r in reqs if any(_skill_matches(r, sk) for sk in skill_names)
+    )
     coverage = req_matches / len(reqs)
-    return min(40.0, coverage * 40.0)
+    return min(_MAX_SKILLS, coverage * _MAX_SKILLS)
 
 
 def _score_experience(job: Job, user_prefs: Optional[UserPreferences]) -> float:
-    """Compare job seniority to user's level. Up to 10 pts."""
+    """Compare job seniority to user's level. Up to 15 pts."""
     if not user_prefs or not user_prefs.experience_level:
-        return 5.0  # neutral — no preference set
+        return _MAX_EXPERIENCE * 0.5  # neutral — no preference set
     user_level = _USER_SENIORITY.get(user_prefs.experience_level.lower(), 2)
     job_level = _job_seniority(job)
     if job_level is None:
-        return 7.5  # no signal → benefit of the doubt
+        return _MAX_EXPERIENCE * 0.75  # no signal → benefit of the doubt
     diff = abs(user_level - job_level)
-    return {0: 10.0, 1: 6.0, 2: 2.0}.get(diff, 0.0)
+    return {0: _MAX_EXPERIENCE, 1: _MAX_EXPERIENCE * 0.6, 2: _MAX_EXPERIENCE * 0.2}.get(
+        diff, 0.0
+    )
 
 
 def _score_location_remote(job: Job, user_prefs: Optional[UserPreferences]) -> float:
-    """Remote preference + location substring match. Up to 10 pts."""
+    """Remote preference + location substring match. Up to 15 pts."""
     if not user_prefs:
         return 0.0
 
@@ -139,18 +221,18 @@ def _score_location_remote(job: Job, user_prefs: Optional[UserPreferences]) -> f
         job_remote = (job.remote or "").lower()
         job_loc = (job.location or "").lower()
         if pref == "remote" and (job_remote == "remote" or "remote" in job_loc):
-            return 10.0
+            return _MAX_LOCATION
         if pref == "hybrid" and job_remote in ("hybrid", "remote"):
-            return 7.0
+            return _MAX_LOCATION * 0.7
         if pref == "onsite" and job_remote in ("", "onsite"):
-            return 10.0
+            return _MAX_LOCATION
 
     # Location substring match — extract city/country tokens from full addresses
     if user_prefs.preferred_locations and job.location:
         terms = _location_terms(user_prefs.preferred_locations)
         job_loc = (job.location or "").lower()
         if any(term in job_loc for term in terms):
-            return 10.0
+            return _MAX_LOCATION
 
     return 0.0
 
@@ -161,9 +243,9 @@ def _score_salary(job: Job, user_prefs: Optional[UserPreferences]) -> float:
     Penalises both below-minimum and well-above-maximum (over-level roles).
     """
     if not user_prefs or not user_prefs.salary_min:
-        return 10.0  # no preference → full marks
+        return _MAX_SALARY  # no preference → full marks
     if not job.salary_min:
-        return 7.5  # salary not listed → benefit of the doubt
+        return _MAX_SALARY * 0.75  # salary not listed → benefit of the doubt
 
     sal = job.salary_min
     s_min = user_prefs.salary_min
@@ -173,20 +255,20 @@ def _score_salary(job: Job, user_prefs: Optional[UserPreferences]) -> float:
     if sal < s_min * 0.75:
         return 0.0
     if sal < s_min * 0.90:
-        below_score = 3.0
+        below_score = _MAX_SALARY * 0.3
     elif sal < s_min:
-        below_score = 6.0
+        below_score = _MAX_SALARY * 0.6
     else:
-        below_score = 10.0
+        below_score = _MAX_SALARY
 
     # --- Above-maximum penalty (over-level / directorial roles) ---
     if s_max and sal > s_max:
         ratio = sal / s_max
         if ratio > 1.5:
-            return min(below_score, 2.0)  # > 50% over max — poor fit
+            return min(below_score, _MAX_SALARY * 0.2)  # > 50% over max — poor fit
         if ratio > 1.25:
-            return min(below_score, 5.0)  # 25–50% over max
-        return min(below_score, 8.0)  # up to 25% over max — close enough
+            return min(below_score, _MAX_SALARY * 0.5)  # 25–50% over max
+        return min(below_score, _MAX_SALARY * 0.8)  # up to 25% over max — close enough
 
     return below_score
 
