@@ -158,8 +158,11 @@ class GreenhouseScraper(BaseScraper):
         description = ""
         content = raw_job.get("content", "")
         if content:
-            soup = BeautifulSoup(content, "html.parser")
-            description = soup.get_text(separator="\n").strip()
+            if "<" in content:
+                soup = BeautifulSoup(content, "html.parser")
+                description = soup.get_text(separator="\n").strip()
+            else:
+                description = content.strip()
 
         requirements = self._extract_requirements(description)
 
