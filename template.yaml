@@ -86,6 +86,7 @@ Resources:
           OPENAI_API_KEY: '{{resolve:ssm:/jobhunter/openai-api-key}}'
           MIN_MATCH_SCORE_APPLY: !Ref MinMatchScoreApply
           AUTO_APPLY_ENABLED: !Ref AutoApplyEnabled
+      ReservedConcurrentExecutions: 1
       Policies:
         - SNSPublishMessagePolicy:
             TopicName: !GetAtt JobhunterNotificationTopic.TopicName
