@@ -4,12 +4,16 @@ interface Props {
   match: MatchScore;
 }
 
-const rows = [
-  { label: "Skills", key: "skill_score" as const, max: 35 },
-  { label: "Title", key: "title_score" as const, max: 25 },
-  { label: "Experience", key: "experience_score" as const, max: 15 },
-  { label: "Location / Remote", key: "location_or_remote_score" as const, max: 15 },
-  { label: "Salary", key: "salary_score" as const, max: 10 },
+const rows: { label: string; key: keyof MatchScore; maxKey: keyof MatchScore }[] = [
+  { label: "Skills", key: "skill_score", maxKey: "skill_score_max" },
+  { label: "Title", key: "title_score", maxKey: "title_score_max" },
+  { label: "Experience", key: "experience_score", maxKey: "experience_score_max" },
+  {
+    label: "Location / Remote",
+    key: "location_or_remote_score",
+    maxKey: "location_or_remote_score_max",
+  },
+  { label: "Salary", key: "salary_score", maxKey: "salary_score_max" },
 ];
 
 export function ScoreBreakdown({ match }: Props) {
@@ -17,8 +21,9 @@ export function ScoreBreakdown({ match }: Props) {
     <div className="rounded-xl border border-gray-200 bg-white p-5">
       <h3 className="mb-4 text-sm font-semibold text-gray-700">Match breakdown</h3>
       <div className="space-y-3">
-        {rows.map(({ label, key, max }) => {
+        {rows.map(({ label, key, maxKey }) => {
           const val = match[key] ?? 0;
+          const max = (match[maxKey] as number) ?? 10;
           const pct = (val / max) * 100;
           const colour =
             pct >= 70 ? "bg-green-500" : pct >= 40 ? "bg-amber-400" : "bg-red-400";

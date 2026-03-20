@@ -36,6 +36,12 @@ export interface MatchScore {
   experience_score: number | null;
   location_or_remote_score: number | null;
   salary_score: number | null;
+  // Max values come from the API so the frontend never duplicates scoring weights
+  skill_score_max: number;
+  title_score_max: number;
+  experience_score_max: number;
+  location_or_remote_score_max: number;
+  salary_score_max: number;
 }
 
 export interface Job {

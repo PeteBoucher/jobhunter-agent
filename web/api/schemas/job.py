@@ -12,6 +12,15 @@ class MatchScoreOut(BaseModel):
     location_or_remote_score: Optional[float] = None
     salary_score: Optional[float] = None
 
+    # Maximum possible values for each dimension — derived from the scoring
+    # constants in src/job_matcher.py. Included so the frontend never needs
+    # its own copy of the weights.
+    skill_score_max: float = 35.0
+    title_score_max: float = 25.0
+    experience_score_max: float = 15.0
+    location_or_remote_score_max: float = 15.0
+    salary_score_max: float = 10.0
+
     model_config = {"from_attributes": True}
 
 
