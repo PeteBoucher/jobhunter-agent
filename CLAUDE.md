@@ -184,8 +184,8 @@ Lambda scraper sends SNS alerts on match threshold. Topic: `jobhunter-alerts` (e
 
 - **Scrapers**: `BaseScraper` ABC in `src/job_scrapers/`. Registry in `src/job_scrapers/registry.py`. Default sources: ashby, greenhouse, lever, adzuna, themuse, reed, linkedin.
 - **Lambda flow**: scrape new jobs → compute matches → SNS notification if matches above threshold. Writes directly to Neon (no S3 SQLite).
-- **Lambda timeout**: 600s. Matching a large backlog of unmatched jobs will time out. Run matching locally against Neon `DATABASE_URL` if needed.
+- **Lambda timeout**: 600s. Matching is capped at `MAX_MATCH_PER_RUN` (default 500) per invocation so it won't time out; the backlog drains across subsequent 6h runs. To run matching locally against the full backlog: `DATABASE_URL="..." .venv/bin/job-agent match`.
 - **Lambda memory**: 512MB.
 - **Multi-user**: multiple users supported. Each user has their own `JobMatch` rows. Prod users managed via `is_approved` flag in the `user` table.
-- **Neon idle SSL timeout**: Neon closes idle connections after ~5 min. `create_engine_instance()` sets TCP keepalives (`keepalives_idle=60`) and `pool_pre_ping=True` to prevent `SSL connection has been closed unexpectedly` errors. Do not bypass `create_engine_instance()` with a bare `create_engine()` call.
+- **Neon idle SSL timeout**: Neon closes idle connections after ~5 min. `create_engine_instance()` sets TCP keepalives (`keepalives_idle=60`) and `pool_pre_ping=True`. `BaseScraper.scrape()` calls `session.invalidate()` after `_fetch_jobs()` so the connection is dropped cleanly before the DB write phase — `session.close()` would fail because it tries to rollback on a dead SSL link. Do not bypass `create_engine_instance()` with a bare `create_engine()` call.
 - **Mobile layout**: `(app)/layout.tsx` uses `h-screen overflow-hidden` + flex column. Sidebar is `hidden md:flex`. Mobile gets a top bar (logo + avatar) and a bottom nav bar (`shrink-0`, not `fixed`). The `<main>` is `flex-1 overflow-auto` — content scrolls inside, nav stays pinned. Do not use `position: fixed` for the bottom nav — `overflow-x-auto` on child pages breaks fixed positioning.
