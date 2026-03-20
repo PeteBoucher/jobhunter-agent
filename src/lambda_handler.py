@@ -119,9 +119,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     session = get_session()
     try:
         users = session.query(User).filter(User.is_approved.is_(True)).all()
+        # Divide the per-run budget evenly across users so we never exceed
+        # max_match_per_run total matches regardless of how many users exist.
+        per_user_limit = (
+            max(1, max_match_per_run // len(users)) if users else max_match_per_run
+        )
         for user in users:
             # Find jobs not yet scored for this specific user.
-            # Limit per user per run to avoid Lambda timeouts on large backlogs.
             matched_job_ids = session.query(JobMatch.job_id).filter(
                 JobMatch.user_id == user.id
             )
@@ -129,7 +133,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 session.query(Job)
                 .filter(Job.id.notin_(matched_job_ids))
                 .order_by(Job.scraped_at.desc())
-                .limit(max_match_per_run)
+                .limit(per_user_limit)
                 .all()
             )
             if not jobs:
@@ -141,18 +145,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     high_score_matches.append(
                         f"  - {job.company}: {job.title} ({jm.match_score:.0f}%)"
                     )
-            logger.info(
-                "Computed %d matches for user %d (%s hits MAX_MATCH_PER_RUN limit)",
-                len(jobs),
-                user.id,
-                "hit" if len(jobs) == max_match_per_run else "did not hit",
-            )
-            if len(jobs) == max_match_per_run:
+            logger.info("Computed %d matches for user %d", len(jobs), user.id)
+            if len(jobs) == per_user_limit:
                 logger.warning(
-                    "User %d hit MAX_MATCH_PER_RUN limit (%d); unmatched jobs remain "
+                    "User %d hit per-user limit (%d); unmatched jobs remain "
                     "and will be processed in subsequent runs",
                     user.id,
-                    max_match_per_run,
+                    per_user_limit,
                 )
         logger.info(
             "Computed %d job matches total across %d users", total_matches, len(users)
