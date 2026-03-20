@@ -5,10 +5,10 @@ interface Props {
 }
 
 const rows = [
-  { label: "Skills", key: "skill_score" as const, max: 40 },
-  { label: "Title", key: "title_score" as const, max: 30 },
-  { label: "Experience", key: "experience_score" as const, max: 10 },
-  { label: "Location / Remote", key: "location_or_remote_score" as const, max: 10 },
+  { label: "Skills", key: "skill_score" as const, max: 35 },
+  { label: "Title", key: "title_score" as const, max: 25 },
+  { label: "Experience", key: "experience_score" as const, max: 15 },
+  { label: "Location / Remote", key: "location_or_remote_score" as const, max: 15 },
   { label: "Salary", key: "salary_score" as const, max: 10 },
 ];
 
