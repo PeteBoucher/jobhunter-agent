@@ -37,6 +37,8 @@ _USER_AGENTS = [
     ),
 ]
 
+LINKEDIN_JOB_API = "https://www.linkedin.com/jobs-guest/jobs/api/jobPosting"
+
 DEFAULT_LOCATIONS = [
     "United Kingdom",
     "Spain",
@@ -221,7 +223,56 @@ class LinkedInScraper(BaseScraper):
                         )
                         break
 
+        self._enrich_descriptions(all_results)
         return all_results
+
+    def _fetch_description(self, job_id: str) -> Optional[str]:
+        """Best-effort fetch of job description from the guest job detail API.
+
+        Returns plain text description or None on any failure (rate limit,
+        auth wall, parse error). Callers should treat None as "not available".
+        """
+        try:
+            resp = requests.get(
+                f"{LINKEDIN_JOB_API}/{job_id}",
+                headers={"User-Agent": random.choice(_USER_AGENTS)},
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                return None
+            soup = BeautifulSoup(resp.text, "html.parser")
+            desc_div = soup.find("div", class_="description__text") or soup.find(
+                "div", class_="show-more-less-html__markup"
+            )
+            if not desc_div:
+                return None
+            return desc_div.get_text(separator="\n").strip()[:5000] or None
+        except Exception:
+            return None
+
+    def _enrich_descriptions(
+        self, results: List[Dict[str, Any]], max_fetches: int = 30
+    ) -> None:
+        """Enrich up to max_fetches results with descriptions from the job detail API.
+
+        Modifies results in-place. Stops early if rate limited.
+        """
+        fetched = 0
+        for job in results:
+            if fetched >= max_fetches:
+                break
+            if job.get("description"):
+                continue
+            job_id = job.get("source_job_id")
+            if not job_id:
+                continue
+            desc = self._fetch_description(job_id)
+            if desc:
+                job["description"] = desc
+            fetched += 1
+            time.sleep(0.5)
+        if fetched:
+            logger.info("Fetched descriptions for %d LinkedIn jobs", fetched)
 
     def _parse_job(self, raw_job: Dict[str, Any]) -> Dict[str, Any]:
         # _fetch_jobs already returns the standardised format

@@ -80,6 +80,13 @@ class TestLinkedInScraper:
         monkeypatch.setattr(
             "src.job_scrapers.linkedin_scraper.time.sleep", lambda _: None
         )
+        # Suppress description enrichment in all tests except those that
+        # explicitly test it, so mocked request side_effect lists don't need
+        # to account for extra detail-page fetches.
+        monkeypatch.setattr(
+            "src.job_scrapers.linkedin_scraper.LinkedInScraper._enrich_descriptions",
+            lambda self, results, max_fetches=30: None,
+        )
 
     def test_source_name(self, scraper):
         assert scraper._get_source_name() == "linkedin"
@@ -215,3 +222,85 @@ class TestLinkedInScraper:
         assert len(second) == 0
         saved = scraper.session.query(Job).filter(Job.source == "linkedin").all()
         assert len(saved) == 2
+
+
+class TestLinkedInDescriptionFetch:
+    """Tests for the best-effort description enrichment step."""
+
+    @pytest.fixture(autouse=True)
+    def no_sleep(self, monkeypatch):
+        monkeypatch.setattr(
+            "src.job_scrapers.linkedin_scraper.time.sleep", lambda _: None
+        )
+
+    def test_fetch_description_returns_text(self, scraper):
+        detail_html = """
+        <div class="description__text">
+          <div class="show-more-less-html__markup">
+            We are looking for a senior engineer.
+          </div>
+        </div>
+        """
+        with patch("src.job_scrapers.linkedin_scraper.requests.get") as mock_get:
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.text = detail_html
+            mock_get.return_value = resp
+            result = scraper._fetch_description("1001")
+        assert result == "We are looking for a senior engineer."
+
+    def test_fetch_description_returns_none_on_non_200(self, scraper):
+        with patch("src.job_scrapers.linkedin_scraper.requests.get") as mock_get:
+            resp = MagicMock()
+            resp.status_code = 429
+            mock_get.return_value = resp
+            result = scraper._fetch_description("1001")
+        assert result is None
+
+    def test_fetch_description_returns_none_if_no_div(self, scraper):
+        with patch("src.job_scrapers.linkedin_scraper.requests.get") as mock_get:
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.text = "<html><body><p>Sign in to view</p></body></html>"
+            mock_get.return_value = resp
+            result = scraper._fetch_description("1001")
+        assert result is None
+
+    def test_enrich_descriptions_populates_jobs(self, scraper):
+        jobs = [
+            {"source_job_id": "1001", "description": None},
+            {"source_job_id": "1002", "description": None},
+        ]
+        detail_html = '<div class="show-more-less-html__markup">Great role.</div>'
+        with patch("src.job_scrapers.linkedin_scraper.requests.get") as mock_get:
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.text = detail_html
+            mock_get.return_value = resp
+            scraper._enrich_descriptions(jobs, max_fetches=2)
+        assert jobs[0]["description"] == "Great role."
+        assert jobs[1]["description"] == "Great role."
+
+    def test_enrich_descriptions_respects_max_fetches(self, scraper):
+        jobs = [{"source_job_id": str(i), "description": None} for i in range(5)]
+        with patch("src.job_scrapers.linkedin_scraper.requests.get") as mock_get:
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.text = '<div class="show-more-less-html__markup">text</div>'
+            mock_get.return_value = resp
+            scraper._enrich_descriptions(jobs, max_fetches=2)
+        assert mock_get.call_count == 2
+
+    def test_enrich_descriptions_skips_already_populated(self, scraper):
+        jobs = [
+            {"source_job_id": "1001", "description": "Already have this"},
+            {"source_job_id": "1002", "description": None},
+        ]
+        with patch("src.job_scrapers.linkedin_scraper.requests.get") as mock_get:
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.text = '<div class="show-more-less-html__markup">new</div>'
+            mock_get.return_value = resp
+            scraper._enrich_descriptions(jobs, max_fetches=5)
+        assert mock_get.call_count == 1  # only job 1002 fetched
+        assert jobs[0]["description"] == "Already have this"
