@@ -87,6 +87,8 @@ Resources:
           MIN_MATCH_SCORE_APPLY: !Ref MinMatchScoreApply
           AUTO_APPLY_ENABLED: !Ref AutoApplyEnabled
       ReservedConcurrentExecutions: 1
+      EventInvokeConfig:
+        MaximumRetryAttempts: 0
       Policies:
         - SNSPublishMessagePolicy:
             TopicName: !GetAtt JobhunterNotificationTopic.TopicName

@@ -96,7 +96,7 @@ class AdzunaScraper(BaseScraper):
             return []
 
         search_terms = kwargs.get("search_terms", self.search_terms)
-        max_pages = kwargs.get("max_pages", 3)
+        max_pages = kwargs.get("max_pages", 1)
         results_per_page = kwargs.get("results_per_page", 50)
 
         seen_ids: set = set()
