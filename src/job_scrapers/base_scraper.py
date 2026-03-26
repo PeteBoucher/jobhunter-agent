@@ -122,11 +122,15 @@ class BaseScraper(ABC):
 
             jobs: List[Job] = []
             parse_errors = 0
+            seen_source_ids: set = set()
 
             for raw_job in raw_jobs:
                 try:
                     parsed_data = self._parse_job(raw_job)
-                    if parsed_data.get("source_job_id") in existing_ids:
+                    job_id = parsed_data.get("source_job_id")
+                    if job_id:
+                        seen_source_ids.add(job_id)
+                    if job_id in existing_ids:
                         continue
                     jobs.append(self._create_job_object(parsed_data))
                 except Exception as e:
@@ -137,6 +141,18 @@ class BaseScraper(ABC):
             # Save all new jobs in a single commit
             if jobs:
                 self.session.add_all(jobs)
+                self.session.commit()
+
+            # Mark all jobs seen in this fetch as active and refresh scraped_at
+            # so the expiry clock resets for still-live listings.
+            if seen_source_ids:
+                self.session.query(Job).filter(
+                    Job.source == self.source_name,
+                    Job.source_job_id.in_(seen_source_ids),
+                ).update(
+                    {"scraped_at": datetime.utcnow(), "is_active": True},
+                    synchronize_session=False,
+                )
                 self.session.commit()
 
             # Record a single summary metric for the run

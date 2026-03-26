@@ -50,8 +50,10 @@ class JobSearcher:
         Returns:
             List of matching jobs
         """
-        query = self.session.query(Job).options(
-            joinedload(Job.job_matches), joinedload(Job.applications)
+        query = (
+            self.session.query(Job)
+            .options(joinedload(Job.job_matches), joinedload(Job.applications))
+            .filter(Job.is_active.is_(True))
         )
 
         # Text search

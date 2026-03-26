@@ -100,6 +100,7 @@ class Job(Base):
     apply_url = Column(String(500))
     posted_date = Column(DateTime)
     scraped_at = Column(DateTime, default=datetime.utcnow)
+    is_active = Column(Boolean, nullable=False, default=True)
     company_industry = Column(Text)
     company_size = Column(String(50))
     source_type = Column(String(20), default="aggregator")  # aggregator, company_portal

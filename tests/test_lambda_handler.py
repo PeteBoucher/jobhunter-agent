@@ -111,6 +111,69 @@ def test_notify_skipped_without_topic_arn(mock_sns_client):
     mock_sns_client.publish.assert_not_called()
 
 
+def test_scraper_failure_does_not_block_other_scrapers(mock_sns_client):
+    """A failing scraper must not prevent other scrapers from running."""
+    failing_cls = MagicMock()
+    failing_cls.return_value.scrape.side_effect = Exception("network error")
+    failing_cls.return_value.last_raw_count = 0
+
+    ok_cls = MagicMock()
+    ok_cls.return_value.scrape.return_value = []
+    ok_cls.return_value.last_raw_count = 5
+
+    with patch(
+        "src.job_scrapers.registry.SCRAPER_MAP", {"bad": failing_cls, "ok": ok_cls}
+    ):
+        with patch("src.job_scrapers.registry.DEFAULT_SOURCES", ["bad", "ok"]):
+            from src.lambda_handler import lambda_handler
+
+            result = lambda_handler({}, None)
+
+    assert "bad" in result["scrape_errors"]
+    assert "ok" not in result["scrape_errors"]
+    ok_cls.return_value.scrape.assert_called_once()
+
+
+def test_stale_jobs_are_deactivated(
+    mock_sns_client, mock_scrapers, tmp_path, monkeypatch
+):
+    """Jobs not seen for >30 days must be marked is_active=False after a run."""
+    from datetime import datetime, timedelta
+
+    db_path = str(tmp_path / "expiry.db")
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
+
+    from src.database import get_session, init_db
+    from src.models import Job
+
+    init_db()
+    session = get_session()
+
+    fresh = Job(source="test", source_job_id="fresh", title="Fresh Job", company="A")
+    stale = Job(
+        source="test",
+        source_job_id="stale",
+        title="Stale Job",
+        company="B",
+        scraped_at=datetime.utcnow() - timedelta(days=31),
+    )
+    session.add_all([fresh, stale])
+    session.commit()
+    session.close()
+
+    from src.lambda_handler import lambda_handler
+
+    lambda_handler({}, None)
+
+    session = get_session()
+    fresh_job = session.query(Job).filter(Job.source_job_id == "fresh").first()
+    stale_job = session.query(Job).filter(Job.source_job_id == "stale").first()
+    session.close()
+
+    assert fresh_job.is_active is True
+    assert stale_job.is_active is False
+
+
 def test_matching_is_scoped_per_user(
     mock_sns_client, mock_scrapers, tmp_path, monkeypatch
 ):

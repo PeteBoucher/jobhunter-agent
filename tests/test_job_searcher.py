@@ -105,6 +105,27 @@ def test_get_job_by_id(session):
     assert found_job.title == "Test Job"
 
 
+def test_inactive_jobs_excluded_from_search(session):
+    """Jobs marked is_active=False must not appear in feed results."""
+    active = Job(source="test", source_job_id="a1", title="Active Role", company="A")
+    inactive = Job(
+        source="test",
+        source_job_id="a2",
+        title="Closed Role",
+        company="B",
+        is_active=False,
+    )
+    session.add_all([active, inactive])
+    session.commit()
+
+    searcher = JobSearcher(session)
+    results = searcher.search()
+
+    titles = [j.title for j in results]
+    assert "Active Role" in titles
+    assert "Closed Role" not in titles
+
+
 def test_search_no_results(session):
     """Test search with no results."""
     job = Job(

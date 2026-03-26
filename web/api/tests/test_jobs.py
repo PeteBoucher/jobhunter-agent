@@ -91,6 +91,21 @@ class TestListJobs:
         ids_p2 = {j["id"] for j in page2}
         assert ids_p1.isdisjoint(ids_p2)
 
+    def test_inactive_jobs_excluded(self, client, db_session):
+        db_session.add_all(
+            [
+                Job(title="Active Role", company="A", source="test"),
+                Job(title="Closed Role", company="B", source="test", is_active=False),
+            ]
+        )
+        db_session.commit()
+
+        resp = client.get("/jobs?sort=date")
+        assert resp.status_code == 200
+        titles = [j["title"] for j in resp.json()]
+        assert "Active Role" in titles
+        assert "Closed Role" not in titles
+
     def test_unauthenticated_returns_4xx(self, auth_client):
         resp = auth_client.get("/jobs")
         assert resp.status_code in (401, 403)

@@ -25,7 +25,8 @@ Jobs are scraped once into a shared pool. Each user has their own profile, match
 - **CV upload** — markdown, PDF, or DOCX; skills auto-extracted via LLM and jobs re-scored
 - **Preferences** — target titles, salary, remote preference, locations (city-level), countries to search (ISO2)
 - **Applications kanban** — drag cards across Saved → Applied → Interview → Offer/Rejected
-- **Shared scraping** — Lambda scrapes all sources every 6h; search terms and countries derived automatically from user preferences
+- **Shared scraping** — Lambda scrapes all sources every 6h concurrently; search terms and countries derived automatically from user preferences
+- **Stale job expiry** — jobs not re-seen within 30 days are automatically marked inactive and hidden from the feed
 - **CLI** — full local CLI still works for power users and debugging
 
 ### Scrapers
@@ -38,8 +39,9 @@ Jobs are scraped once into a shared pool. Each user has their own profile, match
 | Adzuna | Indeed, Reed, Monster aggregate | API key in SSM; countries derived from user preferences |
 | The Muse | Curated tech companies | No auth required |
 | Reed | UK job board | API key required |
-| LinkedIn | Guest search endpoint | Rate-limited; no auth |
+| LinkedIn | Guest search endpoint | Rate-limited; no auth; descriptions fetched via guest job detail API |
 | Workday | Enterprise ATS | Configured per-company |
+| Thoughtworks | Direct careers page | |
 | GitHub Jobs | — | Deprecated, returns empty |
 | Microsoft Careers | — | Deprecated, returns empty |
 
@@ -49,11 +51,13 @@ Jobs are scraped once into a shared pool. Each user has their own profile, match
 
 | Dimension | Points | Method |
 |-----------|--------|--------|
-| Title | 30 | Word-level Jaccard + character similarity against target titles |
-| Skills | 40 | Fraction of job requirements covered by CV skills |
-| Experience | 10 | Seniority match between job level and user preference |
-| Location/remote | 10 | Remote preference OR location substring match |
+| Skills | 35 | Fraction of job requirements covered by CV skills |
+| Title | 25 | Word-level Jaccard + character similarity against target titles |
+| Experience | 15 | Seniority match between job level and user preference |
+| Location/remote | 15 | Remote preference OR location substring match (OR relationship) |
 | Salary | 10 | Gradient — job salary vs user minimum |
+
+Score maxima are served from the API (`*_score_max` fields on every job response) so the frontend never needs its own copy of the weights.
 
 ## Project structure
 
@@ -187,9 +191,7 @@ Render (API) and Vercel (frontend) deploy automatically on `git push origin mast
 
 ### DB migrations
 
-```bash
-DATABASE_URL=postgresql://... alembic upgrade head
-```
+Schema changes are applied directly via Neon MCP or `psql`. `init_db()` (called at Lambda startup) handles new tables via `Base.metadata.create_all()`, but new columns on existing tables require an explicit `ALTER TABLE`.
 
 ## User management
 

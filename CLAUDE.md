@@ -8,16 +8,16 @@ An automated job search and application tracking agent that eliminates the manua
 
 **Roadmap** (see `PROJECT_PLAN.md` for full detail):
 
-1. **Done** — Core CLI, CV parsing, job scrapers (Greenhouse, Lever, Adzuna, The Muse), matching engine, application tracker, AWS Lambda + S3 deployment, SNS notifications
-2. **Next** — Improve match quality (tune scoring weights, expand scraper targets), Google Sheets integration for tracking
-3. **Future** — Auto-apply workflow, cover letter generation, interview prep, email digest, web dashboard
+1. **Done** — Core CLI, CV parsing, job scrapers (Greenhouse, Lever, Adzuna, The Muse, LinkedIn, Ashby, Workday, Thoughtworks), matching engine, application tracker, AWS Lambda deployment, SNS notifications, web dashboard (Next.js + FastAPI), multi-user support, stale job expiry
+2. **Next** — Expand scraper targets, improve match quality further
+3. **Future** — Auto-apply workflow, cover letter generation, interview prep, email digest
 
 **Matching formula** (score 0–100):
 ```
 score = (skill_match × 0.35) + (title_match × 0.25) + (experience_match × 0.15)
       + (location_or_remote_match × 0.15) + (salary_match × 0.10)
 ```
-Location and remote have an OR relationship — a job qualifies if either the location matches *or* it's remote.
+Location and remote have an OR relationship — a job qualifies if either the location matches *or* it's remote. Score maxima are served from the API (`*_score_max` fields on `MatchScoreOut`) so the frontend never duplicates the weights — do not hardcode them in UI components.
 
 ---
 
@@ -182,10 +182,13 @@ Lambda scraper sends SNS alerts on match threshold. Topic: `jobhunter-alerts` (e
 
 ## Key Architecture Notes
 
-- **Scrapers**: `BaseScraper` ABC in `src/job_scrapers/`. Registry in `src/job_scrapers/registry.py`. Default sources: ashby, greenhouse, lever, adzuna, themuse, reed, linkedin.
-- **Lambda flow**: scrape new jobs → compute matches → SNS notification if matches above threshold. Writes directly to Neon (no S3 SQLite).
-- **Lambda timeout**: 600s. Matching is capped at `MAX_MATCH_PER_RUN` (default 500) per invocation so it won't time out; the backlog drains across subsequent 6h runs. To run matching locally against the full backlog: `DATABASE_URL="..." .venv/bin/job-agent match`.
+- **Scrapers**: `BaseScraper` ABC in `src/job_scrapers/`. Registry in `src/job_scrapers/registry.py`. Default sources: ashby, greenhouse, lever, adzuna, themuse, linkedin, workday, thoughtworks.
+- **Lambda flow**: scrape (concurrent) → expire stale listings → compute matches → SNS notification. Writes directly to Neon (no S3 SQLite).
+- **Concurrent scraping**: All scrapers run in parallel via `ThreadPoolExecutor` in `lambda_handler.py`. Each scraper gets its own `get_session()` — no shared mutable state between threads. Wall-clock time is the slowest single scraper, not the sum.
+- **Lambda stability**: `ReservedConcurrentExecutions: 1` prevents overlapping invocations. `EventInvokeConfig.MaximumRetryAttempts: 0` stops AWS retrying on timeout (timeouts are expected at full budget and are not actionable errors).
+- **Lambda timeout**: 600s. Matching is capped at `MAX_MATCH_PER_RUN` (default 500) divided evenly across approved users per invocation; the backlog drains over subsequent 6h runs. To run matching locally against the full backlog: `DATABASE_URL="..." .venv/bin/job-agent match`.
 - **Lambda memory**: 512MB.
-- **Multi-user**: multiple users supported. Each user has their own `JobMatch` rows. Prod users managed via `is_approved` flag in the `user` table.
+- **Multi-user**: multiple users supported. Each user has their own `JobMatch` rows. The matching query uses a per-user subquery (`Job.id.notin_(matched_job_ids_for_this_user)`) — not a global outerjoin. Prod users managed via `is_approved` flag in the `user` table.
+- **Stale job expiry**: `Job.is_active` (Boolean, default True). After each scrape, `BaseScraper.scrape()` bulk-updates `scraped_at` and `is_active=True` for all jobs seen in the current fetch (resets the expiry clock). Lambda then marks any job with `scraped_at < now - 30 days` as `is_active=False`. `JobSearcher.search()` filters `is_active=True` — inactive jobs are hidden from the feed but rows are preserved for application history. Column added via `ALTER TABLE jobs ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE`.
 - **Neon idle SSL timeout**: Neon closes idle connections after ~5 min. `create_engine_instance()` sets TCP keepalives (`keepalives_idle=60`) and `pool_pre_ping=True`. `BaseScraper.scrape()` calls `session.invalidate()` after `_fetch_jobs()` so the connection is dropped cleanly before the DB write phase — `session.close()` would fail because it tries to rollback on a dead SSL link. Do not bypass `create_engine_instance()` with a bare `create_engine()` call.
 - **Mobile layout**: `(app)/layout.tsx` uses `h-screen overflow-hidden` + flex column. Sidebar is `hidden md:flex`. Mobile gets a top bar (logo + avatar) and a bottom nav bar (`shrink-0`, not `fixed`). The `<main>` is `flex-1 overflow-auto` — content scrolls inside, nav stays pinned. Do not use `position: fixed` for the bottom nav — `overflow-x-auto` on child pages breaks fixed positioning.

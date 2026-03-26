@@ -10,7 +10,9 @@ Triggered by EventBridge schedule.
 import json
 import logging
 import os
-from typing import Any, Dict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta
+from typing import Any, Dict, Optional, Tuple
 
 import boto3
 
@@ -62,36 +64,50 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     # Ensure schema is up to date (idempotent)
     init_db()
 
-    # Step 1: Scrape
-    total_new_jobs = 0
-    scrape_errors = []
-    zero_result_scrapers = []
-
-    for source_name in DEFAULT_SOURCES:
+    # Step 1: Scrape — all sources run concurrently (I/O-bound; each uses its
+    # own DB session so there is no shared mutable state between threads).
+    def _scrape_one(
+        source_name: str,
+    ) -> Tuple[str, int, int, Optional[Exception]]:
         session = get_session()
         try:
             cls = SCRAPER_MAP.get(source_name)
             if not cls:
                 logger.warning("Unknown source: %s", source_name)
-                continue
+                return source_name, 0, 0, None
             scraper = cls(session)
             jobs = scraper.scrape(max_retries=3, backoff_factor=1.0)
             count = len(jobs)
-            total_new_jobs += count
+            raw_count = scraper.last_raw_count
             logger.info(
                 "Scraped %d new jobs from %s (raw fetched: %d)",
                 count,
                 source_name,
-                scraper.last_raw_count,
+                raw_count,
             )
-            if scraper.last_raw_count == 0:
-                zero_result_scrapers.append(source_name)
+            if raw_count == 0:
                 logger.warning("Scraper %s returned 0 raw results", source_name)
+            return source_name, count, raw_count, None
         except Exception as e:
             logger.exception("Error scraping %s: %s", source_name, e)
-            scrape_errors.append(source_name)
+            return source_name, 0, 0, e
         finally:
             session.close()
+
+    total_new_jobs = 0
+    scrape_errors = []
+    zero_result_scrapers = []
+
+    with ThreadPoolExecutor(max_workers=len(DEFAULT_SOURCES)) as executor:
+        futures = {executor.submit(_scrape_one, src): src for src in DEFAULT_SOURCES}
+        for future in as_completed(futures):
+            source_name, count, raw_count, error = future.result()
+            if error is not None:
+                scrape_errors.append(source_name)
+            else:
+                total_new_jobs += count
+                if raw_count == 0:
+                    zero_result_scrapers.append(source_name)
 
     # Alert on scraper health issues
     if scrape_errors or zero_result_scrapers:
@@ -112,6 +128,28 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "\n".join(lines),
         )
 
+    # Step 1.5: Expire stale job listings
+    _EXPIRY_DAYS = 30
+    session = get_session()
+    try:
+        cutoff = datetime.utcnow() - timedelta(days=_EXPIRY_DAYS)
+        deactivated = (
+            session.query(Job)
+            .filter(Job.is_active.is_(True), Job.scraped_at < cutoff)
+            .update({"is_active": False}, synchronize_session=False)
+        )
+        session.commit()
+        if deactivated:
+            logger.info(
+                "Deactivated %d stale job listings (not seen in >%d days)",
+                deactivated,
+                _EXPIRY_DAYS,
+            )
+    except Exception:
+        logger.exception("Error deactivating stale jobs")
+    finally:
+        session.close()
+
     # Step 2: Match
     total_matches = 0
     high_score_matches = []
@@ -131,7 +169,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             )
             jobs = (
                 session.query(Job)
-                .filter(Job.id.notin_(matched_job_ids))
+                .filter(
+                    Job.id.notin_(matched_job_ids),
+                    Job.is_active.is_(True),
+                )
                 .order_by(Job.scraped_at.desc())
                 .limit(per_user_limit)
                 .all()
