@@ -1,12 +1,12 @@
 """Job search and filtering functionality."""
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Optional
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
-from src.models import Job, JobMatch, User
+from src.models import Job, JobMatch
 
 
 class JobSearcher:
@@ -114,50 +114,3 @@ class JobSearcher:
             Job object or None if not found
         """
         return self.session.query(Job).filter(Job.id == job_id).first()
-
-    def get_top_matches(
-        self, user_id: Optional[int] = None, limit: int = 10
-    ) -> List[Job]:
-        """Get top matching jobs for a user.
-
-        Args:
-            user_id: Filter to specific user, or None for all jobs
-            limit: Number of top matches to return
-
-        Returns:
-            List of top matching jobs
-        """
-        query = self.session.query(Job).order_by(Job.posted_date.desc()).limit(limit)
-
-        if user_id:
-            # Filter jobs that are good matches for this user
-            user = self.session.query(User).filter(User.id == user_id).first()
-            if not user:
-                return []
-
-        return query.all()
-
-    def get_recent_jobs(self, days: int = 7, limit: int = 50) -> List[Job]:
-        """Get recently posted jobs.
-
-        Args:
-            days: Number of days back to search
-            limit: Maximum number of results
-
-        Returns:
-            List of recently posted jobs
-        """
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
-        return self.search(posted_after=cutoff_date, limit=limit)
-
-    def get_jobs_by_source(self, source: str, limit: int = 50) -> List[Job]:
-        """Get jobs from a specific source.
-
-        Args:
-            source: Job source (github, microsoft, etc.)
-            limit: Maximum number of results
-
-        Returns:
-            List of jobs from the source
-        """
-        return self.search(source=source, limit=limit)

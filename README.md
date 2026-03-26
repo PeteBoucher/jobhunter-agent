@@ -85,7 +85,6 @@ jobhunter-agent/
 │       ├── app/
 │       ├── components/
 │       └── lib/
-├── alembic/                    # DB migrations
 ├── tests/                      # CLI / scraper tests
 ├── template.yaml               # SAM template (Lambda + EventBridge + SNS)
 ├── samconfig.toml

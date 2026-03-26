@@ -19,6 +19,8 @@ import boto3
 logger = logging.getLogger("jobhunter.lambda")
 logger.setLevel(logging.INFO)
 
+_EXPIRY_DAYS = 30  # Jobs not re-seen within this window are marked inactive
+
 # Lazy-initialized SNS client (cached for Lambda warm starts)
 _sns_client = None
 
@@ -129,7 +131,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         )
 
     # Step 1.5: Expire stale job listings
-    _EXPIRY_DAYS = 30
     session = get_session()
     try:
         cutoff = datetime.utcnow() - timedelta(days=_EXPIRY_DAYS)
