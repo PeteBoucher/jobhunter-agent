@@ -150,9 +150,9 @@ export default function FeedPage() {
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
         </div>
       )}
-      {error && (
+      {error && error.message !== "session_expired" && (
         <div className="rounded-lg bg-red-50 p-4 text-sm text-red-600">
-          Failed to load jobs. Make sure your profile is set up.
+          Something went wrong loading jobs. Try refreshing the page.
         </div>
       )}
       {jobs && jobs.length === 0 && (

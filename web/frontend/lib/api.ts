@@ -2,6 +2,7 @@
  * Typed API client for the jobhunter FastAPI backend.
  * All methods require a valid API token (from next-auth session).
  */
+import { signOut } from "next-auth/react";
 import type { Application, ApplicationStatus, Job, Preferences, User } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -19,6 +20,10 @@ async function request<T>(
       ...(options?.headers ?? {}),
     },
   });
+  if (res.status === 401) {
+    signOut({ callbackUrl: typeof window !== "undefined" ? window.location.pathname : "/" });
+    throw new Error("session_expired");
+  }
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`API ${res.status}: ${body}`);
@@ -87,6 +92,10 @@ export function uploadCV(token: string, file: File): Promise<User> {
     headers: { Authorization: `Bearer ${token}` },
     body: form,
   }).then((res) => {
+    if (res.status === 401) {
+      signOut({ callbackUrl: typeof window !== "undefined" ? window.location.pathname : "/" });
+      throw new Error("session_expired");
+    }
     if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
     return res.json();
   });
@@ -159,6 +168,10 @@ export async function deleteAccount(token: string): Promise<void> {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
   });
+  if (res.status === 401) {
+    signOut({ callbackUrl: "/" });
+    throw new Error("session_expired");
+  }
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`API ${res.status}: ${body}`);
