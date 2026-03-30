@@ -21,6 +21,7 @@ def _job(**kwargs):
     j.description = kwargs.get("description", "")
     j.location = kwargs.get("location", "")
     j.remote = kwargs.get("remote", "")
+    j.country = kwargs.get("country", None)
     j.salary_min = kwargs.get("salary_min", None)
     j.salary_max = kwargs.get("salary_max", None)
     return j
@@ -32,6 +33,7 @@ def _prefs(**kwargs):
     p.experience_level = kwargs.get("experience_level", None)
     p.remote_preference = kwargs.get("remote_preference", None)
     p.preferred_locations = kwargs.get("preferred_locations", [])
+    p.preferred_countries = kwargs.get("preferred_countries", None)
     p.salary_min = kwargs.get("salary_min", None)
     p.salary_max = kwargs.get("salary_max", None)
     return p
@@ -353,6 +355,38 @@ class TestScoreLocationRemote:
         prefs = _prefs(
             remote_preference=None,
             preferred_locations=["C/ Los Naranjos 66, Casares 29692, Málaga, Spain"],
+        )
+        assert _score_location_remote(job, prefs) == pytest.approx(15.0)
+
+    def test_country_gate_blocks_wrong_country(self):
+        # Gate only fires when preferred_countries is explicitly set
+        job = _job(location="Malaga, Swan Area", country="au")
+        prefs = _prefs(
+            preferred_locations=["Malaga"],
+            preferred_countries=["es", "gb"],
+        )
+        assert _score_location_remote(job, prefs) == pytest.approx(0.0)
+
+    def test_country_gate_allows_correct_country(self):
+        job = _job(location="Malaga, Andalusia", country="es")
+        prefs = _prefs(
+            preferred_locations=["Malaga", "Cadiz"],
+            preferred_countries=["es"],
+        )
+        assert _score_location_remote(job, prefs) == pytest.approx(15.0)
+
+    def test_country_gate_skipped_when_no_preferred_countries(self):
+        # No preferred_countries set → gate is inactive, city match still works
+        job = _job(location="Malaga, Swan Area", country="au")
+        prefs = _prefs(preferred_locations=["Malaga"], preferred_countries=None)
+        assert _score_location_remote(job, prefs) == pytest.approx(15.0)
+
+    def test_country_gate_skipped_when_no_job_country(self):
+        # Jobs without a country set should still match on location substring
+        job = _job(location="Malaga, Swan Area", country=None)
+        prefs = _prefs(
+            preferred_locations=["Malaga"],
+            preferred_countries=["es", "gb"],
         )
         assert _score_location_remote(job, prefs) == pytest.approx(15.0)
 

@@ -228,5 +228,6 @@ class AdzunaScraper(BaseScraper):
             "posted_date": posted_date,
             "company_industry": None,
             "company_size": None,
+            "country": raw_job.get("_country"),
             "source_type": "aggregator",
         }

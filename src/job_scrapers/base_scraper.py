@@ -275,6 +275,7 @@ class BaseScraper(ABC):
             department=parsed_data.get("department"),
             location=parsed_data.get("location"),
             remote=parsed_data.get("remote"),
+            country=parsed_data.get("country"),
             salary_min=parsed_data.get("salary_min"),
             salary_max=parsed_data.get("salary_max"),
             description=parsed_data.get("description"),

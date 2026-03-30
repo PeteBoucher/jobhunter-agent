@@ -92,6 +92,7 @@ class Job(Base):
     department = Column(Text)
     location = Column(Text)
     remote = Column(String(20))  # onsite, hybrid, remote
+    country = Column(String(2))  # ISO2 country code e.g. "gb", "es", "au"
     salary_min = Column(Float)
     salary_max = Column(Float)
     description = Column(String)

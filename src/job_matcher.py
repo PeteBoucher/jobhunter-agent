@@ -31,6 +31,7 @@ _MAX_SALARY = 10.0
 
 _STOPWORDS = {"the", "a", "an", "and", "or", "of", "in", "at", "for", "to", "with"}
 
+
 _SENIORITY_KEYWORDS: List[tuple] = [
     # (keyword, numeric level) — checked in order; first match wins
     ("chief", 5),
@@ -210,12 +211,24 @@ def _score_experience(job: Job, user_prefs: Optional[UserPreferences]) -> float:
     )
 
 
+def _country_compatible(job_country: str, user_prefs: UserPreferences) -> bool:
+    """Return True if the job's country is compatible with the user's preferences.
+
+    Only gates when the user has explicitly set preferred_countries (ISO2 list).
+    If preferred_countries is not set, returns True to preserve existing behaviour.
+    """
+    if not user_prefs.preferred_countries:
+        return True
+    job_c = job_country.lower()
+    return job_c in [c.lower() for c in user_prefs.preferred_countries]
+
+
 def _score_location_remote(job: Job, user_prefs: Optional[UserPreferences]) -> float:
     """Remote preference + location substring match. Up to 15 pts."""
     if not user_prefs:
         return 0.0
 
-    # Remote preference check
+    # Remote preference check (country-agnostic — remote is remote)
     if user_prefs.remote_preference:
         pref = user_prefs.remote_preference.lower()
         job_remote = (job.remote or "").lower()
@@ -227,8 +240,10 @@ def _score_location_remote(job: Job, user_prefs: Optional[UserPreferences]) -> f
         if pref == "onsite" and job_remote in ("", "onsite"):
             return _MAX_LOCATION
 
-    # Location substring match — extract city/country tokens from full addresses
+    # Location substring match — gated by country when job.country is known
     if user_prefs.preferred_locations and job.location:
+        if job.country and not _country_compatible(job.country, user_prefs):
+            return 0.0
         terms = _location_terms(user_prefs.preferred_locations)
         job_loc = (job.location or "").lower()
         if any(term in job_loc for term in terms):
