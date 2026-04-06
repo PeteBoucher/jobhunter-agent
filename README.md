@@ -1,6 +1,6 @@
 # Jobhunter
 
-A hosted web app + CLI tool that scrapes job listings, scores them against your CV, and tracks your applications. Currently in private beta.
+A hosted web app + CLI tool that scrapes job listings, scores them against your CV, and tracks your applications. Free to use — sign in with Google to get started.
 
 ## Architecture
 
@@ -19,9 +19,10 @@ Jobs are scraped once into a shared pool. Each user has their own profile, match
 
 ## What's working
 
-- **Google sign-in** — OAuth via next-auth; new users land on `/pending` waitlist
+- **Google sign-in** — OAuth via next-auth; instant access, no approval needed
 - **Job feed** — personalised match scores based on your CV and preferences
 - **Job detail** — full description, score breakdown, apply button
+- **AI tools** — generate a tailored cover letter, rewritten CV, or LinkedIn recruiter message for any job (powered by Claude Haiku via the `jobhunter-ai` private package)
 - **CV upload** — markdown, PDF, or DOCX; skills auto-extracted via LLM and jobs re-scored
 - **Preferences** — target titles, salary, remote preference, locations (city-level), countries to search (ISO2)
 - **Applications kanban** — drag cards across Saved → Applied → Interview → Offer/Rejected
@@ -180,11 +181,16 @@ Lambda writes to Neon via `DATABASE_URL` from SSM (`/jobhunter/database-url`).
 
 ### Web app
 
-Render (API) and Vercel (frontend) deploy automatically on `git push origin master`.
+Pushing to `master` triggers the GitHub Actions CI workflow (`.github/workflows/ci.yml`):
+1. Python tests + linting (black, isort, flake8, mypy, bandit)
+2. Frontend Vitest tests
+3. On success: Render deploy hook fires (API) and Vercel CLI deploys (frontend)
+
+Required GitHub Actions secrets: `RENDER_DEPLOY_HOOK_URL`, `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`.
 
 | Service | Config |
 |---------|--------|
-| Render | Root: `web/api`, start: `uvicorn main:app --host 0.0.0.0 --port $PORT` |
+| Render | Root: `web/api`, build: `pip install -r requirements.txt git+https://${GITHUB_TOKEN}@github.com/peteboucher/jobhunter-ai.git`, start: `uvicorn main:app --host 0.0.0.0 --port $PORT` |
 | Vercel | Root: `web/frontend`, env: `NEXT_PUBLIC_API_URL`, `NEXTAUTH_URL`, Google OAuth keys |
 | Neon | Connection string in Render env vars + SSM `/jobhunter/database-url` |
 
@@ -194,13 +200,9 @@ Schema changes are applied directly via Neon MCP or `psql`. `init_db()` (called 
 
 ## User management
 
-New sign-ups land on `/pending`. To approve a user, run in the Neon console:
+Sign-up is open — all new users get immediate access. The `is_approved` column is retained in the DB but no longer enforced at the API or frontend level.
 
-```sql
-UPDATE "user" SET is_approved = true WHERE email = 'friend@example.com';
-```
-
-User signs out and back in to pick up the change.
+Match score email notifications fire when a new job scores ≥ 70% against a user's profile (configurable via `MinMatchScoreNotify` in `samconfig.toml`).
 
 ## Documentation
 
