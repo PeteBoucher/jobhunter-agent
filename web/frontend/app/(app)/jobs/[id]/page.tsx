@@ -4,10 +4,11 @@ import DOMPurify from "dompurify";
 import { useSession } from "next-auth/react";
 import { useState } from "react";
 import useSWR from "swr";
-import { createApplication, getApplications, getJob } from "@/lib/api";
+import { createApplication, generateContent, getApplications, getJob } from "@/lib/api";
 import { ScoreBreakdown } from "@/components/ScoreBreakdown";
 import { MatchScoreBar } from "@/components/MatchScoreBar";
 import type { ApplicationStatus } from "@/lib/types";
+import type { GenerateType } from "@/lib/api";
 
 /** Detect whether a string contains HTML tags. */
 function isHtml(text: string): boolean {
@@ -64,6 +65,55 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
 
   const [applying, setApplying] = useState(false);
   const [toast, setToast] = useState("");
+
+  // AI generation state: which panel is open, loading flags, generated content
+  const [activePanel, setActivePanel] = useState<GenerateType | null>(null);
+  const [generating, setGenerating] = useState<GenerateType | null>(null);
+  const [generated, setGenerated] = useState<Partial<Record<GenerateType, string>>>({});
+  const [copied, setCopied] = useState<GenerateType | null>(null);
+
+  async function handleGenerate(type: GenerateType) {
+    if (!token) return;
+    // Toggle panel closed if already open and content exists
+    if (activePanel === type && generated[type]) {
+      setActivePanel(null);
+      return;
+    }
+    setActivePanel(type);
+    if (generated[type]) return; // already fetched
+    setGenerating(type);
+    try {
+      const res = await generateContent(token, jobId, type);
+      setGenerated((prev) => ({ ...prev, [type]: res.content }));
+    } catch (err: any) {
+      const msg = err?.message?.includes("Upload your CV")
+        ? "Upload your CV on the Profile page first."
+        : "Generation failed — please try again.";
+      setGenerated((prev) => ({ ...prev, [type]: `⚠️ ${msg}` }));
+    } finally {
+      setGenerating(null);
+    }
+  }
+
+  function handleCopy(type: GenerateType) {
+    const text = generated[type];
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopied(type);
+    setTimeout(() => setCopied(null), 2000);
+  }
+
+  function handleDownload(type: GenerateType) {
+    const text = generated[type];
+    if (!text) return;
+    const blob = new Blob([text], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `tailored-cv-${job?.company ?? "job"}.md`.toLowerCase().replace(/\s+/g, "-");
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   const existingApp = applications?.find((a) => a.job_id === jobId);
 
@@ -159,6 +209,86 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
         )}
         {toast && (
           <span className="text-sm text-green-600">{toast}</span>
+        )}
+      </div>
+
+      {/* AI Tools */}
+      <div className="mb-6">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-400">
+          AI Tools
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {(
+            [
+              { type: "cover_letter" as GenerateType, label: "Cover Letter" },
+              { type: "tailored_cv" as GenerateType, label: "Tailor My CV" },
+              { type: "recruiter_message" as GenerateType, label: "Recruiter Message" },
+            ] as const
+          ).map(({ type, label }) => (
+            <button
+              key={type}
+              onClick={() => handleGenerate(type)}
+              disabled={generating === type}
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 ${
+                activePanel === type
+                  ? "border-purple-300 bg-purple-50 text-purple-700"
+                  : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              {generating === type ? (
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-purple-400 border-t-transparent" />
+              ) : (
+                <span>✦</span>
+              )}
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Generated content panels */}
+        {(["cover_letter", "tailored_cv", "recruiter_message"] as GenerateType[]).map(
+          (type) =>
+            activePanel === type && (
+              <div key={type} className="mt-3 rounded-xl border border-purple-100 bg-purple-50 p-4">
+                {generating === type ? (
+                  <div className="flex items-center gap-2 text-sm text-purple-500">
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-purple-400 border-t-transparent" />
+                    Generating…
+                  </div>
+                ) : generated[type] ? (
+                  <>
+                    <pre className="whitespace-pre-wrap font-sans text-sm text-gray-700 leading-relaxed">
+                      {generated[type]}
+                    </pre>
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        onClick={() => handleCopy(type)}
+                        className="rounded-md border border-purple-200 bg-white px-3 py-1 text-xs font-medium text-purple-700 hover:bg-purple-50"
+                      >
+                        {copied === type ? "Copied!" : "Copy"}
+                      </button>
+                      {type === "tailored_cv" && (
+                        <button
+                          onClick={() => handleDownload(type)}
+                          className="rounded-md border border-purple-200 bg-white px-3 py-1 text-xs font-medium text-purple-700 hover:bg-purple-50"
+                        >
+                          Download .md
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          setGenerated((prev) => ({ ...prev, [type]: undefined }));
+                          handleGenerate(type);
+                        }}
+                        className="rounded-md border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-500 hover:bg-gray-50"
+                      >
+                        Regenerate
+                      </button>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            )
         )}
       </div>
 

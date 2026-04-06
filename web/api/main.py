@@ -26,6 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from routers import (  # noqa: E402
     applications_router,
     auth_router,
+    generate_router,
     jobs_router,
     preferences_router,
     profile_router,
@@ -176,6 +177,7 @@ async def log_requests(request: Request, call_next):
 
 app.include_router(auth_router.router)
 app.include_router(jobs_router.router)
+app.include_router(generate_router.router)
 app.include_router(profile_router.router)
 app.include_router(preferences_router.router)
 app.include_router(applications_router.router)

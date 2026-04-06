@@ -155,6 +155,21 @@ export function deleteApplication(token: string, id: number): Promise<void> {
   return request<void>(`/applications/${id}`, token, { method: "DELETE" });
 }
 
+// ── AI Generation ─────────────────────────────────────────────────────────────
+
+export type GenerateType = "cover_letter" | "tailored_cv" | "recruiter_message";
+
+export function generateContent(
+  token: string,
+  jobId: number,
+  type: GenerateType
+): Promise<{ content: string }> {
+  return request<{ content: string }>(`/jobs/${jobId}/generate`, token, {
+    method: "POST",
+    body: JSON.stringify({ type }),
+  });
+}
+
 // ── Skills ────────────────────────────────────────────────────────────────────
 
 export function deleteSkill(token: string, skillId: number): Promise<void> {
