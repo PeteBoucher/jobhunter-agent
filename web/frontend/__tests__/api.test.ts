@@ -1,4 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("next-auth/react", () => ({
+  signOut: vi.fn(),
+  useSession: vi.fn(() => ({ data: null, status: "unauthenticated" })),
+}));
 import {
   createApplication,
   deleteSkill,
@@ -101,7 +106,7 @@ describe("deleteSkill", () => {
 
   it("throws on 401 (unauthenticated)", async () => {
     mockFetch({ detail: "Not authenticated" }, 401);
-    await expect(deleteSkill(TOKEN, 1)).rejects.toThrow("API 401");
+    await expect(deleteSkill(TOKEN, 1)).rejects.toThrow("session_expired");
   });
 });
 
