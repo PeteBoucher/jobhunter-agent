@@ -40,15 +40,13 @@ def google_login(body: GoogleLoginRequest, db: Session = Depends(get_db)):
 
     user = db.query(User).filter(User.google_id == google_id).first()
     if not user:
-        user = User(google_id=google_id, email=email, name=name, is_approved=False)
+        user = User(google_id=google_id, email=email, name=name, is_approved=True)
         db.add(user)
         db.commit()
         db.refresh(user)
         logger.info("auth new_user email=%s", email)
     else:
-        logger.info(
-            "auth returning_user email=%s is_approved=%s", email, user.is_approved
-        )
+        logger.info("auth returning_user email=%s", email)
 
     token = issue_jwt(google_id, email)
     return TokenResponse(access_token=token, user=UserOut.model_validate(user))

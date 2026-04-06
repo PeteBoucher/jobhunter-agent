@@ -22,15 +22,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       posthog.reset();
       router.push("/");
     }
-    if (status === "authenticated") {
-      if (!(session as any)?.isApproved) {
-        router.push("/pending");
-      } else if (session.user?.email) {
-        posthog.identify(session.user.email, {
-          name: session.user.name ?? undefined,
-          email: session.user.email,
-        });
-      }
+    if (status === "authenticated" && session.user?.email) {
+      posthog.identify(session.user.email, {
+        name: session.user.name ?? undefined,
+        email: session.user.email,
+      });
     }
   }, [status, session, router]);
 

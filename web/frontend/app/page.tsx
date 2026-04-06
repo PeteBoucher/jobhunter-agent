@@ -10,7 +10,7 @@ export default function LandingPage() {
 
   useEffect(() => {
     if (status === "authenticated") {
-      router.push((session as any)?.isApproved ? "/feed" : "/pending");
+      router.push("/feed");
     }
   }, [status, session, router]);
 
@@ -38,7 +38,7 @@ export default function LandingPage() {
       {/* Hero */}
       <section className="flex flex-col items-center text-center px-4 pt-16 pb-12 max-w-3xl mx-auto">
         <span className="mb-4 inline-block rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700">
-          Private beta — join the waitlist
+          Free to use · sign in to get started
         </span>
         <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 leading-tight mb-4">
           Stop scrolling job boards.<br className="hidden sm:block" />
@@ -58,9 +58,9 @@ export default function LandingPage() {
             <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
             <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
           </svg>
-          Join the waitlist
+          Sign in with Google
         </button>
-        <p className="mt-3 text-xs text-gray-400">Sign in with Google · we&apos;ll notify you when you&apos;re approved</p>
+        <p className="mt-3 text-xs text-gray-400">Free · no approval needed · get your scored job feed instantly</p>
       </section>
 
       {/* How it works */}

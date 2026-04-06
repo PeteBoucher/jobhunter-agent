@@ -157,7 +157,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     session = get_session()
     try:
-        users = session.query(User).filter(User.is_approved.is_(True)).all()
+        users = session.query(User).all()
         # Divide the per-run budget evenly across users so we never exceed
         # max_match_per_run total matches regardless of how many users exist.
         per_user_limit = (
