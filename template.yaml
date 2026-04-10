@@ -106,27 +106,38 @@ Resources:
         GITHUB_TOKEN: !Ref GithubToken
 
   # --- CloudWatch Alarms ---
+
+  # Filter on [ERROR] log lines rather than the AWS/Lambda Errors metric.
+  # AWS/Lambda Errors counts timeouts as errors — Lambda intentionally runs
+  # close to the 600s budget (scraping + matching fills it), so timeouts are
+  # expected and not actionable. This filter only fires on genuine Python
+  # exceptions and logger.error() calls.
+  JobhunterErrorMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/jobhunter-${Environment}"
+      FilterPattern: "[timestamp, requestId, level=ERROR, ...]"
+      MetricTransformations:
+        - MetricNamespace: !Sub "Jobhunter/${Environment}"
+          MetricName: ErrorCount
+          MetricValue: "1"
+          DefaultValue: 0
+
   JobhunterErrorAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: !Sub "jobhunter-errors-${Environment}"
-      AlarmDescription: "Alert on Lambda invocation errors"
-      Namespace: AWS/Lambda
-      MetricName: Errors
-      Dimensions:
-        - Name: FunctionName
-          Value: !Ref JobhunterFunction
+      AlarmDescription: "Alert on Lambda [ERROR] log lines (excludes expected timeouts)"
+      Namespace: !Sub "Jobhunter/${Environment}"
+      MetricName: ErrorCount
       Statistic: Sum
-      Period: 300
+      Period: 3600
       EvaluationPeriods: 1
       Threshold: 1
       ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
       AlarmActions:
         - !Ref JobhunterNotificationTopic
-
-  # JobhunterThrottleAlarm removed: Lambda intentionally runs close to the
-  # 600s timeout (scraping + matching fills the budget), so duration alerts
-  # are expected behaviour and not actionable.
 
 Outputs:
   FunctionArn:

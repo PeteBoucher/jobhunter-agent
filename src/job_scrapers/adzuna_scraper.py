@@ -102,8 +102,22 @@ class AdzunaScraper(BaseScraper):
         seen_ids: set = set()
         all_jobs: List[Dict[str, Any]] = []
 
+        # Circuit-breaker: skip remaining terms for a country after this many
+        # consecutive non-200 responses. 5xx errors (e.g. Adzuna returning 502
+        # for a whole country) would otherwise burn the entire Lambda budget.
+        _MAX_COUNTRY_ERRORS = 3
+
         for country in self.countries:
+            consecutive_errors = 0
             for term in search_terms:
+                if consecutive_errors >= _MAX_COUNTRY_ERRORS:
+                    logger.warning(
+                        "Adzuna: skipping remaining terms for country=%s "
+                        "after %d consecutive errors",
+                        country,
+                        consecutive_errors,
+                    )
+                    break
                 for page in range(1, max_pages + 1):
                     try:
                         url = f"{ADZUNA_API_BASE}/{country}/search/{page}"
@@ -125,11 +139,16 @@ class AdzunaScraper(BaseScraper):
                             return all_jobs
                         if resp.status_code != 200:
                             logger.warning(
-                                f"Adzuna API error for {country}/{term} page {page}: "
-                                f"HTTP {resp.status_code}"
+                                "Adzuna API error for %s/%s page %d: HTTP %d",
+                                country,
+                                term,
+                                page,
+                                resp.status_code,
                             )
+                            consecutive_errors += 1
                             break
 
+                        consecutive_errors = 0  # reset on success
                         data = resp.json()
                         results = data.get("results", [])
 
@@ -146,8 +165,11 @@ class AdzunaScraper(BaseScraper):
 
                         all_jobs.extend(new_results)
                         logger.info(
-                            f"Fetched {len(new_results)} jobs from Adzuna "
-                            f"({country}, '{term}', page {page})"
+                            "Fetched %d jobs from Adzuna (%s, '%s', page %d)",
+                            len(new_results),
+                            country,
+                            term,
+                            page,
                         )
 
                         # Stop if we got fewer results than requested (last page)
@@ -156,8 +178,9 @@ class AdzunaScraper(BaseScraper):
 
                     except requests.RequestException as e:
                         logger.warning(
-                            f"Failed to fetch from Adzuna ({country}/{term}): {e}"
+                            "Failed to fetch from Adzuna (%s/%s): %s", country, term, e
                         )
+                        consecutive_errors += 1
                         break
 
         return all_jobs
