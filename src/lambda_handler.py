@@ -58,10 +58,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     max_match_per_run = int(os.environ.get("MAX_MATCH_PER_RUN", "500"))
 
     # DATABASE_URL is injected from SSM via template.yaml; src.database reads it.
+    from sqlalchemy import exists
+
     from src.database import get_session, init_db
     from src.job_matcher import compute_match_for_user
     from src.job_scrapers.registry import DEFAULT_SOURCES, SCRAPER_MAP
-    from src.models import Job, JobMatch, User
+    from src.models import Job, JobMatch, Skill, User, UserPreferences
 
     # Ensure schema is up to date (idempotent)
     init_db()
@@ -157,9 +159,24 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     session = get_session()
     try:
-        users = session.query(User).all()
-        # Divide the per-run budget evenly across users so we never exceed
-        # max_match_per_run total matches regardless of how many users exist.
+        # Only match users who have set up their profile in some meaningful way
+        # — CV text, at least one skill, or target titles configured. Without
+        # any of these, scores are zero and matches are meaningless. This also
+        # ensures the budget is not diluted by users who signed up but never
+        # completed their profile.
+        users = (
+            session.query(User)
+            .filter(
+                User.cv_text.isnot(None)
+                | exists().where(Skill.user_id == User.id)
+                | exists().where(
+                    UserPreferences.user_id == User.id,
+                    UserPreferences.target_titles.isnot(None),
+                )
+            )
+            .all()
+        )
+        # Divide the per-run budget evenly across matchable users.
         per_user_limit = (
             max(1, max_match_per_run // len(users)) if users else max_match_per_run
         )

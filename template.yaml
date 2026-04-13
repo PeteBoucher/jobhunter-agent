@@ -26,6 +26,9 @@ Parameters:
     Type: String
     Default: ""
     NoEcho: true
+  MaxMatchPerRun:
+    Type: String
+    Default: "5000"
 
 Globals:
   Function:
@@ -86,6 +89,7 @@ Resources:
           OPENAI_API_KEY: '{{resolve:ssm:/jobhunter/openai-api-key}}'
           MIN_MATCH_SCORE_APPLY: !Ref MinMatchScoreApply
           AUTO_APPLY_ENABLED: !Ref AutoApplyEnabled
+          MAX_MATCH_PER_RUN: !Ref MaxMatchPerRun
       ReservedConcurrentExecutions: 1
       EventInvokeConfig:
         MaximumRetryAttempts: 0

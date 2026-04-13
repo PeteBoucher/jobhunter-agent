@@ -191,9 +191,13 @@ def test_matching_is_scoped_per_user(
     init_db()
     session = get_session()
 
-    # Two approved users with minimal preferences
-    for uid, email in [(1, "alice@example.com"), (2, "bob@example.com")]:
-        u = User(id=uid, email=email, is_approved=True)
+    # Two approved users: alice has a CV, bob has target titles set.
+    # Both qualify for matching (cv_text OR skills OR target_titles).
+    for uid, email, cv in [
+        (1, "alice@example.com", "Senior software engineer with Python experience."),
+        (2, "bob@example.com", None),
+    ]:
+        u = User(id=uid, email=email, is_approved=True, cv_text=cv)
         prefs = UserPreferences(
             user_id=uid,
             target_titles=["Engineer"],
