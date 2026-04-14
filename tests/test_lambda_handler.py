@@ -40,15 +40,26 @@ def mock_scrapers():
             yield mock_scraper_cls, mock_instance
 
 
-def test_handler_returns_summary(mock_sns_client, mock_scrapers):
-    """Test handler returns a well-formed summary dict."""
+def test_handler_returns_scrape_summary(mock_sns_client, mock_scrapers):
+    """Scrape phase returns a well-formed summary dict."""
     from src.lambda_handler import lambda_handler
 
     result = lambda_handler({}, None)
 
+    assert result["action"] == "scrape"
     assert result["jobs_scraped"] == 0
-    assert result["matches_computed"] == 0
     assert "scrape_errors" in result
+    assert "zero_result_scrapers" in result
+
+
+def test_handler_match_returns_summary(mock_sns_client, mock_scrapers):
+    """Match phase returns a well-formed summary dict."""
+    from src.lambda_handler import lambda_handler
+
+    result = lambda_handler({"action": "match"}, None)
+
+    assert result["action"] == "match"
+    assert result["matches_computed"] == 0
     assert "high_score_matches" in result
 
 
@@ -223,7 +234,9 @@ def test_matching_is_scoped_per_user(
 
     from src.lambda_handler import lambda_handler
 
-    result = lambda_handler({}, None)
+    # Scrape and match are now separate invocations.
+    lambda_handler({}, None)
+    result = lambda_handler({"action": "match"}, None)
 
     # Both users should have been scored against both jobs
     session = get_session()

@@ -1,10 +1,18 @@
 """AWS Lambda handler for periodic job scraping and matching.
 
-Scrapes jobs from configured sources, computes per-user match scores, and
-publishes notifications for high-scoring matches. Writes directly to the
-shared PostgreSQL database (configured via DATABASE_URL env var).
+The function runs in two distinct phases, dispatched by the event payload:
 
-Triggered by EventBridge schedule.
+  {"action": "scrape"}  (default, triggered by EventBridge every 6h)
+      Scrapes all sources concurrently, expires stale listings, then invokes
+      itself asynchronously with {"action": "match"} before returning.
+
+  {"action": "match"}
+      Computes per-user match scores and publishes SNS notifications for
+      high-scoring matches.
+
+Splitting the phases means each gets the full 600 s Lambda budget.
+ReservedConcurrentExecutions=1 ensures the match invocation waits in queue
+until the scrape execution exits, giving a clean hand-off with no overlap.
 """
 
 import json
@@ -21,8 +29,9 @@ logger.setLevel(logging.INFO)
 
 _EXPIRY_DAYS = 30  # Jobs not re-seen within this window are marked inactive
 
-# Lazy-initialized SNS client (cached for Lambda warm starts)
+# Lazy-initialised clients (cached for Lambda warm starts)
 _sns_client = None
+_lambda_client = None
 
 
 def _get_sns():
@@ -30,6 +39,13 @@ def _get_sns():
     if _sns_client is None:
         _sns_client = boto3.client("sns")
     return _sns_client
+
+
+def _get_lambda():
+    global _lambda_client
+    if _lambda_client is None:
+        _lambda_client = boto3.client("lambda")
+    return _lambda_client
 
 
 def _notify(topic_arn: str, subject: str, message: str) -> None:
@@ -46,30 +62,33 @@ def _notify(topic_arn: str, subject: str, message: str) -> None:
         logger.exception("Failed to publish SNS notification")
 
 
-def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """Main Lambda entry point.
+def _invoke_match(function_name: str) -> None:
+    """Asynchronously invoke this function in match mode."""
+    if not function_name:
+        logger.warning("FUNCTION_NAME not set — skipping match invocation")
+        return
+    try:
+        _get_lambda().invoke(
+            FunctionName=function_name,
+            InvocationType="Event",  # async — does not wait for completion
+            Payload=json.dumps({"action": "match"}).encode(),
+        )
+        logger.info("Invoked %s for matching (async)", function_name)
+    except Exception:
+        logger.exception("Failed to invoke match Lambda")
 
-    1. Scrape jobs from all default sources
-    2. Compute match scores for all users
-    3. Notify on high-score matches
+
+def _do_scrape(sns_topic_arn: str, function_name: str) -> Dict[str, Any]:
+    """Scrape all sources and expire stale listings.
+
+    Invokes this function asynchronously with action=match on completion.
     """
-    sns_topic_arn = os.environ.get("SNS_TOPIC_ARN", "")
-    min_score = float(os.environ.get("MIN_MATCH_SCORE_NOTIFY", "70"))
-    max_match_per_run = int(os.environ.get("MAX_MATCH_PER_RUN", "500"))
-
-    # DATABASE_URL is injected from SSM via template.yaml; src.database reads it.
-    from sqlalchemy import exists
-
     from src.database import get_session, init_db
-    from src.job_matcher import compute_match_for_user
     from src.job_scrapers.registry import DEFAULT_SOURCES, SCRAPER_MAP
-    from src.models import Job, JobMatch, Skill, User, UserPreferences
+    from src.models import Job
 
-    # Ensure schema is up to date (idempotent)
     init_db()
 
-    # Step 1: Scrape — all sources run concurrently (I/O-bound; each uses its
-    # own DB session so there is no shared mutable state between threads).
     def _scrape_one(
         source_name: str,
     ) -> Tuple[str, int, int, Optional[Exception]]:
@@ -113,7 +132,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 if raw_count == 0:
                     zero_result_scrapers.append(source_name)
 
-    # Alert on scraper health issues
     if scrape_errors or zero_result_scrapers:
         lines = []
         if scrape_errors:
@@ -132,7 +150,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "\n".join(lines),
         )
 
-    # Step 1.5: Expire stale job listings
+    # Expire stale job listings
     session = get_session()
     try:
         cutoff = datetime.utcnow() - timedelta(days=_EXPIRY_DAYS)
@@ -153,7 +171,34 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     finally:
         session.close()
 
-    # Step 2: Match
+    summary = {
+        "action": "scrape",
+        "jobs_scraped": total_new_jobs,
+        "scrape_errors": scrape_errors,
+        "zero_result_scrapers": zero_result_scrapers,
+    }
+    logger.info("Scrape summary: %s", json.dumps(summary))
+
+    # Hand off to match phase — runs in its own fresh Lambda invocation so it
+    # gets the full 600 s budget uncontested by scraping I/O.
+    _invoke_match(function_name)
+
+    return summary
+
+
+def _do_match(sns_topic_arn: str) -> Dict[str, Any]:
+    """Compute per-user match scores and notify on high-score matches."""
+    from sqlalchemy import exists
+
+    from src.database import get_session, init_db
+    from src.job_matcher import compute_match_for_user
+    from src.models import Job, JobMatch, Skill, User, UserPreferences
+
+    init_db()
+
+    min_score = float(os.environ.get("MIN_MATCH_SCORE_NOTIFY", "70"))
+    max_match_per_run = int(os.environ.get("MAX_MATCH_PER_RUN", "5000"))
+
     total_matches = 0
     high_score_matches = []
 
@@ -176,12 +221,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             )
             .all()
         )
-        # Divide the per-run budget evenly across matchable users.
         per_user_limit = (
             max(1, max_match_per_run // len(users)) if users else max_match_per_run
         )
         for user in users:
-            # Find jobs not yet scored for this specific user.
             matched_job_ids = session.query(JobMatch.job_id).filter(
                 JobMatch.user_id == user.id
             )
@@ -213,14 +256,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     per_user_limit,
                 )
         logger.info(
-            "Computed %d job matches total across %d users", total_matches, len(users)
+            "Computed %d job matches total across %d users",
+            total_matches,
+            len(users),
         )
     except Exception:
         logger.exception("Error computing matches")
     finally:
         session.close()
 
-    # Step 3: Notify
     if high_score_matches:
         _notify(
             sns_topic_arn,
@@ -229,7 +273,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             f"{min_score:.0f}%+:\n" + "\n".join(high_score_matches),
         )
 
-    # Step 4: Auto-apply to top matches (requires jobhunter-ai private package)
+    # Auto-apply (requires jobhunter-ai private package)
     auto_apply_results: list = []
     if os.environ.get("AUTO_APPLY_ENABLED", "false").lower() == "true":
         try:
@@ -270,12 +314,21 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             )
 
     summary = {
-        "jobs_scraped": total_new_jobs,
+        "action": "match",
         "matches_computed": total_matches,
         "high_score_matches": len(high_score_matches),
-        "scrape_errors": scrape_errors,
-        "zero_result_scrapers": zero_result_scrapers,
         "auto_apply_results": auto_apply_results,
     }
-    logger.info("Summary: %s", json.dumps(summary))
+    logger.info("Match summary: %s", json.dumps(summary))
     return summary
+
+
+def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """Lambda entry point — dispatches to scrape or match phase."""
+    sns_topic_arn = os.environ.get("SNS_TOPIC_ARN", "")
+    function_name = os.environ.get("FUNCTION_NAME", "")
+
+    action = event.get("action", "scrape")
+    if action == "match":
+        return _do_match(sns_topic_arn)
+    return _do_scrape(sns_topic_arn, function_name)

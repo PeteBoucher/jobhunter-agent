@@ -90,12 +90,15 @@ Resources:
           MIN_MATCH_SCORE_APPLY: !Ref MinMatchScoreApply
           AUTO_APPLY_ENABLED: !Ref AutoApplyEnabled
           MAX_MATCH_PER_RUN: !Ref MaxMatchPerRun
+          FUNCTION_NAME: !Sub "jobhunter-${Environment}"
       ReservedConcurrentExecutions: 1
       EventInvokeConfig:
         MaximumRetryAttempts: 0
       Policies:
         - SNSPublishMessagePolicy:
             TopicName: !GetAtt JobhunterNotificationTopic.TopicName
+        - LambdaInvokePolicy:
+            FunctionName: !Sub "jobhunter-${Environment}"
       Events:
         ScheduledScrape:
           Type: Schedule
