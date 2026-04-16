@@ -169,7 +169,7 @@ Web API tests use `TestClient` + in-memory SQLite — no Neon connection needed.
 
 ## Deployment
 
-### Lambda (scraper)
+### Lambda (scraper + matcher)
 
 ```bash
 sam build
@@ -177,7 +177,24 @@ sam deploy --config-env default   # Dev — schedule disabled
 sam deploy --config-env prod      # Prod — 6h schedule
 ```
 
-Lambda writes to Neon via `DATABASE_URL` from SSM (`/jobhunter/database-url`).
+Lambda runs in two phases, each with a full 600s budget:
+
+1. **Scrape** (triggered by EventBridge `{}`) — scrapes all sources concurrently, expires stale listings, then invokes itself async with `{"action":"match"}`.
+2. **Match** (triggered by scrape phase) — computes per-user scores and sends SNS notifications for matches ≥ 70%.
+
+Invoke manually:
+
+```bash
+# Trigger a full scrape + match cycle
+aws lambda invoke --function-name jobhunter-prod --region eu-west-1 \
+  --invocation-type Event --payload "$(echo '{}' | base64)" /dev/null
+
+# Trigger match only
+aws lambda invoke --function-name jobhunter-prod --region eu-west-1 \
+  --invocation-type Event --payload "$(echo '{"action":"match"}' | base64)" /dev/null
+```
+
+Lambda writes to Neon via `DATABASE_URL` from SSM (`/jobhunter/database-url`). Only users with a CV, skills, or target titles set are included in matching — unprovisioned accounts don't dilute the budget.
 
 ### Web app
 

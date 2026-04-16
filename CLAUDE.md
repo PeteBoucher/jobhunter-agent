@@ -138,10 +138,18 @@ Vercel defaults to `east-us-1` (Virginia) — the `regions` override in `vercel.
 
 ### Invoke Lambda manually
 
+The Lambda runs in two phases. Trigger them independently:
+
 ```bash
-# Async (recommended — Lambda takes ~3-5 min)
+# Scrape only (also auto-invokes match on completion)
 aws lambda invoke --function-name jobhunter-prod --region eu-west-1 \
-  --invocation-type Event --payload '{}' /dev/null
+  --invocation-type Event \
+  --payload "$(echo '{}' | base64)" /dev/null
+
+# Match only (score unmatched jobs for all profiled users)
+aws lambda invoke --function-name jobhunter-prod --region eu-west-1 \
+  --invocation-type Event \
+  --payload "$(echo '{"action":"match"}' | base64)" /dev/null
 
 # Watch logs
 aws logs tail /aws/lambda/jobhunter-prod --region eu-west-1 --follow
@@ -176,17 +184,20 @@ Loki data source in Grafana: `grafanacloud-jobhunter-logs`.
 
 ### SNS alerts
 
-Lambda scraper sends SNS alerts on match threshold. Topic: `jobhunter-alerts` (eu-west-1). Email subscription confirmed.
+Lambda sends SNS alerts on match threshold (≥70%). Topic: `jobhunter-notifications-prod` (eu-west-1).
+
+The `jobhunter-errors-prod` CloudWatch alarm uses a **Logs Metric Filter** on `[ERROR]` log lines — not the `AWS/Lambda Errors` metric. This means Lambda timeouts do not trigger it (timeouts at full scraping budget are expected). `TreatMissingData: notBreaching` prevents INSUFFICIENT_DATA oscillation between invocations.
 
 ---
 
 ## Key Architecture Notes
 
 - **Scrapers**: `BaseScraper` ABC in `src/job_scrapers/`. Registry in `src/job_scrapers/registry.py`. Default sources: ashby, greenhouse, lever, adzuna, themuse, linkedin, workday, thoughtworks.
-- **Lambda flow**: scrape (concurrent) → expire stale listings → compute matches → SNS notification. Writes directly to Neon (no S3 SQLite).
+- **Lambda flow**: Two separate invocations dispatched by event payload. **Scrape phase** (`{}` or `{"action":"scrape"}`): scrape all sources concurrently → expire stale listings → invoke self async with `{"action":"match"}`. **Match phase** (`{"action":"match"}`): compute per-user scores → SNS notification. Each phase gets the full 600s budget. Writes directly to Neon (no S3 SQLite).
 - **Concurrent scraping**: All scrapers run in parallel via `ThreadPoolExecutor` in `lambda_handler.py`. Each scraper gets its own `get_session()` — no shared mutable state between threads. Wall-clock time is the slowest single scraper, not the sum.
-- **Lambda stability**: `ReservedConcurrentExecutions: 1` prevents overlapping invocations. `EventInvokeConfig.MaximumRetryAttempts: 0` stops AWS retrying on timeout (timeouts are expected at full budget and are not actionable errors).
-- **Lambda timeout**: 600s. Matching is capped at `MAX_MATCH_PER_RUN` (default 500) divided evenly across approved users per invocation; the backlog drains over subsequent 6h runs. To run matching locally against the full backlog: `DATABASE_URL="..." .venv/bin/job-agent match`.
+- **Lambda stability**: `ReservedConcurrentExecutions: 1` prevents overlapping invocations — the match invocation queues behind the scrape and starts when scrape exits. `EventInvokeConfig.MaximumRetryAttempts: 0` stops AWS retrying on failure.
+- **Lambda timeout**: 600s per phase. Matching is capped at `MAX_MATCH_PER_RUN` (default 5000) divided evenly across profiled users (those with cv_text, skills, or target_titles set). Budget is not diluted by users who signed up but never set up a profile. To run matching locally: `DATABASE_URL="..." .venv/bin/job-agent match`.
+- **Adzuna circuit breaker**: After 3 consecutive non-200 responses for a country, remaining search terms for that country are skipped. Prevents a flaky country (e.g. `sg`, `in` returning 502) from burning the full Lambda budget.
 - **Lambda memory**: 512MB.
 - **Multi-user**: multiple users supported. Each user has their own `JobMatch` rows. The matching query uses a per-user subquery (`Job.id.notin_(matched_job_ids_for_this_user)`) — not a global outerjoin. Sign-up is open — `is_approved` is retained in the DB but not enforced anywhere.
 - **AI content generation**: `POST /jobs/{job_id}/generate` with `{ type: "cover_letter" | "tailored_cv" | "recruiter_message" }`. Implemented in `web/api/routers/generate_router.py`; delegates to `jobhunter_ai.content_generator` (private package). Returns 503 if the package is not installed, 400 if the user has no CV uploaded. Uses Claude Haiku (`claude-haiku-4-5-20251001`) via `LLMClient` in jobhunter-ai for cost efficiency.
