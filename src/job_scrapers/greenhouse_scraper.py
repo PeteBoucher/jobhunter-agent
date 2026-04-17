@@ -7,6 +7,7 @@ API docs: https://developers.greenhouse.io/job-board.html
 Endpoint: https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs
 """
 
+import html as html_module
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -154,10 +155,14 @@ class GreenhouseScraper(BaseScraper):
         if departments:
             department = departments[0].get("name")
 
-        # Parse HTML content to plain text and extract requirements
+        # Parse HTML content to plain text and extract requirements.
+        # Greenhouse sometimes returns entity-escaped HTML (e.g. &lt;div&gt;)
+        # rather than raw HTML tags. Unescape first so BeautifulSoup can
+        # parse it correctly regardless of encoding.
         description = ""
         content = raw_job.get("content", "")
         if content:
+            content = html_module.unescape(content)
             if "<" in content:
                 soup = BeautifulSoup(content, "html.parser")
                 description = soup.get_text(separator="\n").strip()
