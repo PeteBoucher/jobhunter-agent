@@ -1,5 +1,5 @@
 """Tests for jobs router: GET /jobs, GET /jobs/{id}."""
-from src.models import Job, JobMatch
+from src.models import Job, JobMatch, UserPreferences
 
 
 class TestListJobs:
@@ -109,6 +109,106 @@ class TestListJobs:
     def test_unauthenticated_returns_4xx(self, auth_client):
         resp = auth_client.get("/jobs")
         assert resp.status_code in (401, 403)
+
+    def test_remote_filter_excludes_ineligible_countries(
+        self, client, db_session, test_user
+    ):
+        """Remote jobs from countries not in user's preferred_countries are hidden."""
+        prefs = UserPreferences(
+            user_id=test_user.id,
+            preferred_countries=["GB", "ES"],
+        )
+        db_session.add(prefs)
+        db_session.add_all(
+            [
+                # eligible — country matches
+                Job(
+                    title="UK Remote",
+                    company="A",
+                    source="test",
+                    remote="remote",
+                    country="gb",
+                ),
+                # eligible — no country restriction (global ATS role)
+                Job(
+                    title="Global Remote",
+                    company="B",
+                    source="test",
+                    remote="remote",
+                    country=None,
+                ),
+                # ineligible — wrong country
+                Job(
+                    title="US Remote",
+                    company="C",
+                    source="test",
+                    remote="remote",
+                    country="us",
+                ),
+            ]
+        )
+        db_session.commit()
+
+        resp = client.get("/jobs?remote=remote&sort=date")
+        assert resp.status_code == 200
+        titles = {j["title"] for j in resp.json()}
+        assert "UK Remote" in titles
+        assert "Global Remote" in titles
+        assert "US Remote" not in titles
+
+    def test_remote_filter_no_restriction_when_no_preferred_countries(
+        self, client, db_session, test_user
+    ):
+        """Without preferred_countries set, all remote jobs are shown."""
+        # test_user has no UserPreferences — no country restriction applied
+        db_session.add_all(
+            [
+                Job(
+                    title="US Remote",
+                    company="A",
+                    source="test",
+                    remote="remote",
+                    country="us",
+                ),
+                Job(
+                    title="UK Remote",
+                    company="B",
+                    source="test",
+                    remote="remote",
+                    country="gb",
+                ),
+            ]
+        )
+        db_session.commit()
+
+        resp = client.get("/jobs?remote=remote&sort=date")
+        assert resp.status_code == 200
+        titles = {j["title"] for j in resp.json()}
+        assert "US Remote" in titles
+        assert "UK Remote" in titles
+
+    def test_country_filter_not_applied_for_onsite(self, client, db_session, test_user):
+        """Country eligibility filter does not apply to non-remote searches."""
+        prefs = UserPreferences(
+            user_id=test_user.id,
+            preferred_countries=["GB"],
+        )
+        db_session.add(prefs)
+        db_session.add(
+            Job(
+                title="US Onsite",
+                company="A",
+                source="test",
+                remote="onsite",
+                country="us",
+            )
+        )
+        db_session.commit()
+
+        resp = client.get("/jobs?remote=onsite&sort=date")
+        assert resp.status_code == 200
+        titles = {j["title"] for j in resp.json()}
+        assert "US Onsite" in titles
 
 
 class TestGetJob:

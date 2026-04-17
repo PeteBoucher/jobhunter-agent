@@ -52,12 +52,23 @@ def list_jobs(
             else None
         )
 
+    # For remote searches, restrict to jobs the user is eligible for based on
+    # their preferred_countries. Jobs with no country (global ATS roles) are
+    # always included. If the user hasn't set any preferred countries, no
+    # restriction is applied.
+    eligible_countries = None
+    if remote == "remote":
+        prefs = current_user.preferences
+        if prefs and prefs.preferred_countries:
+            eligible_countries = [c.lower() for c in prefs.preferred_countries]
+
     searcher = JobSearcher(db)
     # page_size + offset emulated via limit; JobSearcher doesn't have native pagination
     jobs = searcher.search(
         keywords=keywords,
         location=location,
         remote=remote,
+        eligible_countries=eligible_countries,
         min_match_score=min_score,
         sort_by=sort,
         limit=page_size * page,  # over-fetch then slice

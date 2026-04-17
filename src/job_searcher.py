@@ -25,6 +25,7 @@ class JobSearcher:
         keywords: Optional[str] = None,
         location: Optional[str] = None,
         remote: Optional[str] = None,
+        eligible_countries: Optional[List[str]] = None,
         min_match_score: Optional[float] = None,
         source: Optional[str] = None,
         posted_after: Optional[datetime] = None,
@@ -38,6 +39,9 @@ class JobSearcher:
             keywords: Search keywords in title, company, or description
             location: Filter by location
             remote: Filter by remote status (remote, hybrid, onsite)
+            eligible_countries: When provided, restrict remote jobs to those
+                with no country set (globally open roles) or whose country
+                matches one of these ISO2 codes (lowercase).
             min_match_score: Minimum match score (0-100) - filters via
                 JobMatch relationship
             source: Filter by job source (github, microsoft, etc.)
@@ -77,6 +81,18 @@ class JobSearcher:
                 or_(
                     Job.remote == remote_val,
                     Job.location.ilike(f"%{remote_val}%"),
+                )
+            )
+
+        # Country eligibility filter for remote jobs.
+        # Jobs with no country (global ATS roles) are always included.
+        # Jobs with a country are only included if that country is in the
+        # user's preferred_countries list.
+        if eligible_countries:
+            query = query.filter(
+                or_(
+                    Job.country.is_(None),
+                    Job.country.in_(eligible_countries),
                 )
             )
 
