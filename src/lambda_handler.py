@@ -18,7 +18,8 @@ until the scrape execution exits, giving a clean hand-off with no overlap.
 import json
 import logging
 import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import wait as futures_wait
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Tuple
 
@@ -121,16 +122,37 @@ def _do_scrape(sns_topic_arn: str, function_name: str) -> Dict[str, Any]:
     scrape_errors = []
     zero_result_scrapers = []
 
-    with ThreadPoolExecutor(max_workers=len(DEFAULT_SOURCES)) as executor:
-        futures = {executor.submit(_scrape_one, src): src for src in DEFAULT_SOURCES}
-        for future in as_completed(futures):
-            source_name, count, raw_count, error = future.result()
-            if error is not None:
-                scrape_errors.append(source_name)
-            else:
-                total_new_jobs += count
-                if raw_count == 0:
-                    zero_result_scrapers.append(source_name)
+    # Give scrapers 480 s — enough for Adzuna and LinkedIn on a good day —
+    # and always leave ~120 s for DB writes, stale expiry, and the match
+    # invocation before the 600 s Lambda budget expires.
+    _SCRAPE_DEADLINE = 480
+
+    executor = ThreadPoolExecutor(max_workers=len(DEFAULT_SOURCES))
+    futures = {executor.submit(_scrape_one, src): src for src in DEFAULT_SOURCES}
+    done, timed_out = futures_wait(futures, timeout=_SCRAPE_DEADLINE)
+
+    for future in done:
+        source_name, count, raw_count, error = future.result()
+        if error is not None:
+            scrape_errors.append(source_name)
+        else:
+            total_new_jobs += count
+            if raw_count == 0:
+                zero_result_scrapers.append(source_name)
+
+    for future in timed_out:
+        source_name = futures[future]
+        logger.warning(
+            "Scraper %s did not complete within %ds deadline — skipping this run",
+            source_name,
+            _SCRAPE_DEADLINE,
+        )
+        scrape_errors.append(source_name)
+
+    # Don't block waiting for overdue scrapers; the Lambda will exit cleanly
+    # after invoking match. Any in-flight scraper threads are killed on exit —
+    # SQLAlchemy sessions are per-scraper so no partial writes persist.
+    executor.shutdown(wait=False)
 
     if scrape_errors or zero_result_scrapers:
         lines = []
