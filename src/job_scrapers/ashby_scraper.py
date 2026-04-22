@@ -29,6 +29,11 @@ DEFAULT_BOARD_SLUGS = [
     "cohere",
     "deliveroo",
     "plaid",
+    "elevenlabs",
+    "replit",
+    "synthesia",
+    "cursor",
+    "perplexity",
     # Mid-volume boards (20-100 jobs)
     "clickup",
     "confluent",
@@ -39,11 +44,21 @@ DEFAULT_BOARD_SLUGS = [
     "sanity",
     "render",
     "runway-ml",
+    "benchling",
+    "mollie",
+    "paddle",
+    "primer",
     # Smaller but relevant
     "airbyte",
     "neon",
     "railway",
     "prefect",
+    "wayflyer",
+    "posthog",
+    "plain",
+    "browserbase",
+    "warp",
+    "orb",
 ]
 
 ASHBY_API_BASE = "https://api.ashbyhq.com/posting-api/job-board"
