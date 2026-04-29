@@ -82,8 +82,10 @@ class AdzunaScraper(BaseScraper):
 
         Kwargs:
             search_terms: Override default search terms list
-            max_pages: Max pages per country/term combination (default: 3)
+            max_pages: Max pages per country/term combination (default: 1)
             results_per_page: Results per page (default: 50)
+            max_search_terms: Cap on unique search terms per run (default: 5).
+                Limits API quota consumption — Adzuna free tier has monthly limits.
 
         Returns:
             List of raw job dicts from the Adzuna API (deduplicated by job ID)
@@ -98,9 +100,20 @@ class AdzunaScraper(BaseScraper):
         search_terms = kwargs.get("search_terms", self.search_terms)
         max_pages = kwargs.get("max_pages", 1)
         results_per_page = kwargs.get("results_per_page", 50)
+        # Cap terms to protect against quota exhaustion when many users have
+        # diverse target_titles. Each (country × term × page) = 1 API call.
+        max_search_terms = kwargs.get("max_search_terms", 5)
+        search_terms = search_terms[:max_search_terms]
+
+        logger.info(
+            "Adzuna: fetching %d term(s) across %d country/countries",
+            len(search_terms),
+            len(self.countries),
+        )
 
         seen_ids: set = set()
         all_jobs: List[Dict[str, Any]] = []
+        quota_exhausted = False
 
         # Circuit-breaker: skip remaining terms for a country after this many
         # consecutive non-200 responses. 5xx errors (e.g. Adzuna returning 502
@@ -108,8 +121,12 @@ class AdzunaScraper(BaseScraper):
         _MAX_COUNTRY_ERRORS = 3
 
         for country in self.countries:
+            if quota_exhausted:
+                break
             consecutive_errors = 0
             for term in search_terms:
+                if quota_exhausted:
+                    break
                 if consecutive_errors >= _MAX_COUNTRY_ERRORS:
                     logger.warning(
                         "Adzuna: skipping remaining terms for country=%s "
@@ -135,8 +152,13 @@ class AdzunaScraper(BaseScraper):
                             logger.warning("Adzuna API authentication failed")
                             return all_jobs
                         if resp.status_code == 429:
-                            logger.warning("Adzuna API rate limit reached")
-                            return all_jobs
+                            logger.warning(
+                                "Adzuna API quota exhausted (HTTP 429) — "
+                                "stopping further requests this run. "
+                                "Check your monthly quota at developer.adzuna.com."
+                            )
+                            quota_exhausted = True
+                            break
                         if resp.status_code != 200:
                             logger.warning(
                                 "Adzuna API error for %s/%s page %d: HTTP %d",
