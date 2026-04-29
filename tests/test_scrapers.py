@@ -81,6 +81,72 @@ class TestBaseScraper:
         assert job.company == "Tech Company"
 
 
+class TestInferCountry:
+    """Tests for BaseScraper._infer_country."""
+
+    def test_us_state_enumeration(self):
+        desc = (
+            "This is a remote position, open to candidates who reside in: "
+            "Arizona, California, Florida, Georgia, Illinois, Iowa, Kansas, "
+            "Michigan, Missouri, Nebraska, New Jersey, New York, North Carolina, "
+            "Ohio, Pennsylvania, South Carolina, Tennessee, Texas and Virginia."
+        )
+        assert BaseScraper._infer_country(desc) == "us"
+
+    def test_fewer_than_threshold_states_returns_none(self):
+        desc = "We have offices in California and Texas."
+        assert BaseScraper._infer_country(desc) is None
+
+    def test_us_only_explicit(self):
+        assert BaseScraper._infer_country("This role is US-only.") == "us"
+        assert BaseScraper._infer_country("US only applicants considered.") == "us"
+
+    def test_reside_in_united_states(self):
+        desc = "Candidates must reside in the United States to be eligible."
+        assert BaseScraper._infer_country(desc) == "us"
+
+    def test_uk_only(self):
+        assert BaseScraper._infer_country("This position is UK-only.") == "gb"
+
+    def test_reside_in_united_kingdom(self):
+        desc = "You must be based in the United Kingdom."
+        assert BaseScraper._infer_country(desc) == "gb"
+
+    def test_location_field_us(self):
+        assert BaseScraper._infer_country(None, "Remote, United States") == "us"
+        assert BaseScraper._infer_country(None, "Remote (USA)") == "us"
+
+    def test_location_field_gb(self):
+        assert BaseScraper._infer_country(None, "Remote, United Kingdom") == "gb"
+
+    def test_no_restriction_returns_none(self):
+        desc = "We are a global company open to candidates everywhere."
+        assert BaseScraper._infer_country(desc) is None
+
+    def test_none_inputs(self):
+        assert BaseScraper._infer_country(None) is None
+        assert BaseScraper._infer_country(None, None) is None
+
+    def test_create_job_object_infers_country(self, github_scraper):
+        """_create_job_object sets country from description when not supplied."""
+        parsed_data = {
+            "source_job_id": "job-999",
+            "title": "Engineer",
+            "company": "Acme",
+            "location": "Remote",
+            "remote": "remote",
+            "description": (
+                "Open to candidates who reside in: Arizona, California, Texas, "
+                "New York, Florida, Illinois, Ohio, Georgia, Michigan, Virginia."
+            ),
+            "apply_url": "https://example.com/apply",
+            "posted_date": datetime.utcnow(),
+            "source_type": "company_portal",
+        }
+        job = github_scraper._create_job_object(parsed_data)
+        assert job.country == "us"
+
+
 class TestGitHubJobsScraper:
     """Tests for GitHub Jobs scraper."""
 

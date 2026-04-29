@@ -1,6 +1,7 @@
 """Base scraper abstract class for all job scrapers."""
 
 import logging
+import re
 import time
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -11,6 +12,69 @@ from sqlalchemy.orm import Session
 from src.models import Job, ScraperMetric, UserPreferences
 
 logger = logging.getLogger("jobhunter.scrapers")
+
+# All US state names in lowercase.  Used by _infer_country to detect US-only
+# remote roles whose country restriction is embedded in the description text
+# rather than a structured field.
+_US_STATES = frozenset(
+    [
+        "alabama",
+        "alaska",
+        "arizona",
+        "arkansas",
+        "california",
+        "colorado",
+        "connecticut",
+        "delaware",
+        "florida",
+        "georgia",
+        "hawaii",
+        "idaho",
+        "illinois",
+        "indiana",
+        "iowa",
+        "kansas",
+        "kentucky",
+        "louisiana",
+        "maine",
+        "maryland",
+        "massachusetts",
+        "michigan",
+        "minnesota",
+        "mississippi",
+        "missouri",
+        "montana",
+        "nebraska",
+        "nevada",
+        "new hampshire",
+        "new jersey",
+        "new mexico",
+        "new york",
+        "north carolina",
+        "north dakota",
+        "ohio",
+        "oklahoma",
+        "oregon",
+        "pennsylvania",
+        "rhode island",
+        "south carolina",
+        "south dakota",
+        "tennessee",
+        "texas",
+        "utah",
+        "vermont",
+        "virginia",
+        "washington",
+        "west virginia",
+        "wisconsin",
+        "wyoming",
+    ]
+)
+
+# Require at least this many US state names in a description before inferring
+# country="us".  Threshold > 1 avoids false positives: "Georgia" alone is
+# ambiguous with the country Georgia; "Texas" appears in many non-US contexts.
+_US_STATE_THRESHOLD = 3
 
 
 class BaseScraper(ABC):
@@ -249,6 +313,70 @@ class BaseScraper(ABC):
         logger.debug("countries_from_prefs source=fallback count=%d", len(default))
         return default
 
+    @staticmethod
+    def _infer_country(
+        description: Optional[str], location: Optional[str] = None
+    ) -> Optional[str]:
+        """Infer a country restriction from job description and location text.
+
+        Many remote jobs embed residency requirements in free-text (e.g.
+        "open to candidates who reside in: Arizona, California, Texas…")
+        rather than a structured country field.  This heuristic detects:
+
+        - Explicit country mentions: "US only", "United States", "UK only"
+        - US state enumerations: ≥3 US state names → infer "us"
+        - Location string cues: "Remote, USA", "United Kingdom"
+
+        Returns a lowercase ISO2 country code, or None if no restriction
+        can be confidently detected.
+        """
+        # --- Location field (fast path, structured) ---
+        if location:
+            loc = location.lower()
+            if re.search(r"\b(united states|usa|u\.s\.a\.?)\b", loc):
+                return "us"
+            # Avoid matching "uk" inside words like "bulk"
+            if re.search(r"\b(united kingdom|u\.k\.|england|scotland|wales)\b", loc):
+                return "gb"
+
+        if not description:
+            return None
+
+        desc = description.lower()
+
+        # --- Explicit residency/location clauses ---
+        if re.search(
+            r"(reside|resid|locat|based|work|employ).{0,60}"
+            r"(united states|u\.s\.a?\.?|\busa\b)",
+            desc,
+        ):
+            return "us"
+        if re.search(r"\b(us|united states|usa)[- ]only\b", desc):
+            return "us"
+        if re.search(
+            r"(reside|resid|locat|based|work|employ).{0,60}"
+            r"(united kingdom|u\.k\.|\buk\b)",
+            desc,
+        ):
+            return "gb"
+        if re.search(r"\b(uk|united kingdom)[- ]only\b", desc):
+            return "gb"
+
+        # --- US state enumeration ---
+        # Count distinct state names that appear as whole words in the text.
+        state_count = sum(
+            1
+            for state in _US_STATES
+            if re.search(r"\b" + re.escape(state) + r"\b", desc)
+        )
+        if state_count >= _US_STATE_THRESHOLD:
+            logger.debug(
+                "_infer_country: detected %d US states → country=us", state_count
+            )
+            return "us"
+
+        return None
+
     def _load_existing_ids(self) -> set:
         """Load all known source_job_ids for this source in one query."""
         rows = (
@@ -267,6 +395,13 @@ class BaseScraper(ABC):
         Returns:
             Job object ready to be saved
         """
+        # Use the explicitly parsed country when available; otherwise try to
+        # infer it from description text (catches US-state-restricted remote
+        # roles that embed residency requirements in free text).
+        country = parsed_data.get("country") or self._infer_country(
+            parsed_data.get("description"), parsed_data.get("location")
+        )
+
         return Job(
             source=self.source_name,
             source_job_id=parsed_data.get("source_job_id"),
@@ -275,7 +410,7 @@ class BaseScraper(ABC):
             department=parsed_data.get("department"),
             location=parsed_data.get("location"),
             remote=parsed_data.get("remote"),
-            country=parsed_data.get("country"),
+            country=country,
             salary_min=parsed_data.get("salary_min"),
             salary_max=parsed_data.get("salary_max"),
             description=parsed_data.get("description"),
