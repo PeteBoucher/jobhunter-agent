@@ -10,6 +10,9 @@ Parameters:
   ScheduleRate:
     Type: String
     Default: "rate(6 hours)"
+  MatchScheduleRate:
+    Type: String
+    Default: "rate(2 hours)"
   NotificationEmail:
     Type: String
     Default: ""
@@ -104,7 +107,14 @@ Resources:
           Type: Schedule
           Properties:
             Schedule: !Ref ScheduleRate
-            Description: "Periodic job scraping and matching"
+            Description: "Periodic job scraping"
+            Enabled: !If [IsProd, true, false]
+        ScheduledMatch:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref MatchScheduleRate
+            Input: '{"action":"match"}'
+            Description: "Periodic job matching (runs between scrapes)"
             Enabled: !If [IsProd, true, false]
     Metadata:
       Dockerfile: Dockerfile.lambda
