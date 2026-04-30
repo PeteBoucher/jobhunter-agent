@@ -154,21 +154,21 @@ def _do_scrape(sns_topic_arn: str, function_name: str) -> Dict[str, Any]:
     # SQLAlchemy sessions are per-scraper so no partial writes persist.
     executor.shutdown(wait=False)
 
-    if scrape_errors or zero_result_scrapers:
-        lines = []
-        if scrape_errors:
-            lines.append("Scrapers that raised exceptions:")
-            lines.extend(f"  - {s}" for s in scrape_errors)
-        if zero_result_scrapers:
-            if lines:
-                lines.append("")
-            lines.append("Scrapers that returned 0 raw results (may be broken):")
-            lines.extend(f"  - {s}" for s in zero_result_scrapers)
+    if zero_result_scrapers:
+        # Log to CloudWatch only — zero raw results is informational (quota
+        # exhaustion, temporary outage) and not worth a paged notification.
+        logger.warning(
+            "Scrapers returned 0 raw results (check CloudWatch for cause): %s",
+            ", ".join(zero_result_scrapers),
+        )
+
+    if scrape_errors:
+        lines = ["Scrapers that raised exceptions:"]
+        lines.extend(f"  - {s}" for s in scrape_errors)
         lines.append("\nCheck CloudWatch logs for details.")
         _notify(
             sns_topic_arn,
-            f"Jobhunter: scraper health alert ({len(scrape_errors)} errors, "
-            f"{len(zero_result_scrapers)} empty)",
+            f"Jobhunter: {len(scrape_errors)} scraper(s) raised exceptions",
             "\n".join(lines),
         )
 

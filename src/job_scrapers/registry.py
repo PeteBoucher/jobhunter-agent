@@ -41,13 +41,14 @@ SCRAPER_MAP: Dict[str, Type[BaseScraper]] = {
 }
 
 # Default sources to scrape (the ones that actually return data)
+# LinkedIn is excluded: their guest endpoint actively blocks Lambda IPs,
+# raises exceptions every run, and scraping violates their ToS.
 DEFAULT_SOURCES: List[str] = [
     "ashby",
     "greenhouse",
     "lever",
     "adzuna",
     "themuse",
-    "linkedin",
     "workday",
     "thoughtworks",
 ]
