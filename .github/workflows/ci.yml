@@ -121,5 +121,6 @@ jobs:
       - name: Audit Python dependencies
         run: |
           pip install pip-audit -q
-          pip install -r web/api/requirements.txt -q
-          pip-audit --desc on
+          # CVE-2026-3219 affects pip itself; no fix version exists yet — ignore it
+          pip-audit -r requirements.txt --desc on --ignore-vuln CVE-2026-3219
+          pip-audit -r web/api/requirements.txt --desc on --ignore-vuln CVE-2026-3219
