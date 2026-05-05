@@ -24,10 +24,11 @@ def test_json_formatter():
     output = handler.stream.getvalue()
     data = json.loads(output.strip())
 
-    assert data["level"] == "INFO"
     assert data["message"] == "Test message"
     assert data["logger"] == "test"
-    assert "timestamp" in data
+    # timestamp and level are omitted — AWS Lambda injects them into log lines
+    assert "timestamp" not in data
+    assert "level" not in data
 
 
 def test_configure_logging_json():
