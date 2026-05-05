@@ -76,6 +76,73 @@ _US_STATES = frozenset(
 # ambiguous with the country Georgia; "Texas" appears in many non-US contexts.
 _US_STATE_THRESHOLD = 3
 
+# Per-country regex fragments for residency detection.
+# "strong" — unambiguous even mid-sentence; safe for verb+country patterns.
+# "weak"   — too short/common as English words; only safe in "X-only" suffix.
+_RESIDENCY_COUNTRIES: dict = {
+    "us": {
+        "strong": [r"united states", r"u\.s\.a?\.?", r"\busa\b"],
+        "weak": [r"\bus\b"],
+    },
+    "gb": {
+        "strong": [r"united kingdom", r"u\.k\.", r"england", r"scotland", r"wales"],
+        "weak": [r"\buk\b"],
+    },
+    "pl": {"strong": [r"poland"], "weak": []},
+    "de": {"strong": [r"germany"], "weak": []},
+    "nl": {"strong": [r"netherlands"], "weak": []},
+    "fr": {"strong": [r"france"], "weak": []},
+    "es": {"strong": [r"spain"], "weak": []},
+    "it": {"strong": [r"italy"], "weak": []},
+    "au": {"strong": [r"australia"], "weak": []},
+    "ca": {"strong": [r"canada"], "weak": []},
+    "ie": {"strong": [r"ireland"], "weak": []},
+    "se": {"strong": [r"sweden"], "weak": []},
+    "no": {"strong": [r"norway"], "weak": []},
+    "dk": {"strong": [r"denmark"], "weak": []},
+    "pt": {"strong": [r"portugal"], "weak": []},
+    "be": {"strong": [r"belgium"], "weak": []},
+    "ch": {"strong": [r"switzerland"], "weak": []},
+    "ro": {"strong": [r"romania"], "weak": []},
+    "in": {"strong": [r"india"], "weak": []},
+}
+
+# Verbs/prepositions that, immediately before a strong country name, signal a
+# residency requirement.
+#   - "executed? from"  catches "executed from the United States" without
+#     matching "execution excellence" (noun — not a residency verb)
+#   - \b word boundaries prevent mid-word matches like work in "workover"
+_RESIDENCY_VERB_RE = (
+    r"\b(resides?|residing|located?|based|employed?"
+    r"|executed?\s+from|work(?:ed|ing)?\s+(?:from|within|in|out\s+of)"
+    r"|within|candidates?\s+in|open\s+to\s*.{0,20}\s*in"
+    r"|this\s+role\s*.{0,20}\s*in)\b"
+)
+
+# Compile per-country patterns once at import time.
+# Each entry: (iso2_code, location_re, residency_re, only_re)
+#   location_re  — bare country name; used for structured location strings only
+#   residency_re — residency verb + strong country name in free-text
+#   only_re      — "country-only / country-based" suffix (strong + weak)
+_COUNTRY_RESIDENCY_PATTERNS: list = []
+for _code, _frags in _RESIDENCY_COUNTRIES.items():
+    _strong_alt = "|".join(_frags["strong"])
+    _all_alt = "|".join(_frags["strong"] + _frags["weak"])
+    _COUNTRY_RESIDENCY_PATTERNS.append(
+        (
+            _code,
+            re.compile(rf"\b({_all_alt})\b", re.IGNORECASE),
+            re.compile(
+                rf"{_RESIDENCY_VERB_RE}.{{0,60}}({_strong_alt})",
+                re.IGNORECASE,
+            ),
+            re.compile(
+                rf"\b({_all_alt})[- ](only|based|residents only|candidates only)\b",
+                re.IGNORECASE,
+            ),
+        )
+    )
+
 
 class BaseScraper(ABC):
     """Abstract base class for all job scrapers.
@@ -327,7 +394,8 @@ class BaseScraper(ABC):
         "open to candidates who reside in: Arizona, California, Texas…")
         rather than a structured country field.  This heuristic detects:
 
-        - Explicit country mentions: "US only", "United States", "UK only"
+        - Residency/location clauses near a country name for all major markets
+          ("based in Poland", "executed from the United States", "UK-only")
         - US state enumerations: ≥3 US state names → infer "us"
         - Location string cues: "Remote, USA", "United Kingdom"
 
@@ -335,43 +403,28 @@ class BaseScraper(ABC):
         can be confidently detected.
         """
         # --- Location field (fast path, structured) ---
+        # The location field is already structured ("Remote, United States"),
+        # so a bare country name match is sufficient — no verb required.
         if location:
-            loc = location.lower()
-            if re.search(r"\b(united states|usa|u\.s\.a\.?)\b", loc):
-                return "us"
-            # Avoid matching "uk" inside words like "bulk"
-            if re.search(r"\b(united kingdom|u\.k\.|england|scotland|wales)\b", loc):
-                return "gb"
+            for code, location_re, _, __ in _COUNTRY_RESIDENCY_PATTERNS:
+                if location_re.search(location):
+                    return code
 
         if not description:
             return None
 
-        desc = description.lower()
+        # --- Residency/location clause + country name in free text ---
+        for code, _, residency_re, only_re in _COUNTRY_RESIDENCY_PATTERNS:
+            if residency_re.search(description) or only_re.search(description):
+                return code
 
-        # --- Explicit residency/location clauses ---
-        if re.search(
-            r"(reside|resid|locat|based|work|employ).{0,60}"
-            r"(united states|u\.s\.a?\.?|\busa\b)",
-            desc,
-        ):
-            return "us"
-        if re.search(r"\b(us|united states|usa)[- ]only\b", desc):
-            return "us"
-        if re.search(
-            r"(reside|resid|locat|based|work|employ).{0,60}"
-            r"(united kingdom|u\.k\.|\buk\b)",
-            desc,
-        ):
-            return "gb"
-        if re.search(r"\b(uk|united kingdom)[- ]only\b", desc):
-            return "gb"
-
-        # --- US state enumeration ---
+        # --- US state enumeration (fallback for implicit US restrictions) ---
         # Count distinct state names that appear as whole words in the text.
+        desc_lower = description.lower()
         state_count = sum(
             1
             for state in _US_STATES
-            if re.search(r"\b" + re.escape(state) + r"\b", desc)
+            if re.search(r"\b" + re.escape(state) + r"\b", desc_lower)
         )
         if state_count >= _US_STATE_THRESHOLD:
             logger.debug(
