@@ -6,7 +6,6 @@ Provides JSON-formatted logs suitable for log aggregation and analysis.
 import json
 import logging
 import sys
-from datetime import datetime
 from typing import Any, Dict
 
 
@@ -16,8 +15,9 @@ class JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         """Format a log record as JSON."""
         log_data: Dict[str, Any] = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "level": record.levelname,
+            # Timestamp and level are included by AWS lambda in the log record.
+            # "timestamp": datetime.utcnow().isoformat(),
+            # "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
         }
