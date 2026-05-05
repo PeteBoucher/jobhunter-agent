@@ -94,6 +94,10 @@ class BaseScraper(ABC):
         # Set by scrape() after _fetch_jobs() succeeds; 0 means the source
         # returned nothing (API down, auth failure, HTML changed, etc.)
         self.last_raw_count: int = 0
+        # Set by _fetch_jobs() when 0 results is intentional (quota exhausted,
+        # no credentials, etc.) rather than a sign of breakage. The lambda
+        # suppresses zero-result alerts when this is non-None.
+        self.last_skip_reason: Optional[str] = None
 
     @abstractmethod
     def _get_source_name(self) -> str:

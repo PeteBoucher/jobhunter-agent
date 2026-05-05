@@ -92,29 +92,30 @@ def _do_scrape(sns_topic_arn: str, function_name: str) -> Dict[str, Any]:
 
     def _scrape_one(
         source_name: str,
-    ) -> Tuple[str, int, int, Optional[Exception]]:
+    ) -> Tuple[str, int, int, Optional[Exception], Optional[str]]:
         session = get_session()
         try:
             cls = SCRAPER_MAP.get(source_name)
             if not cls:
                 logger.warning("Unknown source: %s", source_name)
-                return source_name, 0, 0, None
+                return source_name, 0, 0, None, None
             scraper = cls(session)
             jobs = scraper.scrape(max_retries=3, backoff_factor=1.0)
             count = len(jobs)
             raw_count = scraper.last_raw_count
+            skip_reason = scraper.last_skip_reason
             logger.info(
                 "Scraped %d new jobs from %s (raw fetched: %d)",
                 count,
                 source_name,
                 raw_count,
             )
-            if raw_count == 0:
+            if raw_count == 0 and not skip_reason:
                 logger.warning("Scraper %s returned 0 raw results", source_name)
-            return source_name, count, raw_count, None
+            return source_name, count, raw_count, None, skip_reason
         except Exception as e:
             logger.exception("Error scraping %s: %s", source_name, e)
-            return source_name, 0, 0, e
+            return source_name, 0, 0, e, None
         finally:
             session.close()
 
@@ -132,12 +133,12 @@ def _do_scrape(sns_topic_arn: str, function_name: str) -> Dict[str, Any]:
     done, timed_out = futures_wait(futures, timeout=_SCRAPE_DEADLINE)
 
     for future in done:
-        source_name, count, raw_count, error = future.result()
+        source_name, count, raw_count, error, skip_reason = future.result()
         if error is not None:
             scrape_errors.append(source_name)
         else:
             total_new_jobs += count
-            if raw_count == 0:
+            if raw_count == 0 and not skip_reason:
                 zero_result_scrapers.append(source_name)
 
     for future in timed_out:

@@ -28,6 +28,7 @@ def mock_scrapers():
     mock_instance = MagicMock()
     mock_instance.scrape.return_value = []
     mock_instance.last_raw_count = 0
+    mock_instance.last_skip_reason = None
     mock_scraper_cls.return_value = mock_instance
 
     with patch(
@@ -88,6 +89,7 @@ def test_handler_zero_results_scrapers_reported(mock_sns_client):
     mock_instance = MagicMock()
     mock_instance.scrape.return_value = []
     mock_instance.last_raw_count = 0
+    mock_instance.last_skip_reason = None
     mock_scraper_cls.return_value = mock_instance
 
     with patch(
@@ -127,10 +129,12 @@ def test_scraper_failure_does_not_block_other_scrapers(mock_sns_client):
     failing_cls = MagicMock()
     failing_cls.return_value.scrape.side_effect = Exception("network error")
     failing_cls.return_value.last_raw_count = 0
+    failing_cls.return_value.last_skip_reason = None
 
     ok_cls = MagicMock()
     ok_cls.return_value.scrape.return_value = []
     ok_cls.return_value.last_raw_count = 5
+    ok_cls.return_value.last_skip_reason = None
 
     with patch(
         "src.job_scrapers.registry.SCRAPER_MAP", {"bad": failing_cls, "ok": ok_cls}

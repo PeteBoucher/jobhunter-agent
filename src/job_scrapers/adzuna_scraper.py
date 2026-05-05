@@ -95,6 +95,7 @@ class AdzunaScraper(BaseScraper):
                 "Adzuna API credentials not configured. "
                 "Set ADZUNA_APP_ID and ADZUNA_APP_KEY environment variables."
             )
+            self.last_skip_reason = "no_credentials"
             return []
 
         search_terms = kwargs.get("search_terms", self.search_terms)
@@ -114,6 +115,7 @@ class AdzunaScraper(BaseScraper):
         seen_ids: set = set()
         all_jobs: List[Dict[str, Any]] = []
         quota_exhausted = False
+        self.last_skip_reason = None  # reset each run
 
         # Circuit-breaker: skip remaining terms for a country after this many
         # consecutive non-200 responses. 5xx errors (e.g. Adzuna returning 502
@@ -158,6 +160,7 @@ class AdzunaScraper(BaseScraper):
                                 "Check your monthly quota at developer.adzuna.com."
                             )
                             quota_exhausted = True
+                            self.last_skip_reason = "quota_exhausted"
                             break
                         if resp.status_code != 200:
                             logger.warning(
