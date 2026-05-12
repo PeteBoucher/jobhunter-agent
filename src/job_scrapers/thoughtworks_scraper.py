@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from src.job_scrapers.base_scraper import BaseScraper
 
-logger = logging.getLogger("jobhunter.scrapers")
+logger = logging.getLogger("jobhunter.scrapers.thoughtworks")
 
 _API_URL = "https://www.thoughtworks.com/rest/careers/jobs"
 _JOB_BASE_URL = "https://www.thoughtworks.com/careers/jobs/job"

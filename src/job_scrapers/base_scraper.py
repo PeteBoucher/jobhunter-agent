@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from src.models import Job, ScraperMetric, UserPreferences
 
-logger = logging.getLogger("jobhunter.scrapers")
+_logger = logging.getLogger("jobhunter.scrapers")
 
 # All US state names in lowercase.  Used by _infer_country to detect US-only
 # remote roles whose country restriction is embedded in the description text
@@ -158,6 +158,7 @@ class BaseScraper(ABC):
         """
         self.session = session
         self.source_name = self._get_source_name()
+        self.logger = logging.getLogger(f"jobhunter.scrapers.{self.source_name}")
         # Set by scrape() after _fetch_jobs() succeeds; 0 means the source
         # returned nothing (API down, auth failure, HTML changed, etc.)
         self.last_raw_count: int = 0
@@ -269,7 +270,9 @@ class BaseScraper(ABC):
                         continue
                     jobs.append(self._create_job_object(parsed_data))
                 except Exception as e:
-                    logger.exception(f"Error parsing job from {self.source_name}: {e}")
+                    self.logger.exception(
+                        f"Error parsing job from {self.source_name}: {e}"
+                    )
                     parse_errors += 1
                     continue
 
@@ -298,7 +301,7 @@ class BaseScraper(ABC):
                     f"raw={len(raw_jobs)} errors={parse_errors}",
                 )
             except Exception:
-                logger.debug("Failed to record jobs_added metric")
+                self.logger.debug("Failed to record jobs_added metric")
 
             return jobs
 
@@ -351,14 +354,16 @@ class BaseScraper(ABC):
                     seen.add(key)
                     terms.append(t.strip())
         if terms:
-            logger.debug("search_terms_from_prefs source=db count=%d", len(terms))
+            self.logger.debug("search_terms_from_prefs source=db count=%d", len(terms))
             return terms
         default = fallback or [
             "product manager",
             "software engineer",
             "project manager",
         ]
-        logger.debug("search_terms_from_prefs source=fallback count=%d", len(default))
+        self.logger.debug(
+            "search_terms_from_prefs source=fallback count=%d", len(default)
+        )
         return default
 
     def _countries_from_prefs(self, fallback: Optional[List[str]] = None) -> List[str]:
@@ -378,10 +383,10 @@ class BaseScraper(ABC):
                     seen.add(c)
                     codes.append(c)
         if codes:
-            logger.debug("countries_from_prefs source=db count=%d", len(codes))
+            self.logger.debug("countries_from_prefs source=db count=%d", len(codes))
             return codes
         default = fallback or ["gb"]
-        logger.debug("countries_from_prefs source=fallback count=%d", len(default))
+        self.logger.debug("countries_from_prefs source=fallback count=%d", len(default))
         return default
 
     @staticmethod
@@ -427,7 +432,7 @@ class BaseScraper(ABC):
             if re.search(r"\b" + re.escape(state) + r"\b", desc_lower)
         )
         if state_count >= _US_STATE_THRESHOLD:
-            logger.debug(
+            _logger.debug(
                 "_infer_country: detected %d US states → country=us", state_count
             )
             return "us"
