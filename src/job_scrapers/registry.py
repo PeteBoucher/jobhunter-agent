@@ -9,6 +9,7 @@ from typing import Dict, List, Type
 from src.job_scrapers.adzuna_scraper import AdzunaScraper
 from src.job_scrapers.ashby_scraper import AshbyScraper
 from src.job_scrapers.base_scraper import BaseScraper
+from src.job_scrapers.bcg_scraper import BCGScraper
 from src.job_scrapers.coinbase_scraper import CoinbaseScraper
 from src.job_scrapers.github_scraper import GitHubJobsScraper
 from src.job_scrapers.greenhouse_scraper import GreenhouseScraper
@@ -25,6 +26,7 @@ from src.job_scrapers.workday_scraper import WorkdayScraper
 # All available scrapers keyed by source name
 SCRAPER_MAP: Dict[str, Type[BaseScraper]] = {
     "ashby": AshbyScraper,
+    "bcg": BCGScraper,
     "greenhouse": GreenhouseScraper,
     "lever": LeverScraper,
     "linkedin": LinkedInScraper,
@@ -45,6 +47,7 @@ SCRAPER_MAP: Dict[str, Type[BaseScraper]] = {
 # raises exceptions every run, and scraping violates their ToS.
 DEFAULT_SOURCES: List[str] = [
     "ashby",
+    "bcg",
     "greenhouse",
     "lever",
     "adzuna",

@@ -2,11 +2,13 @@
 
 import tempfile
 from datetime import datetime
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from src.database import get_session, init_db
 from src.job_scrapers.base_scraper import BaseScraper
+from src.job_scrapers.bcg_scraper import BCGScraper
 from src.job_scrapers.github_scraper import GitHubJobsScraper
 from src.job_scrapers.microsoft_scraper import MicrosoftScraper
 from src.models import Job
@@ -297,3 +299,122 @@ class TestScraperIntegration:
         # Verify no jobs in database
         all_jobs = session.query(Job).all()
         assert len(all_jobs) == 0
+
+
+# ---------------------------------------------------------------------------
+# BCG scraper tests
+# ---------------------------------------------------------------------------
+
+_SITEMAP_XML = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset>
+  <url><loc>https://careers.bcg.com/global/en/job/11111/Software-Engineer</loc></url>
+  <url><loc>https://careers.bcg.com/global/en/job/22222/Management-Consultant</loc></url>
+  <url><loc>https://careers.bcg.com/global/en/</loc></url>
+</urlset>
+"""
+
+_TECH_JOB_HTML = (
+    "<html><head>"
+    '<meta property="og:title" content="Software Engineer in London, UK'
+    ' | Technology and Engineering at BCG">'
+    '<meta property="og:url" content="https://careers.bcg.com/global/en'
+    '/job/11111/Software-Engineer">'
+    "</head><body></body></html>"
+)
+
+_OTHER_JOB_HTML = (
+    "<html><head>"
+    '<meta property="og:title" content="Management Consultant in New York,'
+    ' USA | Consulting at BCG">'
+    '<meta property="og:url" content="https://careers.bcg.com/global/en'
+    '/job/22222/Management-Consultant">'
+    "</head><body></body></html>"
+)
+
+
+@pytest.fixture
+def bcg_scraper(session):
+    return BCGScraper(session)
+
+
+class TestBCGScraper:
+    def test_jobs_from_sitemaps_extracts_ids(self, bcg_scraper):
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.return_value = None
+        mock_resp.text = _SITEMAP_XML
+
+        with patch.object(bcg_scraper._http, "get", return_value=mock_resp):
+            pairs = bcg_scraper._jobs_from_sitemaps()
+
+        ids = [p[0] for p in pairs]
+        assert "11111" in ids
+        assert "22222" in ids
+        # Non-job URL must not appear
+        assert (
+            len([p for p in pairs if "/en/" == p[1].rstrip("/").split("/global")[1]])
+            == 0
+        )
+
+    def test_fetch_job_meta_parses_og_tags(self, bcg_scraper):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.text = _TECH_JOB_HTML
+
+        with patch.object(bcg_scraper._http, "get", return_value=mock_resp):
+            job = bcg_scraper._fetch_job_meta(
+                "11111", "https://careers.bcg.com/global/en/job/11111/Software-Engineer"
+            )
+
+        assert job["source_job_id"] == "11111"
+        assert job["title"] == "Software Engineer"
+        assert job["location"] == "London, UK"
+        assert job["department"] == "Technology and Engineering"
+        assert job["company"] == "BCG"
+        assert (
+            job["apply_url"]
+            == "https://careers.bcg.com/global/en/job/11111/Software-Engineer"
+        )
+
+    def test_fetch_jobs_filters_to_tech_engineering(self, bcg_scraper):
+        sitemap_resp = MagicMock()
+        sitemap_resp.raise_for_status.return_value = None
+        sitemap_resp.text = _SITEMAP_XML
+
+        tech_resp = MagicMock()
+        tech_resp.status_code = 200
+        tech_resp.text = _TECH_JOB_HTML
+
+        other_resp = MagicMock()
+        other_resp.status_code = 200
+        other_resp.text = _OTHER_JOB_HTML
+
+        def get_side_effect(url, **kwargs):
+            if "sitemap" in url:
+                return sitemap_resp
+            if "11111" in url:
+                return tech_resp
+            return other_resp
+
+        with patch.object(bcg_scraper._http, "get", side_effect=get_side_effect):
+            with patch("time.sleep"):
+                jobs = bcg_scraper._fetch_jobs()
+
+        assert len(jobs) == 1
+        assert jobs[0]["source_job_id"] == "11111"
+        assert jobs[0]["department"] == "Technology and Engineering"
+
+    def test_parse_job_is_passthrough(self, bcg_scraper):
+        raw = {"source_job_id": "99", "title": "Tester", "company": "BCG"}
+        assert bcg_scraper._parse_job(raw) is raw
+
+    def test_fetch_job_meta_404_returns_none(self, bcg_scraper):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 404
+
+        with patch.object(bcg_scraper._http, "get", return_value=mock_resp):
+            result = bcg_scraper._fetch_job_meta(
+                "99", "https://careers.bcg.com/global/en/job/99/Gone"
+            )
+
+        assert result is None
