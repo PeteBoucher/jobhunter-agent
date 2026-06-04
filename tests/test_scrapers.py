@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.database import get_session, init_db
+from src.job_scrapers.bamboohr_scraper import BambooHRScraper
 from src.job_scrapers.base_scraper import BaseScraper
 from src.job_scrapers.bcg_scraper import BCGScraper
 from src.job_scrapers.github_scraper import GitHubJobsScraper
@@ -418,3 +419,153 @@ class TestBCGScraper:
             )
 
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# BambooHR scraper tests
+# ---------------------------------------------------------------------------
+
+_BAMBOO_LIST_RESP = {
+    "meta": {"totalCount": 2},
+    "result": [
+        {
+            "id": "176",
+            "jobOpeningName": "Senior SDET",
+            "departmentId": "123",
+            "departmentLabel": "Technology",
+            "employmentStatusLabel": "Permanent",
+            "location": {"city": None, "state": None},
+            "isRemote": None,
+            "locationType": "1",
+        },
+        {
+            "id": "117",
+            "jobOpeningName": "Don't see a role? Join our Talent Pool",
+            "departmentId": None,
+            "departmentLabel": None,
+            "employmentStatusLabel": "Permanent",
+            "location": {"city": None, "state": None},
+            "isRemote": None,
+            "locationType": "1",
+        },
+    ],
+}
+
+_BAMBOO_DETAIL_RESP = {
+    "meta": {},
+    "result": {
+        "jobOpening": {
+            "jobOpeningName": "Senior SDET",
+            "locationType": "1",
+            "location": {"city": None, "state": None, "addressCountry": None},
+            "atsLocation": {
+                "country": "United Kingdom",
+                "countryId": "222",
+                "state": None,
+                "city": None,
+            },
+            "description": "<p>Build great test frameworks.</p>",
+            "datePosted": "2026-06-03",
+        }
+    },
+}
+
+
+@pytest.fixture
+def bamboohr_scraper(session):
+    return BambooHRScraper(session, company_slugs=["semble"])
+
+
+class TestBambooHRScraper:
+    def test_source_name(self, bamboohr_scraper):
+        assert bamboohr_scraper._get_source_name() == "bamboohr"
+
+    def test_fetch_jobs_skips_talent_pool(self, bamboohr_scraper):
+        list_resp = MagicMock()
+        list_resp.raise_for_status.return_value = None
+        list_resp.json.return_value = _BAMBOO_LIST_RESP
+
+        detail_resp = MagicMock()
+        detail_resp.status_code = 200
+        detail_resp.json.return_value = _BAMBOO_DETAIL_RESP
+
+        def get_side_effect(url, **kwargs):
+            if url.endswith("/list"):
+                return list_resp
+            return detail_resp
+
+        with patch.object(bamboohr_scraper._http, "get", side_effect=get_side_effect):
+            with patch("time.sleep"):
+                jobs = bamboohr_scraper._fetch_jobs()
+
+        # Only the "Senior SDET" job — talent pool entry is filtered out
+        assert len(jobs) == 1
+        assert jobs[0]["_source_job_id"] == "semble-176"
+
+    def test_parse_job_remote_and_country(self, bamboohr_scraper):
+        raw = {
+            "_slug": "semble",
+            "_source_job_id": "semble-176",
+            "id": "176",
+            "jobOpeningName": "Senior SDET",
+            "departmentLabel": "Technology",
+            "location": {"city": None, "state": None},
+            "locationType": "1",
+            "_detail": {
+                "location": {"addressCountry": None},
+                "atsLocation": {
+                    "country": "United Kingdom",
+                    "state": None,
+                    "city": None,
+                },
+                "description": "<p>Build great test frameworks.</p>",
+                "datePosted": "2026-06-03",
+            },
+        }
+        parsed = bamboohr_scraper._parse_job(raw)
+
+        assert parsed["source_job_id"] == "semble-176"
+        assert parsed["title"] == "Senior SDET"
+        assert parsed["company"] == "Semble"
+        assert parsed["remote"] == "remote"
+        assert parsed["country"] == "gb"
+        assert parsed["department"] == "Technology"
+        assert "Build great test frameworks" in parsed["description"]
+        assert parsed["apply_url"] == "https://semble.bamboohr.com/careers/176"
+
+    def test_parse_job_hybrid_location_type(self, bamboohr_scraper):
+        raw = {
+            "_slug": "semble",
+            "_source_job_id": "semble-180",
+            "id": "180",
+            "jobOpeningName": "Delivery Manager",
+            "departmentLabel": "Technology",
+            "location": {"city": "London", "state": None},
+            "locationType": "2",
+            "_detail": {},
+        }
+        parsed = bamboohr_scraper._parse_job(raw)
+        assert parsed["remote"] == "hybrid"
+        assert parsed["location"] == "London"
+
+    def test_parse_job_company_name_from_map(self, bamboohr_scraper):
+        raw = {
+            "_slug": "semble",
+            "_source_job_id": "semble-1",
+            "id": "1",
+            "jobOpeningName": "Engineer",
+            "departmentLabel": None,
+            "location": {"city": None, "state": None},
+            "locationType": "0",
+            "_detail": {},
+        }
+        assert bamboohr_scraper._parse_job(raw)["company"] == "Semble"
+
+    def test_fetch_detail_404_returns_empty(self, bamboohr_scraper):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 404
+
+        with patch.object(bamboohr_scraper._http, "get", return_value=mock_resp):
+            result = bamboohr_scraper._fetch_detail("semble", "999")
+
+        assert result == {}
