@@ -22,6 +22,9 @@ from src.job_scrapers.base_scraper import BaseScraper
 
 # Map of slug → display company name. Falls back to slug.title().
 COMPANY_NAMES: Dict[str, str] = {
+    "bitrise": "Bitrise",
+    "purplebricks": "Purplebricks",
+    "rightmove": "Rightmove",
     "semble": "Semble",
 }
 
@@ -54,7 +57,7 @@ _COUNTRY_MAP: Dict[str, str] = {
     "india": "in",
 }
 
-DEFAULT_COMPANY_SLUGS = ["semble"]
+DEFAULT_COMPANY_SLUGS = ["bitrise", "purplebricks", "rightmove", "semble"]
 
 
 class BambooHRScraper(BaseScraper):
