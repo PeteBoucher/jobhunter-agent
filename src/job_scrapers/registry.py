@@ -19,6 +19,7 @@ from src.job_scrapers.linkedin_scraper import LinkedInScraper
 from src.job_scrapers.microsoft_scraper import MicrosoftScraper
 from src.job_scrapers.reed_scraper import ReedScraper
 from src.job_scrapers.revolut_scraper import RevolutScraper
+from src.job_scrapers.smartrecruiters_scraper import SmartRecruitersScraper
 from src.job_scrapers.themuse_scraper import TheMuseScraper
 from src.job_scrapers.thoughtworks_scraper import ThoughtworksScraper
 from src.job_scrapers.uber_scraper import UberScraper
@@ -42,6 +43,7 @@ SCRAPER_MAP: Dict[str, Type[BaseScraper]] = {
     "adzuna": AdzunaScraper,
     "themuse": TheMuseScraper,
     "reed": ReedScraper,
+    "smartrecruiters": SmartRecruitersScraper,
 }
 
 # Default sources to scrape (the ones that actually return data)
@@ -57,4 +59,5 @@ DEFAULT_SOURCES: List[str] = [
     "themuse",
     "workday",
     "thoughtworks",
+    "smartrecruiters",
 ]

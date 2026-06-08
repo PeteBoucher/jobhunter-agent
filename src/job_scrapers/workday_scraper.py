@@ -13,6 +13,8 @@ To add a new company: verify the endpoint manually, then add a WorkdayPortal
 entry to WORKDAY_PORTALS below.
 
 Confirmed working portals (as of 2025-03):
+  Betway        — myhcm.wd3           / Betway                            (~31 jobs)
+  Flutter       — flutterbe.wd3       / FlutterInt_External               (~49 jobs)
   Maersk        — maersk.wd3          / Maersk_Careers                   (~500 jobs)
   Airbus        — ag.wd3              / Airbus                           (~2000 jobs)
   Shell         — shell.wd3           / shellcareers                      (~180 jobs)
@@ -76,6 +78,23 @@ class WorkdayPortal:
 # ── Confirmed working portals ─────────────────────────────────────────────────
 
 WORKDAY_PORTALS: List[WorkdayPortal] = [
+    # iGaming & sports betting
+    WorkdayPortal(
+        slug="myhcm",
+        portal="Betway",
+        company="Betway",
+        wd="wd3",
+        industry="iGaming / Sports Betting",
+        size="Large (10k+)",
+    ),
+    WorkdayPortal(
+        slug="flutterbe",
+        portal="FlutterInt_External",
+        company="Flutter Entertainment",
+        wd="wd3",
+        industry="iGaming / Sports Betting",
+        size="Enterprise (100k+)",
+    ),
     WorkdayPortal(
         slug="maersk",
         portal="Maersk_Careers",

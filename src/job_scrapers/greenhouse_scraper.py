@@ -20,9 +20,22 @@ from src.job_scrapers.base_scraper import BaseScraper
 
 logger = logging.getLogger("jobhunter.scrapers.greenhouse")
 
+# Display name overrides for slugs that don't title-case cleanly.
+COMPANY_NAMES: Dict[str, str] = {
+    "geniussports": "Genius Sports",
+    "rushstreetinteractive": "Rush Street Interactive",
+    "fanaticsfbg": "Fanatics Betting & Gaming",
+}
+
 # Companies using Greenhouse with confirmed public job boards.
 # Covers a broad range of industries to serve diverse user profiles.
 DEFAULT_BOARD_TOKENS = [
+    # iGaming & sports betting
+    "lottoland",
+    "geniussports",
+    "rushstreetinteractive",
+    "kambi",
+    "fanaticsfbg",
     # Enterprise tech & infrastructure
     "cloudflare",
     "hashicorp",
@@ -183,8 +196,7 @@ class GreenhouseScraper(BaseScraper):
         # Build apply URL
         apply_url = raw_job.get("absolute_url", "")
 
-        # Company name from board token (title-cased)
-        company = board_token.replace("-", " ").title()
+        company = COMPANY_NAMES.get(board_token, board_token.replace("-", " ").title())
 
         return {
             "source_job_id": str(raw_job.get("id", "")),
