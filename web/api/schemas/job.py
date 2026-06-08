@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class MatchScoreOut(BaseModel):
@@ -24,6 +24,13 @@ class MatchScoreOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+def _coerce_to_list(v: Any) -> Any:
+    """Accept a bare string where a list is expected (scraper data quality issue)."""
+    if isinstance(v, str):
+        return [v] if v.strip() else None
+    return v
+
+
 class JobOut(BaseModel):
     id: int
     source: Optional[str] = None
@@ -43,5 +50,10 @@ class JobOut(BaseModel):
     company_industry: Optional[str] = None
     # Caller-populated match scores (joined from JobMatch for current user)
     match: Optional[MatchScoreOut] = None
+
+    @field_validator("requirements", "nice_to_haves", mode="before")
+    @classmethod
+    def coerce_list_fields(cls, v: Any) -> Any:
+        return _coerce_to_list(v)
 
     model_config = {"from_attributes": True}
