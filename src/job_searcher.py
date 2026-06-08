@@ -1,7 +1,7 @@
 """Job search and filtering functionality."""
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
@@ -23,7 +23,7 @@ class JobSearcher:
     def search(
         self,
         keywords: Optional[str] = None,
-        location: Optional[str] = None,
+        location: Optional[Union[str, List[str]]] = None,
         remote: Optional[str] = None,
         eligible_countries: Optional[List[str]] = None,
         min_match_score: Optional[float] = None,
@@ -37,7 +37,7 @@ class JobSearcher:
 
         Args:
             keywords: Search keywords in title, company, or description
-            location: Filter by location
+            location: Filter by location (string or list of locations OR'd together)
             remote: Filter by remote status (remote, hybrid, onsite)
             eligible_countries: When provided, restrict remote jobs to those
                 with no country set (globally open roles) or whose country
@@ -69,20 +69,27 @@ class JobSearcher:
                 | (Job.description.ilike(search_term))
             )
 
-        # Location filter
+        # Location filter — accepts a single string or a list (OR'd together)
         if location:
-            location_term = f"%{location.lower()}%"
-            query = query.filter(Job.location.ilike(location_term))
+            locs = location if isinstance(location, list) else [location]
+            query = query.filter(
+                or_(*[Job.location.ilike(f"%{loc.lower()}%") for loc in locs])
+            )
 
-        # Remote filter - check both the remote field and location text
+        # Remote filter
         if remote:
             remote_val = remote.lower()
-            query = query.filter(
-                or_(
-                    Job.remote == remote_val,
-                    Job.location.ilike(f"%{remote_val}%"),
+            if remote_val == "onsite":
+                # Onsite jobs rarely tag themselves as "onsite" — they just have
+                # remote=NULL. Exclude jobs that are explicitly remote or hybrid.
+                query = query.filter(or_(Job.remote.is_(None), Job.remote == "onsite"))
+            else:
+                query = query.filter(
+                    or_(
+                        Job.remote == remote_val,
+                        Job.location.ilike(f"%{remote_val}%"),
+                    )
                 )
-            )
 
         # Country eligibility filter for remote jobs.
         # Jobs with no country (global ATS roles) are always included.

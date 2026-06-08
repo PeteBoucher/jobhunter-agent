@@ -141,3 +141,121 @@ def test_search_no_results(session):
     results = searcher.search(keywords="NonExistent")
 
     assert len(results) == 0
+
+
+# ── Regression: onsite remote filter ─────────────────────────────────────────
+# Bug: remote=onsite required Job.remote == "onsite" but onsite jobs almost
+# always have remote=NULL — they never appeared in the feed.
+
+
+def test_onsite_filter_includes_null_remote_jobs(session):
+    """Jobs with remote=NULL must appear when filtering remote=onsite."""
+    session.add_all(
+        [
+            Job(
+                source="t",
+                source_job_id="1",
+                title="Office Job",
+                company="A",
+                remote=None,
+            ),
+            Job(
+                source="t",
+                source_job_id="2",
+                title="Remote Job",
+                company="B",
+                remote="remote",
+            ),
+        ]
+    )
+    session.commit()
+
+    results = JobSearcher(session).search(remote="onsite")
+    titles = {j.title for j in results}
+    assert "Office Job" in titles
+    assert "Remote Job" not in titles
+
+
+def test_onsite_filter_excludes_remote_and_hybrid(session):
+    """remote=onsite must exclude jobs explicitly tagged remote or hybrid."""
+    session.add_all(
+        [
+            Job(
+                source="t",
+                source_job_id="1",
+                title="Onsite Tagged",
+                company="A",
+                remote="onsite",
+            ),
+            Job(
+                source="t",
+                source_job_id="2",
+                title="Null Remote",
+                company="B",
+                remote=None,
+            ),
+            Job(
+                source="t",
+                source_job_id="3",
+                title="Hybrid Job",
+                company="C",
+                remote="hybrid",
+            ),
+            Job(
+                source="t",
+                source_job_id="4",
+                title="Remote Job",
+                company="D",
+                remote="remote",
+            ),
+        ]
+    )
+    session.commit()
+
+    results = JobSearcher(session).search(remote="onsite")
+    titles = {j.title for j in results}
+    assert "Onsite Tagged" in titles
+    assert "Null Remote" in titles
+    assert "Hybrid Job" not in titles
+    assert "Remote Job" not in titles
+
+
+# ── Regression: location list filter ─────────────────────────────────────────
+# Bug: location fallback in the router passed only preferred_locations[0],
+# silently dropping every other preferred location.
+
+
+def test_location_filter_accepts_list_and_ors_them(session):
+    """Passing a list of locations returns jobs matching ANY of them."""
+    session.add_all(
+        [
+            Job(
+                source="t",
+                source_job_id="1",
+                title="Malaga Job",
+                company="A",
+                location="Malaga",
+            ),
+            Job(
+                source="t",
+                source_job_id="2",
+                title="Gibraltar Job",
+                company="B",
+                location="Gibraltar",
+            ),
+            Job(
+                source="t",
+                source_job_id="3",
+                title="Berlin Job",
+                company="C",
+                location="Berlin",
+            ),
+        ]
+    )
+    session.commit()
+
+    results = JobSearcher(session).search(location=["Malaga", "Gibraltar"])
+    titles = {j.title for j in results}
+    assert "Malaga Job" in titles
+    assert "Gibraltar Job" in titles
+    assert "Berlin Job" not in titles

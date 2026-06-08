@@ -210,6 +210,99 @@ class TestListJobs:
         titles = {j["title"] for j in resp.json()}
         assert "US Onsite" in titles
 
+    # ── Regression: onsite filter with null remote ────────────────────────────
+
+    def test_onsite_filter_includes_null_remote_jobs(self, client, db_session):
+        """remote=onsite must surface jobs where remote is NULL, not just tagged 'onsite'.
+
+        Regression: filter used Job.remote=='onsite' which matched almost nothing  # noqa: E501
+        because onsite jobs are rarely tagged — they just have remote=NULL.
+        """
+        db_session.add_all(
+            [
+                Job(
+                    title="Office Role",
+                    company="A",
+                    source="test",
+                    remote=None,
+                    location="Gibraltar",
+                ),
+                Job(
+                    title="Remote Role",
+                    company="B",
+                    source="test",
+                    remote="remote",
+                    location="Gibraltar",
+                ),
+                Job(
+                    title="Hybrid Role",
+                    company="C",
+                    source="test",
+                    remote="hybrid",
+                    location="Gibraltar",
+                ),
+            ]
+        )
+        db_session.commit()
+
+        resp = client.get("/jobs?remote=onsite&location=Gibraltar&sort=date")
+        assert resp.status_code == 200
+        titles = {j["title"] for j in resp.json()}
+        assert "Office Role" in titles
+        assert "Remote Role" not in titles
+        assert "Hybrid Role" not in titles
+
+    # ── Regression: location fallback uses all preferred locations ────────────
+
+    def test_onsite_uses_all_preferred_locations_not_just_first(
+        self, client, db_session, test_user
+    ):
+        """remote=onsite without explicit location must OR all preferred_locations.
+
+        Regression: router injected only preferred_locations[0] ('Malaga'),
+        so jobs in Gibraltar (index 2) were silently excluded.
+        """
+        prefs = UserPreferences(
+            user_id=test_user.id,
+            preferred_locations=["Malaga", "Cadiz", "Gibraltar"],
+            remote_preference="onsite",
+        )
+        db_session.add(prefs)
+        db_session.add_all(
+            [
+                Job(
+                    title="Malaga Job",
+                    company="A",
+                    source="test",
+                    location="Malaga",
+                    remote=None,
+                ),
+                Job(
+                    title="Gibraltar Job",
+                    company="B",
+                    source="test",
+                    location="Gibraltar",
+                    remote=None,
+                ),
+                Job(
+                    title="Berlin Job",
+                    company="C",
+                    source="test",
+                    location="Berlin",
+                    remote=None,
+                ),
+            ]
+        )
+        db_session.commit()
+
+        # No explicit location param — router should fall back to all prefs
+        resp = client.get("/jobs?remote=onsite&sort=date")
+        assert resp.status_code == 200
+        titles = {j["title"] for j in resp.json()}
+        assert "Malaga Job" in titles
+        assert "Gibraltar Job" in titles
+        assert "Berlin Job" not in titles
+
 
 class TestGetJob:
     def test_returns_job_detail(self, client, db_session):

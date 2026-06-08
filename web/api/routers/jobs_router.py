@@ -1,6 +1,6 @@
 """Job browsing routes."""
 
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from dependencies import get_current_user, get_db
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -43,14 +43,17 @@ def list_jobs(
     current_user: User = Depends(get_current_user),
 ):
     """Return paginated jobs with this user's match scores."""
-    # For hybrid/onsite, fall back to the user's profile location when no
-    # explicit location filter was provided — remote jobs don't need this.
+    # For hybrid/onsite, fall back to all of the user's preferred locations when
+    # no explicit location filter was provided. Use a list so the searcher can
+    # OR them together — passing only the first would silently exclude the rest.
+    location_filter: Any = location
     if remote in ("hybrid", "onsite") and not location:
-        location = current_user.location or (
-            current_user.preferences.preferred_locations[0]
-            if current_user.preferences and current_user.preferences.preferred_locations
-            else None
-        )
+        locs: List[str] = []
+        if current_user.location:
+            locs.append(current_user.location)
+        if current_user.preferences and current_user.preferences.preferred_locations:
+            locs.extend(current_user.preferences.preferred_locations)
+        location_filter = locs if locs else None
 
     # For remote searches, restrict to jobs the user is eligible for based on
     # their preferred_countries. Jobs with no country (global ATS roles) are
@@ -66,7 +69,7 @@ def list_jobs(
     # page_size + offset emulated via limit; JobSearcher doesn't have native pagination
     jobs = searcher.search(
         keywords=keywords,
-        location=location,
+        location=location_filter,
         remote=remote,
         eligible_countries=eligible_countries,
         min_match_score=min_score,
