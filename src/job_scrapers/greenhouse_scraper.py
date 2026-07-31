@@ -67,6 +67,7 @@ DEFAULT_BOARD_TOKENS = [
     # Gaming
     "riotgames",
     # Marketplace & delivery
+    "cabify",
     "lyft",
     "intercom",
     # Healthcare
