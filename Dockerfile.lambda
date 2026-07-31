@@ -1,7 +1,7 @@
 FROM --platform=linux/arm64 public.ecr.aws/lambda/python:3.11
 
 COPY requirements-lambda.txt .
-RUN pip install --no-cache-dir -r requirements-lambda.txt
+RUN pip install --no-cache-dir --prefer-binary -r requirements-lambda.txt
 
 # ── jobhunter-ai private package (optional — needed only for auto-apply) ──
 # Pass your GitHub token at build time:
