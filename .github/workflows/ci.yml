@@ -124,6 +124,11 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Set up QEMU (arm64 emulation for sam build)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
       - name: Install SAM CLI
         run: pip install aws-sam-cli
 
