@@ -169,6 +169,14 @@ WORKDAY_PORTALS: List[WorkdayPortal] = [
         industry="Consulting / Technology",
         size="Enterprise (100k+)",
     ),
+    WorkdayPortal(
+        slug="solera",
+        portal="Global_Career_Site",
+        company="Solera Holdings",
+        wd="wd5",
+        industry="Technology / Automotive",
+        size="Large (10k+)",
+    ),
 ]
 
 
