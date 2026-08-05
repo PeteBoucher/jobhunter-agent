@@ -267,8 +267,10 @@ def _do_match(sns_topic_arn: str) -> Dict[str, Any]:
                 jm = compute_match_for_user(session, job, user)
                 total_matches += 1
                 if jm.match_score and jm.match_score >= min_score:
+                    loc = job.location or job.remote or "—"
                     high_score_matches.append(
-                        f"  - {job.company}: {job.title} ({jm.match_score:.0f}%)"
+                        f"  - {job.company}: {job.title}"
+                        f" ({jm.match_score:.0f}%) [{loc}]"
                     )
             logger.info("Computed %d matches for user %d", len(jobs), user.id)
             if len(jobs) == per_user_limit:
