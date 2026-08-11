@@ -276,10 +276,7 @@ def _do_match(sns_topic_arn: str) -> Dict[str, Any]:
                     if prefs and prefs.preferred_countries:
                         job_country = (job.country or "").lower()
                         allowed = [c.lower() for c in prefs.preferred_countries]
-                        job_is_remote = (job.remote or "").lower() in (
-                            "remote",
-                            "hybrid",
-                        )
+                        job_is_remote = (job.remote or "").lower() == "remote"
                         if (
                             job_country
                             and job_country not in allowed
