@@ -25,6 +25,11 @@ Confirmed working portals (as of 2025-03):
   Netflix       — netflix.wd1         / Netflix                           (~790 jobs)
   Adobe         — adobe.wd5           / external_experienced             (~1100 jobs)
   Accenture     — accenture.wd103     / AccentureCareers                  (~2000 jobs)
+
+Per-portal max_jobs caps are set based on each company's listing volume. Description
+fetches only run for new (unseen) jobs, so the first-run cost is bounded by max_jobs;
+subsequent runs are fast since existing jobs skip the detail endpoint. All portals run
+concurrently in threads, so wall-clock time is the slowest single portal, not the sum.
 """
 
 import logging
@@ -44,11 +49,11 @@ logger = logging.getLogger("jobhunter.scrapers.workday")
 # Throttle between per-job description fetches to be polite
 DESCRIPTION_DELAY = 0.1  # seconds
 
-# Workday returns pages of 20; cap total per portal to avoid Lambda timeouts.
-# Lower than original 300 because we now have 10 portals — first-run description
-# fetches are capped at MAX_JOBS_PER_PORTAL × DESCRIPTION_DELAY seconds each.
+# Workday returns pages of 20.
 PAGE_SIZE = 20
-MAX_JOBS_PER_PORTAL = 100
+
+# Default cap for portals that don't set their own max_jobs.
+DEFAULT_MAX_JOBS = 100
 
 
 @dataclass
@@ -61,6 +66,7 @@ class WorkdayPortal:
     wd: str = "wd3"  # Workday instance number (wd1, wd3, wd5 …)
     industry: str = "Technology"
     size: str = "Enterprise"
+    max_jobs: int = DEFAULT_MAX_JOBS  # per-run cap; raise for high-volume portals
 
     @property
     def base_url(self) -> str:
@@ -101,6 +107,7 @@ WORKDAY_PORTALS: List[WorkdayPortal] = [
         company="Maersk",
         industry="Logistics / Shipping",
         size="Enterprise (100k+)",
+        max_jobs=500,
     ),
     WorkdayPortal(
         slug="ag",
@@ -108,6 +115,7 @@ WORKDAY_PORTALS: List[WorkdayPortal] = [
         company="Airbus",
         industry="Aerospace / Defence",
         size="Enterprise (100k+)",
+        max_jobs=500,
     ),
     WorkdayPortal(
         slug="shell",
@@ -115,6 +123,7 @@ WORKDAY_PORTALS: List[WorkdayPortal] = [
         company="Shell",
         industry="Energy",
         size="Enterprise (100k+)",
+        max_jobs=200,
     ),
     WorkdayPortal(
         slug="astrazeneca",
@@ -122,6 +131,7 @@ WORKDAY_PORTALS: List[WorkdayPortal] = [
         company="AstraZeneca",
         industry="Pharmaceutical",
         size="Enterprise (100k+)",
+        max_jobs=500,
     ),
     WorkdayPortal(
         slug="bpinternational",
@@ -129,6 +139,7 @@ WORKDAY_PORTALS: List[WorkdayPortal] = [
         company="BP",
         industry="Energy",
         size="Enterprise (100k+)",
+        max_jobs=400,
     ),
     WorkdayPortal(
         slug="unilever",
@@ -136,6 +147,7 @@ WORKDAY_PORTALS: List[WorkdayPortal] = [
         company="Unilever",
         industry="Consumer Goods",
         size="Enterprise (100k+)",
+        max_jobs=400,
     ),
     WorkdayPortal(
         slug="gsk",
@@ -144,6 +156,7 @@ WORKDAY_PORTALS: List[WorkdayPortal] = [
         wd="wd5",
         industry="Pharmaceutical",
         size="Enterprise (100k+)",
+        max_jobs=500,
     ),
     WorkdayPortal(
         slug="netflix",
@@ -152,6 +165,7 @@ WORKDAY_PORTALS: List[WorkdayPortal] = [
         wd="wd1",
         industry="Technology / Media",
         size="Large (10k+)",
+        max_jobs=500,
     ),
     WorkdayPortal(
         slug="adobe",
@@ -160,6 +174,7 @@ WORKDAY_PORTALS: List[WorkdayPortal] = [
         wd="wd5",
         industry="Technology",
         size="Large (10k+)",
+        max_jobs=500,
     ),
     WorkdayPortal(
         slug="accenture",
@@ -168,6 +183,7 @@ WORKDAY_PORTALS: List[WorkdayPortal] = [
         wd="wd103",
         industry="Consulting / Technology",
         size="Enterprise (100k+)",
+        max_jobs=500,
     ),
     WorkdayPortal(
         slug="solera",
@@ -176,6 +192,7 @@ WORKDAY_PORTALS: List[WorkdayPortal] = [
         wd="wd5",
         industry="Technology / Automotive",
         size="Large (10k+)",
+        max_jobs=250,
     ),
 ]
 
@@ -219,7 +236,7 @@ class WorkdayScraper(BaseScraper):
         listings: List[Dict[str, Any]] = []
         offset = 0
 
-        while len(listings) < MAX_JOBS_PER_PORTAL:
+        while len(listings) < portal.max_jobs:
             try:
                 resp = self._http.post(
                     portal.search_url,
