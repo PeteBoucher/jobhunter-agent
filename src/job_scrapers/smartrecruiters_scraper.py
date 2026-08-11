@@ -37,6 +37,7 @@ DEFAULT_COMPANIES: Dict[str, str] = {
     "Evolution": "Evolution",
     "sportradar": "Sportradar",
     "EPAM": "EPAM Systems",
+    "Ciklum": "Ciklum",
 }
 
 

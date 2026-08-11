@@ -52,6 +52,7 @@ DEFAULT_BOARD_TOKENS = [
     "slalom",
     "publicissapient",
     # Fintech & financial services
+    "ebury",
     "robinhood",
     "adyen",
     "n26",
