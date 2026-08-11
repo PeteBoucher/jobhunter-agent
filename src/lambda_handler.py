@@ -267,17 +267,25 @@ def _do_match(sns_topic_arn: str) -> Dict[str, Any]:
                 jm = compute_match_for_user(session, job, user)
                 total_matches += 1
                 if jm.match_score and jm.match_score >= min_score:
-                    # Skip jobs that scored 0 on location when the user has
-                    # location preferences — these are likely in the wrong
-                    # country and only hit the threshold on skills/title alone.
+                    # If the user has preferred_countries, skip jobs in the
+                    # wrong country unless the job is explicitly remote.
+                    # Checking location_or_remote_score > 0 is not sufficient
+                    # because an onsite job anywhere scores points when the
+                    # user's remote_preference is "onsite".
                     prefs = user.preferences
-                    has_location_prefs = prefs and (
-                        prefs.preferred_locations or prefs.preferred_countries
-                    )
-                    if has_location_prefs and not (
-                        jm.location_or_remote_score and jm.location_or_remote_score > 0
-                    ):
-                        continue
+                    if prefs and prefs.preferred_countries:
+                        job_country = (job.country or "").lower()
+                        allowed = [c.lower() for c in prefs.preferred_countries]
+                        job_is_remote = (job.remote or "").lower() in (
+                            "remote",
+                            "hybrid",
+                        )
+                        if (
+                            job_country
+                            and job_country not in allowed
+                            and not job_is_remote
+                        ):
+                            continue
                     loc = job.location or job.remote or "—"
                     high_score_matches.append(
                         f"  - {job.company}: {job.title}"
