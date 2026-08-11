@@ -11,6 +11,7 @@ from src.job_scrapers.ashby_scraper import AshbyScraper
 from src.job_scrapers.bamboohr_scraper import BambooHRScraper
 from src.job_scrapers.base_scraper import BaseScraper
 from src.job_scrapers.bcg_scraper import BCGScraper
+from src.job_scrapers.coderland_scraper import CodelandScraper
 from src.job_scrapers.coinbase_scraper import CoinbaseScraper
 from src.job_scrapers.github_scraper import GitHubJobsScraper
 from src.job_scrapers.greenhouse_scraper import GreenhouseScraper
@@ -29,6 +30,7 @@ from src.job_scrapers.workday_scraper import WorkdayScraper
 SCRAPER_MAP: Dict[str, Type[BaseScraper]] = {
     "ashby": AshbyScraper,
     "bamboohr": BambooHRScraper,
+    "coderland": CodelandScraper,
     "bcg": BCGScraper,
     "greenhouse": GreenhouseScraper,
     "lever": LeverScraper,
@@ -60,4 +62,5 @@ DEFAULT_SOURCES: List[str] = [
     "workday",
     "thoughtworks",
     "smartrecruiters",
+    "coderland",
 ]
