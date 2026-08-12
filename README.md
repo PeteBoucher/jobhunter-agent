@@ -4,7 +4,7 @@ A hosted web app + CLI tool that scrapes job listings, scores them against your 
 
 ## Architecture
 
-```
+```text
 [Vercel — Next.js]  ←── REST + JWT ──→  [Render — FastAPI]
                                                  │
                                          SQLAlchemy (sync)
@@ -12,10 +12,10 @@ A hosted web app + CLI tool that scrapes job listings, scores them against your 
                                     [Neon — PostgreSQL]
                                                  ↑
                                     [AWS Lambda — scraper]
-                                    (EventBridge schedule)
+                                    (EventBridge every 6h)
 ```
 
-Jobs are scraped once into a shared pool. Each user has their own profile, match scores, and application tracking. The Lambda runs on a schedule (every 6h in prod), scrapes all sources, and writes directly to Neon.
+Jobs are scraped once into a shared pool. Each user has their own profile, match scores, and application tracking. The Lambda runs on a schedule (every 6h in prod), scrapes all sources concurrently, and writes directly to Neon.
 
 ## What's working
 
@@ -28,75 +28,100 @@ Jobs are scraped once into a shared pool. Each user has their own profile, match
 - **Applications kanban** — drag cards across Saved → Applied → Interview → Offer/Rejected
 - **Shared scraping** — Lambda scrapes all sources every 6h concurrently; search terms and countries derived automatically from user preferences
 - **Stale job expiry** — jobs not re-seen within 30 days are automatically marked inactive and hidden from the feed
+- **Location-filtered notifications** — SNS alerts only fire for jobs in your preferred countries (fully remote jobs bypass the filter)
 - **CLI** — full local CLI still works for power users and debugging
 
-### Scrapers
+## Scrapers
+
+### ATS platforms (multi-company)
+
+| Scraper | Companies covered | Notes |
+| --- | --- | --- |
+| **Greenhouse** | Cloudflare, Airbnb, Figma, Discord, Adyen, Ebury, Lottoland, Kambi, Rush Street Interactive, Genius Sports, Fanatics, Cabify, and ~20 more | `boards-api.greenhouse.io` |
+| **Lever** | Spotify, Palantir, Plaid, and more | `jobs.lever.co` |
+| **Ashby** | OpenAI, Notion, Deel, ElevenLabs, Synthesia, Cursor, Perplexity, Mollie, Paddle, and ~30 more | `api.ashbyhq.com` |
+| **Workday** | Accenture, Airbus, GSK, Adobe, Netflix, AstraZeneca, Maersk, BP, Unilever, Shell, Betway, Flutter Entertainment, Solera Holdings | Per-portal cap; large portals (Accenture, GSK…) scrape up to 500 jobs/run |
+| **SmartRecruiters** | Bet365, Playtech, Evolution, Sportradar, EPAM Systems, Ciklum | `api.smartrecruiters.com` |
+| **BambooHR** | Various | `api.bamboohr.com` |
+| **Teamtailor** | The Workshop | `/jobs.json` JSON Feed; Schema.org location data |
+
+### Job boards / aggregators
 
 | Scraper | Source | Notes |
-|---------|--------|-------|
-| Greenhouse | Stripe, Cloudflare, Airbnb, Figma, Discord, Datadog, Adyen, and more | ATS API |
-| Lever | Spotify, Palantir, Plaid, and more | ATS API |
-| Ashby | Modern ATS used by many startups | ATS API |
-| Adzuna | Indeed, Reed, Monster aggregate | API key in SSM; countries derived from user preferences |
-| The Muse | Curated tech companies | No auth required |
-| Reed | UK job board | API key required |
-| LinkedIn | Guest search endpoint | Rate-limited; no auth; descriptions fetched via guest job detail API |
-| Workday | Enterprise ATS | Configured per-company |
-| Thoughtworks | Direct careers page | |
-| GitHub Jobs | — | Deprecated, returns empty |
-| Microsoft Careers | — | Deprecated, returns empty |
+| --- | --- | --- |
+| **Adzuna** | 13+ countries | API key in SSM; countries derived from user preferences |
+| **The Muse** | Curated tech companies | No auth required |
+| **Reed** | UK job board | API key required |
 
-### Job matching algorithm
+### Direct company scrapers
 
-5-dimension scoring (100pts total):
+| Scraper | Company | Notes |
+| --- | --- | --- |
+| **Thoughtworks** | Thoughtworks | Direct careers page |
+| **BCG** | Boston Consulting Group | |
+| **Coinbase** | Coinbase | |
+| **Revolut** | Revolut | |
+| **Coderland** | Coderland | Manatal ATS proxied via Next.js; single request returns all listings |
+
+### Not active
+
+| Scraper | Reason |
+| --- | --- |
+| LinkedIn | Guest endpoint blocks Lambda IPs; violates ToS |
+| GitHub Jobs | Deprecated — always returns empty |
+| Microsoft Careers | Returns empty |
+
+## Job matching algorithm
+
+5-dimension scoring (100 pts total):
 
 | Dimension | Points | Method |
-|-----------|--------|--------|
+| --- | --- | --- |
 | Skills | 35 | Fraction of job requirements covered by CV skills |
 | Title | 25 | Word-level Jaccard + character similarity against target titles |
 | Experience | 15 | Seniority match between job level and user preference |
 | Location/remote | 15 | Remote preference OR location substring match (OR relationship) |
 | Salary | 10 | Gradient — job salary vs user minimum |
 
-Score maxima are served from the API (`*_score_max` fields on every job response) so the frontend never needs its own copy of the weights.
+Score maxima are served from the API (`*_score_max` fields on every job response) so the frontend never hardcodes the weights.
 
 ## Project structure
 
 ```
 jobhunter-agent/
-├── src/                        # Core Python library
+├── src/
 │   ├── cli.py
 │   ├── models.py               # SQLAlchemy models
 │   ├── database.py
-│   ├── job_scrapers/           # BaseScraper + registry + implementations
+│   ├── job_scrapers/
+│   │   ├── base_scraper.py     # BaseScraper ABC
+│   │   ├── registry.py         # SCRAPER_MAP + DEFAULT_SOURCES
+│   │   └── *.py                # One file per scraper
 │   ├── job_matcher.py
 │   ├── job_searcher.py
 │   ├── application_tracker.py
-│   ├── lambda_handler.py       # Lambda entry point
+│   ├── lambda_handler.py       # Lambda entry point (scrape + match phases)
 │   └── user_profile.py
 ├── web/
-│   ├── api/                    # FastAPI (deploys to Render)
+│   ├── api/                    # FastAPI (Render)
 │   │   ├── main.py
-│   │   ├── auth.py
-│   │   ├── dependencies.py
 │   │   ├── routers/
-│   │   ├── schemas/
 │   │   └── tests/
-│   └── frontend/               # Next.js (deploys to Vercel)
+│   └── frontend/               # Next.js (Vercel)
 │       ├── app/
 │       ├── components/
 │       └── lib/
 ├── tests/                      # CLI / scraper tests
+├── .github/workflows/ci.yml    # CI: lint → test → deploy Lambda + Render + Vercel
 ├── template.yaml               # SAM template (Lambda + EventBridge + SNS)
 ├── samconfig.toml
+├── Dockerfile.lambda
 ├── requirements.txt
 ├── requirements-lambda.txt
-└── pyproject.toml              # pytest, black, mypy config
+└── pyproject.toml
 ```
 
 ## CLI quick start
-
-For local use without the web app:
 
 ```bash
 # Setup
@@ -135,27 +160,17 @@ class MyCompanyScraper(BaseScraper):
 
     def _parse_job(self, raw_job):
         # Return standardised dict: source_job_id, title, company,
-        # location, description, apply_url, …
+        # location, country, description, apply_url, …
         pass
 ```
 
-2. Register in `src/job_scrapers/registry.py`:
+2. Register in `src/job_scrapers/registry.py` (SCRAPER_MAP + DEFAULT_SOURCES).
 
-```python
-from src.job_scrapers.mycompany_scraper import MyCompanyScraper
-SCRAPER_MAP["mycompany"] = MyCompanyScraper
-```
-
-### Adzuna API key
-
-Sign up at [developer.adzuna.com](https://developer.adzuna.com). For local use:
-
-```bash
-export ADZUNA_APP_ID=your_app_id
-export ADZUNA_APP_KEY=your_app_key
-```
-
-For Lambda, credentials are in AWS SSM (`/jobhunter/adzuna-app-id`, `/jobhunter/adzuna-app-key`).
+**ATS quick-add patterns:**
+- **Greenhouse** — add board token to `DEFAULT_BOARD_TOKENS` in `greenhouse_scraper.py`
+- **Workday** — add a `WorkdayPortal` dataclass entry to `WORKDAY_PORTALS` in `workday_scraper.py`; set `max_jobs` proportional to listing volume
+- **SmartRecruiters** — add `"CompanyId": "Display Name"` to `DEFAULT_COMPANIES` in `smartrecruiters_scraper.py`
+- **Teamtailor** — add a `TeamtailorBoard` entry to `DEFAULT_BOARDS` in `teamtailor_scraper.py`
 
 ## Testing
 
@@ -169,62 +184,68 @@ Web API tests use `TestClient` + in-memory SQLite — no Neon connection needed.
 
 ## Deployment
 
-### Lambda (scraper + matcher)
+### CI/CD (automatic on push to master)
+
+`.github/workflows/ci.yml` runs on every push:
+
+1. Python lint + tests (black, isort, flake8, mypy, bandit, pytest)
+2. Frontend Vitest tests
+3. **Deploy Lambda** — `sam build` (QEMU arm64 on amd64 runner) + `sam deploy --config-env prod`
+4. **Deploy API** — Render deploy hook
+5. **Deploy frontend** — Vercel CLI
+
+Required GitHub secrets: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `RENDER_DEPLOY_HOOK_URL`, `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`.
+
+### Lambda (manual)
 
 ```bash
+export DOCKER_HOST=unix:///Users/pete/.docker/run/docker.sock
 sam build
-sam deploy --config-env default   # Dev — schedule disabled
-sam deploy --config-env prod      # Prod — 6h schedule
+sam deploy --config-env prod --no-confirm-changeset
 ```
 
 Lambda runs in two phases, each with a full 600s budget:
 
-1. **Scrape** (triggered by EventBridge `{}`) — scrapes all sources concurrently, expires stale listings, then invokes itself async with `{"action":"match"}`.
-2. **Match** (triggered by scrape phase) — computes per-user scores and sends SNS notifications for matches ≥ 70%.
-
-Invoke manually:
+1. **Scrape** (`{}`) — scrapes all sources concurrently via `ThreadPoolExecutor`, expires stale listings (>30 days), then invokes itself async with `{"action":"match"}`.
+2. **Match** (`{"action":"match"}`) — computes per-user scores, sends SNS notifications for matches ≥ 70% in the user's preferred countries.
 
 ```bash
-# Trigger a full scrape + match cycle
+# Trigger scrape + match cycle
 aws lambda invoke --function-name jobhunter-prod --region eu-west-1 \
   --invocation-type Event --payload "$(echo '{}' | base64)" /dev/null
 
 # Trigger match only
 aws lambda invoke --function-name jobhunter-prod --region eu-west-1 \
   --invocation-type Event --payload "$(echo '{"action":"match"}' | base64)" /dev/null
-```
 
-Lambda writes to Neon via `DATABASE_URL` from SSM (`/jobhunter/database-url`). Only users with a CV, skills, or target titles set are included in matching — unprovisioned accounts don't dilute the budget.
+# Watch logs
+aws logs tail /aws/lambda/jobhunter-prod --region eu-west-1 --follow
+```
 
 ### Web app
 
-Pushing to `master` triggers the GitHub Actions CI workflow (`.github/workflows/ci.yml`):
-1. Python tests + linting (black, isort, flake8, mypy, bandit)
-2. Frontend Vitest tests
-3. On success: Render deploy hook fires (API) and Vercel CLI deploys (frontend)
-
-Required GitHub Actions secrets: `RENDER_DEPLOY_HOOK_URL`, `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`.
-
 | Service | Config |
-|---------|--------|
-| Render | Root: `web/api`, build: `pip install -r requirements.txt git+https://${GITHUB_TOKEN}@github.com/peteboucher/jobhunter-ai.git`, start: `uvicorn main:app --host 0.0.0.0 --port $PORT` |
-| Vercel | Root: `web/frontend`, env: `NEXT_PUBLIC_API_URL`, `NEXTAUTH_URL`, Google OAuth keys |
+| --- | --- |
+| Render | Root: `web/api`; build installs `jobhunter-ai` private package via `GITHUB_TOKEN` |
+| Vercel | Root: `web/frontend`; pinned to `lhr1` (London) in `vercel.json` |
 | Neon | Connection string in Render env vars + SSM `/jobhunter/database-url` |
 
 ### DB migrations
 
-Schema changes are applied directly via Neon MCP or `psql`. `init_db()` (called at Lambda startup) handles new tables via `Base.metadata.create_all()`, but new columns on existing tables require an explicit `ALTER TABLE`.
+Schema changes are applied directly via Neon MCP or `psql`. `init_db()` handles new tables via `create_all()`, but new columns on existing tables require an explicit `ALTER TABLE … ADD COLUMN IF NOT EXISTS`.
 
 ## User management
 
-Sign-up is open — all new users get immediate access. The `is_approved` column is retained in the DB but no longer enforced at the API or frontend level.
+Sign-up is open — all new users get immediate access. The `is_approved` column is retained in the DB but not enforced.
 
-Match score email notifications fire when a new job scores ≥ 70% against a user's profile (configurable via `MinMatchScoreNotify` in `samconfig.toml`).
+Match score email notifications fire when a new job scores ≥ 70% against a user's profile (configurable via `MinMatchScoreNotify` in `samconfig.toml` — no Lambda rebuild needed).
 
 ## Documentation
 
-- [WORKFLOW.md](WORKFLOW.md) — development workflow, feedback process, deploy checklist
+- [CLAUDE.md](CLAUDE.md) — development conventions, architecture decisions, gotchas
+- [WORKFLOW.md](WORKFLOW.md) — development workflow and deploy checklist
 - [DEPLOYMENT.md](DEPLOYMENT.md) — local deployment options (systemd, Docker)
+- [PROJECT_PLAN.md](PROJECT_PLAN.md) — current state, roadmap, and future features
 
 ## License
 
