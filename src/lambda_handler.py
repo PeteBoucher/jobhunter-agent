@@ -28,6 +28,219 @@ import boto3
 logger = logging.getLogger("jobhunter.lambda")
 logger.setLevel(logging.INFO)
 
+# Location text → ISO2 country code.
+# Ordered most-specific first (multi-word before single-word).
+# Used as a fallback when job.country is NULL (Greenhouse, Lever, etc. don't
+# return a country code from their APIs — only a free-text location string).
+_LOCATION_COUNTRY_MAP = [
+    # United Kingdom
+    ("united kingdom", "gb"),
+    ("great britain", "gb"),
+    (", uk", "gb"),
+    ("london", "gb"),
+    ("manchester", "gb"),
+    ("edinburgh", "gb"),
+    ("birmingham", "gb"),
+    ("glasgow", "gb"),
+    ("bristol", "gb"),
+    ("leeds", "gb"),
+    ("liverpool", "gb"),
+    ("sheffield", "gb"),
+    ("cambridge", "gb"),
+    ("oxford", "gb"),
+    ("brighton", "gb"),
+    # Spain
+    ("spain", "es"),
+    ("españa", "es"),
+    ("madrid", "es"),
+    ("barcelona", "es"),
+    ("málaga", "es"),
+    ("malaga", "es"),
+    ("valencia", "es"),
+    ("sevilla", "es"),
+    ("seville", "es"),
+    ("bilbao", "es"),
+    ("zaragoza", "es"),
+    ("alicante", "es"),
+    ("granada", "es"),
+    ("palma", "es"),
+    ("murcia", "es"),
+    ("córdoba", "es"),
+    ("cordoba", "es"),
+    ("san sebastián", "es"),
+    ("donostia", "es"),
+    # Gibraltar
+    ("gibraltar", "gi"),
+    # Malta
+    ("malta", "mt"),
+    ("valletta", "mt"),
+    ("sliema", "mt"),
+    ("st. julian", "mt"),
+    # Ireland
+    ("ireland", "ie"),
+    ("dublin", "ie"),
+    ("cork", "ie"),
+    # Germany
+    ("germany", "de"),
+    ("deutschland", "de"),
+    ("berlin", "de"),
+    ("munich", "de"),
+    ("münchen", "de"),
+    ("hamburg", "de"),
+    ("frankfurt", "de"),
+    ("cologne", "de"),
+    ("köln", "de"),
+    ("düsseldorf", "de"),
+    ("stuttgart", "de"),
+    # Netherlands
+    ("netherlands", "nl"),
+    ("amsterdam", "nl"),
+    ("rotterdam", "nl"),
+    ("the hague", "nl"),
+    ("utrecht", "nl"),
+    ("eindhoven", "nl"),
+    # France
+    ("france", "fr"),
+    ("paris", "fr"),
+    ("lyon", "fr"),
+    ("marseille", "fr"),
+    ("toulouse", "fr"),
+    ("bordeaux", "fr"),
+    ("nice", "fr"),
+    # Portugal
+    ("portugal", "pt"),
+    ("lisbon", "pt"),
+    ("lisboa", "pt"),
+    ("porto", "pt"),
+    # Italy
+    ("italy", "it"),
+    ("rome", "it"),
+    ("milan", "it"),
+    ("milano", "it"),
+    ("turin", "it"),
+    ("naples", "it"),
+    # Sweden
+    ("sweden", "se"),
+    ("stockholm", "se"),
+    ("gothenburg", "se"),
+    ("malmö", "se"),
+    # Denmark
+    ("denmark", "dk"),
+    ("copenhagen", "dk"),
+    ("københavn", "dk"),
+    # Poland
+    ("poland", "pl"),
+    ("warsaw", "pl"),
+    ("kraków", "pl"),
+    ("wrocław", "pl"),
+    # Romania
+    ("romania", "ro"),
+    ("bucharest", "ro"),
+    ("cluj", "ro"),
+    # United States — listed to filter OUT
+    ("united states", "us"),
+    ("u.s.a", "us"),
+    (", usa", "us"),
+    ("new york", "us"),
+    ("san francisco", "us"),
+    ("los angeles", "us"),
+    ("chicago", "us"),
+    ("philadelphia", "us"),
+    ("boston", "us"),
+    ("seattle", "us"),
+    ("austin", "us"),
+    ("denver", "us"),
+    ("miami", "us"),
+    ("atlanta", "us"),
+    ("dallas", "us"),
+    ("houston", "us"),
+    ("washington, d", "us"),
+    (", ny", "us"),
+    (", ca", "us"),
+    (", tx", "us"),
+    (", wa", "us"),
+    (", ma", "us"),
+    (", il", "us"),
+    (", pa", "us"),
+    (", co", "us"),
+    # Brazil
+    ("brazil", "br"),
+    ("brasil", "br"),
+    ("são paulo", "br"),
+    ("sao paulo", "br"),
+    ("rio de janeiro", "br"),
+    ("belo horizonte", "br"),
+    ("curitiba", "br"),
+    # China
+    ("china", "cn"),
+    ("shanghai", "cn"),
+    ("beijing", "cn"),
+    ("shenzhen", "cn"),
+    ("guangzhou", "cn"),
+    ("chengdu", "cn"),
+    ("hangzhou", "cn"),
+    # Hong Kong
+    ("hong kong", "hk"),
+    # Singapore
+    ("singapore", "sg"),
+    # India
+    ("india", "in"),
+    ("bangalore", "in"),
+    ("bengaluru", "in"),
+    ("mumbai", "in"),
+    ("delhi", "in"),
+    ("hyderabad", "in"),
+    ("pune", "in"),
+    # Australia
+    ("australia", "au"),
+    ("sydney", "au"),
+    ("melbourne", "au"),
+    ("brisbane", "au"),
+    # Canada
+    ("canada", "ca"),
+    ("toronto", "ca"),
+    ("vancouver", "ca"),
+    ("montreal", "ca"),
+    # Japan
+    ("japan", "jp"),
+    ("tokyo", "jp"),
+    ("osaka", "jp"),
+    # Mexico
+    ("mexico", "mx"),
+    ("ciudad de méxico", "mx"),
+    ("mexico city", "mx"),
+    # Argentina
+    ("argentina", "ar"),
+    ("buenos aires", "ar"),
+    # Colombia
+    ("colombia", "co"),
+    ("bogotá", "co"),
+    ("bogota", "co"),
+    # Chile
+    ("chile", "cl"),
+    ("santiago", "cl"),
+    # UAE
+    ("united arab emirates", "ae"),
+    ("dubai", "ae"),
+    ("abu dhabi", "ae"),
+]
+
+
+def _infer_country(location: Optional[str]) -> Optional[str]:
+    """Best-effort country code from a free-text location string.
+
+    Returns an ISO2 lower-case code, or None if the location is unrecognised.
+    Used as a fallback when job.country is NULL.
+    """
+    if not location:
+        return None
+    loc = location.lower()
+    for pattern, code in _LOCATION_COUNTRY_MAP:
+        if pattern in loc:
+            return code
+    return None
+
+
 _EXPIRY_DAYS = 30  # Jobs not re-seen within this window are marked inactive
 
 # Lazy-initialised clients (cached for Lambda warm starts)
@@ -275,13 +488,11 @@ def _do_match(sns_topic_arn: str) -> Dict[str, Any]:
                     prefs = user.preferences
                     if prefs and prefs.preferred_countries:
                         job_country = (job.country or "").lower()
+                        if not job_country:
+                            job_country = _infer_country(job.location) or ""
                         allowed = [c.lower() for c in prefs.preferred_countries]
                         job_is_remote = (job.remote or "").lower() == "remote"
-                        if (
-                            job_country
-                            and job_country not in allowed
-                            and not job_is_remote
-                        ):
+                        if not job_is_remote and job_country not in allowed:
                             continue
                     loc = job.location or job.remote or "—"
                     high_score_matches.append(
