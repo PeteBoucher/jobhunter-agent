@@ -25,6 +25,7 @@ from src.job_scrapers.teamtailor_scraper import TeamtailorScraper
 from src.job_scrapers.themuse_scraper import TheMuseScraper
 from src.job_scrapers.thoughtworks_scraper import ThoughtworksScraper
 from src.job_scrapers.uber_scraper import UberScraper
+from src.job_scrapers.workable_scraper import WorkableScraper
 from src.job_scrapers.workday_scraper import WorkdayScraper
 
 # All available scrapers keyed by source name
@@ -39,6 +40,7 @@ SCRAPER_MAP: Dict[str, Type[BaseScraper]] = {
     "microsoft": MicrosoftScraper,
     "github": GitHubJobsScraper,
     "coinbase": CoinbaseScraper,
+    "workable": WorkableScraper,
     "workday": WorkdayScraper,
     "revolut": RevolutScraper,
     "teamtailor": TeamtailorScraper,
@@ -66,4 +68,5 @@ DEFAULT_SOURCES: List[str] = [
     "smartrecruiters",
     "coderland",
     "teamtailor",
+    "workable",
 ]
