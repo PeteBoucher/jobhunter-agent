@@ -1577,13 +1577,15 @@ def scraper_generate(url: str, output: Optional[str]) -> None:
         )
         console.print()
         console.print("[yellow]Next steps:[/yellow]")
-        console.print("  1. Review the generated file")
-        console.print("  2. Run [bold].venv/bin/python -m pytest[/bold]")
+        console.print("  1. Review the generated file and fix any issues")
         console.print(
-            "  3. Run [bold].venv/bin/job-agent scrape --sources <name>[/bold] to test"
+            "  2. Add the class to [bold]src/job_scrapers/registry.py[/bold]"
+            " (SCRAPER_MAP + DEFAULT_SOURCES)"
         )
+        console.print("  3. Run [bold].venv/bin/python -m pytest[/bold]")
         console.print(
-            "  4. Add the scraper to [bold]src/job_scrapers/registry.py[/bold]"
+            "  4. Run [bold].venv/bin/job-agent scrape --sources <source_name>[/bold]"
+            " to do a live test"
         )
     except Exception as e:
         console.print(f"[red]✗ Generation failed:[/red] {e}")
