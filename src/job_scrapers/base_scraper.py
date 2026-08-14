@@ -439,6 +439,25 @@ class BaseScraper(ABC):
 
         return None
 
+    def _load_db_config(self) -> List[dict]:
+        """Return active scraper_config rows for this source as a list of dicts.
+
+        Used by scrapers to merge DB-configured companies with their hardcoded
+        defaults, so new companies can be added without a Lambda rebuild.
+        """
+        from src.models import ScraperConfig
+
+        try:
+            rows = (
+                self.session.query(ScraperConfig)
+                .filter_by(source_name=self._get_source_name(), is_active=True)
+                .all()
+            )
+            return [row.config for row in rows]
+        except Exception as e:
+            self.logger.warning("Failed to load DB scraper config: %s", e)
+            return []
+
     def _load_existing_ids(self) -> set:
         """Load all known source_job_ids for this source in one query."""
         rows = (

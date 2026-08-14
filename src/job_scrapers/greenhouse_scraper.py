@@ -111,7 +111,8 @@ class GreenhouseScraper(BaseScraper):
         Returns:
             List of raw job dicts from the Greenhouse API
         """
-        board_tokens = kwargs.get("board_tokens", self.board_tokens)
+        db_tokens = [c["token"] for c in self._load_db_config() if "token" in c]
+        board_tokens = kwargs.get("board_tokens") or (self.board_tokens + db_tokens)
         all_jobs: List[Dict[str, Any]] = []
 
         for token in board_tokens:

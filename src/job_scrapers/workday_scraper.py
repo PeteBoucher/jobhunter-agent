@@ -300,9 +300,21 @@ class WorkdayScraper(BaseScraper):
     def _fetch_jobs(self, **kwargs: Any) -> List[Dict[str, Any]]:
         """Fetch listings from all portals; hydrate new jobs with descriptions."""
         existing_ids: set = self._load_existing_ids()
+        db_portals = [
+            WorkdayPortal(
+                slug=c["slug"],
+                portal=c["portal"],
+                company=c.get("company", c["slug"]),
+                wd=c.get("wd", "wd3"),
+                max_jobs=int(c.get("max_jobs", DEFAULT_MAX_JOBS)),
+            )
+            for c in self._load_db_config()
+            if "slug" in c and "portal" in c
+        ]
+        portals = self.portals + db_portals
         all_raw: List[Dict[str, Any]] = []
 
-        for portal in self.portals:
+        for portal in portals:
             try:
                 listings = self._fetch_portal_listings(portal)
             except Exception as e:

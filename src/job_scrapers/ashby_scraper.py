@@ -87,7 +87,8 @@ class AshbyScraper(BaseScraper):
         Returns:
             List of raw job dicts from the Ashby API
         """
-        board_slugs = kwargs.get("board_slugs", self.board_slugs)
+        db_slugs = [c["subdomain"] for c in self._load_db_config() if "subdomain" in c]
+        board_slugs = kwargs.get("board_slugs") or (self.board_slugs + db_slugs)
         all_jobs: List[Dict[str, Any]] = []
 
         for slug in board_slugs:

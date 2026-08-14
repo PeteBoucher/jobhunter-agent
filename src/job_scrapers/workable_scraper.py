@@ -70,9 +70,18 @@ class WorkableScraper(BaseScraper):
         return "workable"
 
     def _fetch_jobs(self, **kwargs: Any) -> List[Dict[str, Any]]:
+        db_companies = [
+            WorkableCompany(
+                slug=c["slug"],
+                name=c.get("name", c["slug"]),
+            )
+            for c in self._load_db_config()
+            if "slug" in c
+        ]
+        companies = self.companies + db_companies
         all_raw: List[Dict[str, Any]] = []
 
-        for company in self.companies:
+        for company in companies:
             listings = self._fetch_company(company)
             all_raw.extend(listings)
             logger.info("Fetched %d jobs from %s", len(listings), company.name)

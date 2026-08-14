@@ -127,6 +127,20 @@ class JobSearcher:
 
         return results.all()
 
+    def get_recent_jobs(self, days: int = 7, limit: int = 20) -> List[Job]:
+        """Return jobs posted within the last N days, newest first."""
+        from datetime import timedelta
+
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        return (
+            self.session.query(Job)
+            .options(joinedload(Job.job_matches))
+            .filter(Job.posted_date >= cutoff, Job.is_active.is_(True))
+            .order_by(Job.posted_date.desc())
+            .limit(limit)
+            .all()
+        )
+
     def get_job_by_id(self, job_id: int) -> Optional[Job]:
         """Get a specific job by ID.
 

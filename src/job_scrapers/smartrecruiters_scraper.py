@@ -122,6 +122,13 @@ class SmartRecruitersScraper(BaseScraper):
 
     def _fetch_jobs(self, **kwargs: Any) -> List[Dict[str, Any]]:
         existing = self._load_existing_ids()
+        db_companies = {
+            c["company_id"]: c.get("display_name", c["company_id"])
+            for c in self._load_db_config()
+            if "company_id" in c
+        }
+        # Merge onto self.companies so _parse_job can look up display names
+        self.companies = {**self.companies, **db_companies}
         all_jobs: List[Dict[str, Any]] = []
 
         for company_id in self.companies:

@@ -187,6 +187,22 @@ class Offer(Base):
     application = relationship("Application", back_populates="offers")
 
 
+class ScraperConfig(Base):
+    """DB-driven configuration for individual companies within an ATS scraper.
+
+    Rows added here are merged with each scraper's hardcoded defaults at
+    fetch time, so new companies can be added without a Lambda rebuild.
+    """
+
+    __tablename__ = "scraper_config"
+
+    id = Column(Integer, primary_key=True)
+    source_name = Column(String(100), nullable=False, index=True)
+    config = Column(JSON, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class ScraperMetric(Base):
     """Simple metrics table for scraper events."""
 

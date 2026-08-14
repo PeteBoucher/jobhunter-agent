@@ -63,7 +63,8 @@ class LeverScraper(BaseScraper):
         Returns:
             List of raw job dicts from the Lever API
         """
-        company_slugs = kwargs.get("company_slugs", self.company_slugs)
+        db_slugs = [c["company"] for c in self._load_db_config() if "company" in c]
+        company_slugs = kwargs.get("company_slugs") or (self.company_slugs + db_slugs)
         all_jobs: List[Dict[str, Any]] = []
 
         for slug in company_slugs:

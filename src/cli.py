@@ -1365,5 +1365,230 @@ def apply_ai(
         session.close()
 
 
+@cli.group()
+def scraper() -> None:
+    """Manage scraper company configs (add, list, disable companies per ATS)."""
+    pass
+
+
+@scraper.command("list")
+@click.option(
+    "--source", default=None, help="Filter by ATS source name (e.g. greenhouse)"
+)
+def scraper_list(source: Optional[str]) -> None:
+    """List all configured companies per ATS (hardcoded defaults + DB rows)."""
+    from src.models import ScraperConfig
+
+    session = get_session()
+    try:
+        query = session.query(ScraperConfig)
+        if source:
+            query = query.filter_by(source_name=source)
+        rows = query.order_by(ScraperConfig.source_name, ScraperConfig.id).all()
+
+        table = Table(title="DB-configured scraper companies", show_lines=False)
+        table.add_column("ID", style="dim", width=5)
+        table.add_column("Source", style="cyan", width=16)
+        table.add_column("Config", style="white")
+        table.add_column("Active", width=7)
+        table.add_column("Added", style="dim", width=12)
+
+        for row in rows:
+            active = "[green]✓[/green]" if row.is_active else "[red]✗[/red]"
+            added = row.created_at.strftime("%Y-%m-%d") if row.created_at else "—"
+            table.add_row(str(row.id), row.source_name, str(row.config), active, added)
+
+        console.print(table)
+        if not rows:
+            console.print(
+                "[dim]No DB-configured companies yet. "
+                "Use [bold]scraper add[/bold].[/dim]"
+            )
+    finally:
+        session.close()
+
+
+@scraper.command("add")
+@click.argument("url", required=False)
+@click.option("--ats", default=None, help="ATS source name (e.g. greenhouse, workday)")
+@click.option("--config", "config_json", default=None, help="Config JSON string")
+@click.option("--name", default=None, help="Display name override")
+@click.option("--max-jobs", type=int, default=None, help="Job cap (Workday / DeJobs)")
+@click.option(
+    "--dry-run", is_flag=True, help="Print what would be inserted without writing"
+)
+def scraper_add(
+    url: Optional[str],
+    ats: Optional[str],
+    config_json: Optional[str],
+    name: Optional[str],
+    max_jobs: Optional[int],
+    dry_run: bool,
+) -> None:
+    """Add a company to an existing ATS scraper.
+
+    \b
+    Examples:
+      job-agent scraper add https://boards.greenhouse.io/stripe
+      job-agent scraper add https://accenture.wd103.myworkdayjobs.com/AccentureCareers
+      job-agent scraper add --ats greenhouse --config '{"token":"stripe"}'
+    """
+    import json as _json
+
+    from src.job_scrapers.ats_detector import detect_ats, validate_config
+    from src.models import ScraperConfig
+
+    if config_json and ats:
+        # Direct mode
+        try:
+            cfg = _json.loads(config_json)
+        except _json.JSONDecodeError as e:
+            console.print(f"[red]Invalid JSON:[/red] {e}")
+            raise SystemExit(1)
+        source_name = ats
+    elif url:
+        console.print(f"[dim]Detecting ATS from {url}…[/dim]")
+        result = detect_ats(url)
+        if result is None:
+            console.print(
+                "[red]✗[/red] Could not identify a supported ATS from this URL.\n"
+                "  If this is a novel ATS, use [bold]scraper generate[/bold] instead."
+            )
+            raise SystemExit(1)
+        source_name, cfg = result
+        console.print(f"[green]✓[/green] Detected: [cyan]{source_name}[/cyan]")
+    else:
+        console.print("[red]Provide a URL or both --ats and --config.[/red]")
+        raise SystemExit(1)
+
+    # Apply overrides
+    if name:
+        for key in ("name", "company", "display_name"):
+            if key in cfg:
+                cfg[key] = name
+                break
+        else:
+            cfg["name"] = name
+    if max_jobs is not None:
+        cfg["max_jobs"] = max_jobs
+
+    console.print(f"  source_name: [cyan]{source_name}[/cyan]")
+    console.print(f"  config:      {cfg}")
+
+    # Validate
+    console.print("[dim]Validating against live API…[/dim]")
+    ok = validate_config(source_name, cfg)
+    if not ok:
+        console.print(
+            "[yellow]⚠ Validation failed — API returned no jobs. "
+            "Double-check the config.[/yellow]"
+        )
+
+    if dry_run:
+        console.print("[yellow]--dry-run:[/yellow] not written to DB.")
+        return
+
+    session = get_session()
+    try:
+        row = ScraperConfig(source_name=source_name, config=cfg, is_active=True)
+        session.add(row)
+        session.commit()
+        console.print(
+            f"[green]✓[/green] Added [cyan]{source_name}[/cyan] config (id={row.id})"
+        )
+    finally:
+        session.close()
+
+
+@scraper.command("disable")
+@click.argument("id", type=int)
+def scraper_disable(id: int) -> None:
+    """Disable a DB-configured scraper entry by ID (keeps the row for history)."""
+    from src.models import ScraperConfig
+
+    session = get_session()
+    try:
+        row = session.query(ScraperConfig).get(id)
+        if row is None:
+            console.print(f"[red]No scraper config with id={id}[/red]")
+            raise SystemExit(1)
+        row.is_active = False
+        session.commit()
+        console.print(f"[green]✓[/green] Disabled config id={id} ({row.source_name})")
+    finally:
+        session.close()
+
+
+@scraper.command("remove")
+@click.argument("id", type=int)
+def scraper_remove(id: int) -> None:
+    """Hard-delete a DB-configured scraper entry by ID."""
+    from src.models import ScraperConfig
+
+    session = get_session()
+    try:
+        row = session.query(ScraperConfig).get(id)
+        if row is None:
+            console.print(f"[red]No scraper config with id={id}[/red]")
+            raise SystemExit(1)
+        session.delete(row)
+        session.commit()
+        console.print(f"[green]✓[/green] Removed config id={id} ({row.source_name})")
+    finally:
+        session.close()
+
+
+@scraper.command("generate")
+@click.argument("url")
+@click.option(
+    "--output",
+    default=None,
+    help="Output file path (default: auto-named in src/job_scrapers/)",
+)
+def scraper_generate(url: str, output: Optional[str]) -> None:
+    """Generate a draft scraper for an unsupported ATS platform.
+
+    Fetches the careers page, discovers the API, then uses Claude to produce
+    a draft BaseScraper subclass. Output is a Python file to review before use.
+
+    \b
+    Example:
+      job-agent scraper generate https://company.com/careers
+    """
+    from src.job_scrapers.ats_detector import detect_ats
+    from src.job_scrapers.scraper_generator import generate_scraper
+
+    # First check if this is already a supported ATS
+    console.print("[dim]Checking if this is a known ATS…[/dim]")
+    result = detect_ats(url, fetch_page=True)
+    if result is not None:
+        source_name, cfg = result
+        console.print(
+            f"[yellow]ℹ This looks like [bold]{source_name}[/bold] — "
+            f"use [bold]scraper add {url}[/bold] instead.[/yellow]"
+        )
+        return
+
+    console.print("[dim]Unknown ATS — starting AI-assisted scraper generation…[/dim]")
+    try:
+        output_path = generate_scraper(url, output_path=output)
+        console.print(
+            f"[green]✓[/green] Draft scraper written to [bold]{output_path}[/bold]"
+        )
+        console.print()
+        console.print("[yellow]Next steps:[/yellow]")
+        console.print("  1. Review the generated file")
+        console.print("  2. Run [bold].venv/bin/python -m pytest[/bold]")
+        console.print(
+            "  3. Run [bold].venv/bin/job-agent scrape --sources <name>[/bold] to test"
+        )
+        console.print(
+            "  4. Add the scraper to [bold]src/job_scrapers/registry.py[/bold]"
+        )
+    except Exception as e:
+        console.print(f"[red]✗ Generation failed:[/red] {e}")
+        raise SystemExit(1)
+
+
 if __name__ == "__main__":
     cli()

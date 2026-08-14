@@ -73,9 +73,18 @@ class TeamtailorScraper(BaseScraper):
         return "teamtailor"
 
     def _fetch_jobs(self, **kwargs: Any) -> List[Dict[str, Any]]:
+        db_boards = [
+            TeamtailorBoard(
+                company=c.get("company", c.get("career_url", "")),
+                career_url=c["career_url"],
+            )
+            for c in self._load_db_config()
+            if "career_url" in c
+        ]
+        boards = self.boards + db_boards
         all_raw: List[Dict[str, Any]] = []
 
-        for board in self.boards:
+        for board in boards:
             url = f"{board.career_url.rstrip('/')}/jobs.json"
             try:
                 resp = self._http.get(url, timeout=15)

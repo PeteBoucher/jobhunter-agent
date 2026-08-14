@@ -73,8 +73,18 @@ class DeJobsScraper(BaseScraper):
         return "dejobs"
 
     def _fetch_jobs(self, **kwargs: Any) -> List[Dict[str, Any]]:
+        db_companies = [
+            DeJobsCompany(
+                hostname=c["hostname"],
+                name=c.get("name", c["hostname"]),
+                max_jobs=int(c.get("max_jobs", DEFAULT_MAX_JOBS)),
+            )
+            for c in self._load_db_config()
+            if "hostname" in c
+        ]
+        companies = self.companies + db_companies
         all_raw: List[Dict[str, Any]] = []
-        for company in self.companies:
+        for company in companies:
             listings = self._fetch_company(company)
             all_raw.extend(listings)
             logger.info("Fetched %d jobs from %s", len(listings), company.name)
