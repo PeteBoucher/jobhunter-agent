@@ -8,8 +8,8 @@ An automated job search and application tracking agent that eliminates the manua
 
 **Roadmap** (see `PROJECT_PLAN.md` for full detail):
 
-1. **Done** — Core CLI, CV parsing, job scrapers (Greenhouse, Lever, Adzuna, The Muse, LinkedIn, Ashby, Workday, Thoughtworks), matching engine, application tracker, AWS Lambda deployment, SNS notifications, web dashboard (Next.js + FastAPI), multi-user support, stale job expiry, open sign-up (no approval gate), AI content generation (cover letter / tailored CV / recruiter message via `jobhunter-ai`), GitHub Actions CI/CD pipeline
-2. **Next** — Expand scraper targets, improve match quality further
+1. **Done** — Core CLI, CV parsing, job scrapers (Greenhouse, Lever, Adzuna, The Muse, LinkedIn, Ashby, Workday, Thoughtworks, SmartRecruiters, Teamtailor, Workable, BambooHR, DeJobs, and others), matching engine, application tracker, AWS Lambda deployment, SNS notifications, web dashboard (Next.js + FastAPI), multi-user support, stale job expiry, open sign-up (no approval gate), AI content generation (cover letter / tailored CV / recruiter message via `jobhunter-ai`), GitHub Actions CI/CD pipeline, DB-driven scraper config (`scraper_config` table), `job-agent scraper` CLI (add/list/disable/remove/generate), ATS auto-detection, AI scraper draft generator
+2. **Next** — Improve match quality further
 3. **Future** — Auto-apply workflow, interview prep, email digest
 
 **Matching formula** (score 0–100):
@@ -192,7 +192,11 @@ The `jobhunter-errors-prod` CloudWatch alarm uses a **Logs Metric Filter** on `[
 
 ## Key Architecture Notes
 
-- **Scrapers**: `BaseScraper` ABC in `src/job_scrapers/`. Registry in `src/job_scrapers/registry.py`. Default sources: ashby, greenhouse, lever, adzuna, themuse, linkedin, workday, thoughtworks.
+- **Scrapers**: `BaseScraper` ABC in `src/job_scrapers/`. Registry in `src/job_scrapers/registry.py`. Default sources: ashby, bamboohr, bcg, greenhouse, lever, adzuna, themuse, workday, thoughtworks, smartrecruiters, coderland, dejobs, teamtailor, workable.
+- **DB-driven scraper config**: `scraper_config` table (`ScraperConfig` model). Each ATS scraper merges its hardcoded defaults with active rows from this table at runtime — adding a company requires no code change or Lambda deploy. Managed via `job-agent scraper add/list/disable/remove`.
+- **ATS auto-detection**: `src/job_scrapers/ats_detector.py`. `detect_ats(url)` identifies the platform from URL patterns first, then page fingerprints (CSP + HTML), then a SmartRecruiters blind probe (derives a slug from the hostname and hits `api.smartrecruiters.com` — handles custom-domain SR sites like `sixt.jobs` that have no visible SR fingerprints). Returns `(source_name, config_dict)` or `None`.
+- **AI scraper draft generator**: `src/job_scrapers/scraper_generator.py`. `generate_scraper(url)` fetches the page, scans JS bundles for API patterns, probes candidate endpoints, then calls Claude Haiku to produce a draft `BaseScraper` subclass. Returns `(output_path, n_confirmed_endpoints)`. When `n_confirmed == 0`, the generated file includes a `LOW CONFIDENCE` header and the CLI prints a prominent warning — the API URL is a guess from JS analysis only.
+- **`job-agent scraper` commands**: `add <url>` detects the ATS and inserts to DB; if detection fails, runs the AI generator automatically. `generate <url>` runs the AI generator; if a known ATS is detected, adds to DB directly. Neither command redirects to the other — both complete the action.
 - **Lambda flow**: Two separate invocations dispatched by event payload. **Scrape phase** (`{}` or `{"action":"scrape"}`): scrape all sources concurrently → expire stale listings → invoke self async with `{"action":"match"}`. **Match phase** (`{"action":"match"}`): compute per-user scores → SNS notification. Each phase gets the full 600s budget. Writes directly to Neon (no S3 SQLite).
 - **Concurrent scraping**: All scrapers run in parallel via `ThreadPoolExecutor` in `lambda_handler.py`. Each scraper gets its own `get_session()` — no shared mutable state between threads. Wall-clock time is the slowest single scraper, not the sum.
 - **Lambda stability**: `ReservedConcurrentExecutions: 1` prevents overlapping invocations — the match invocation queues behind the scrape and starts when scrape exits. `EventInvokeConfig.MaximumRetryAttempts: 0` stops AWS retrying on failure.

@@ -145,32 +145,39 @@ job-agent applications apply 42 --notes "Applied via website"
 
 ## Adding a new scraper
 
-1. Create `src/job_scrapers/mycompany_scraper.py` inheriting `BaseScraper`:
+### Known ATS (Greenhouse, Lever, Ashby, Workday, SmartRecruiters, Teamtailor, Workable, DeJobs)
 
-```python
-from src.job_scrapers.base_scraper import BaseScraper
+Pass the company's careers URL — the ATS is auto-detected:
 
-class MyCompanyScraper(BaseScraper):
-    def _get_source_name(self) -> str:
-        return "mycompany"
-
-    def _fetch_jobs(self, **kwargs):
-        # Fetch from API, return list of raw dicts
-        pass
-
-    def _parse_job(self, raw_job):
-        # Return standardised dict: source_job_id, title, company,
-        # location, country, description, apply_url, …
-        pass
+```bash
+job-agent scraper add https://boards.greenhouse.io/stripe
+job-agent scraper add https://accenture.wd103.myworkdayjobs.com/AccentureCareers
+job-agent scraper add https://www.sixt.jobs/us        # custom domain, SR detected via API probe
 ```
 
-2. Register in `src/job_scrapers/registry.py` (SCRAPER_MAP + DEFAULT_SOURCES).
+Or supply the ATS and config directly:
 
-**ATS quick-add patterns:**
-- **Greenhouse** — add board token to `DEFAULT_BOARD_TOKENS` in `greenhouse_scraper.py`
-- **Workday** — add a `WorkdayPortal` dataclass entry to `WORKDAY_PORTALS` in `workday_scraper.py`; set `max_jobs` proportional to listing volume
-- **SmartRecruiters** — add `"CompanyId": "Display Name"` to `DEFAULT_COMPANIES` in `smartrecruiters_scraper.py`
-- **Teamtailor** — add a `TeamtailorBoard` entry to `DEFAULT_BOARDS` in `teamtailor_scraper.py`
+```bash
+job-agent scraper add --ats smartrecruiters --config '{"company_id":"Sixt","display_name":"Sixt"}'
+```
+
+The config row is written to the `scraper_config` table and picked up on the next Lambda run — no code change or redeploy needed.
+
+### Novel ATS (platform not yet supported)
+
+```bash
+job-agent scraper add https://careers.somecompany.com
+# or
+job-agent scraper generate https://careers.somecompany.com
+```
+
+Both commands fall through to the AI generator when detection fails. The generator fetches the page, scans JS bundles for API patterns, probes candidate endpoints, then calls Claude Haiku to write a draft `BaseScraper` subclass in `src/job_scrapers/`. After reviewing the output:
+
+1. Add the class to `src/job_scrapers/registry.py` (SCRAPER_MAP + DEFAULT_SOURCES)
+2. Run `pytest`
+3. Run `job-agent scrape --sources <source_name>` for a live test
+
+> **LOW CONFIDENCE drafts**: if no live API endpoints were confirmed during generation, the file header and CLI output will say so. The API URL is Claude's best guess — verify it manually before registering.
 
 ## Testing
 
