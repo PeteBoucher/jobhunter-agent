@@ -28,11 +28,14 @@ def runner():
 # ── scraper list ──────────────────────────────────────────────────────────────
 
 
-def test_scraper_list_empty(runner):
-    """Empty DB shows a 'no DB-configured companies' message."""
+def test_scraper_list_shows_hardcoded_defaults(runner):
+    """scraper list shows hardcoded defaults even with an empty DB."""
     result = runner.invoke(cli, ["scraper", "list"])
     assert result.exit_code == 0
-    assert "No DB-configured companies" in result.output
+    # Hardcoded defaults from several scrapers should always appear
+    assert "greenhouse" in result.output
+    assert "workday" in result.output
+    assert "hardcoded" in result.output
 
 
 def test_scraper_list_shows_row_after_insert(runner, tmp_path):

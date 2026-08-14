@@ -1379,33 +1379,136 @@ def scraper_list(source: Optional[str]) -> None:
     """List all configured companies per ATS (hardcoded defaults + DB rows)."""
     from src.models import ScraperConfig
 
+    # ── collect hardcoded defaults ─────────────────────────────────────────
+    # Returns (source_name, company_label) for every hardcoded entry.
+    hardcoded: List[tuple] = []
+
+    def _hc(src: str, label: str) -> None:
+        if not source or source == src:
+            hardcoded.append((src, label))
+
+    try:
+        from src.job_scrapers.greenhouse_scraper import DEFAULT_BOARD_TOKENS
+
+        for t in DEFAULT_BOARD_TOKENS:
+            _hc("greenhouse", t)
+    except ImportError:
+        pass
+    try:
+        from src.job_scrapers.lever_scraper import DEFAULT_COMPANY_SLUGS
+
+        for s in DEFAULT_COMPANY_SLUGS:
+            _hc("lever", s)
+    except ImportError:
+        pass
+    try:
+        from src.job_scrapers.ashby_scraper import DEFAULT_BOARD_SLUGS
+
+        for s in DEFAULT_BOARD_SLUGS:
+            _hc("ashby", s)
+    except ImportError:
+        pass
+    try:
+        from src.job_scrapers.workday_scraper import WORKDAY_PORTALS
+
+        for p in WORKDAY_PORTALS:
+            _hc("workday", p.company)
+    except ImportError:
+        pass
+    try:
+        from src.job_scrapers.smartrecruiters_scraper import (
+            DEFAULT_COMPANIES as SR_DEFAULT,
+        )
+
+        for cid, name in SR_DEFAULT.items():
+            _hc("smartrecruiters", name)
+    except ImportError:
+        pass
+    try:
+        from src.job_scrapers.teamtailor_scraper import DEFAULT_BOARDS
+
+        for b in DEFAULT_BOARDS:
+            _hc("teamtailor", b.company)
+    except ImportError:
+        pass
+    try:
+        from src.job_scrapers.workable_scraper import DEFAULT_COMPANIES as WK_DEFAULT
+
+        for wk in WK_DEFAULT:
+            _hc("workable", wk.name)
+    except ImportError:
+        pass
+    try:
+        from src.job_scrapers.bamboohr_scraper import DEFAULT_COMPANY_SLUGS as BH_SLUGS
+
+        for s in BH_SLUGS:
+            _hc("bamboohr", s)
+    except ImportError:
+        pass
+    try:
+        from src.job_scrapers.dejobs_scraper import DEFAULT_COMPANIES as DJ_DEFAULT
+
+        for dj in DJ_DEFAULT:
+            _hc("dejobs", dj.name)
+    except ImportError:
+        pass
+
+    # ── collect DB rows ────────────────────────────────────────────────────
+    db_rows = []
     session = get_session()
     try:
         query = session.query(ScraperConfig)
         if source:
             query = query.filter_by(source_name=source)
-        rows = query.order_by(ScraperConfig.source_name, ScraperConfig.id).all()
-
-        table = Table(title="DB-configured scraper companies", show_lines=False)
-        table.add_column("ID", style="dim", width=5)
-        table.add_column("Source", style="cyan", width=16)
-        table.add_column("Config", style="white")
-        table.add_column("Active", width=7)
-        table.add_column("Added", style="dim", width=12)
-
-        for row in rows:
-            active = "[green]✓[/green]" if row.is_active else "[red]✗[/red]"
-            added = row.created_at.strftime("%Y-%m-%d") if row.created_at else "—"
-            table.add_row(str(row.id), row.source_name, str(row.config), active, added)
-
-        console.print(table)
-        if not rows:
-            console.print(
-                "[dim]No DB-configured companies yet. "
-                "Use [bold]scraper add[/bold].[/dim]"
-            )
+        db_rows = query.order_by(ScraperConfig.source_name, ScraperConfig.id).all()
+    except Exception:
+        pass  # table may not exist in local dev SQLite
     finally:
         session.close()
+
+    def _db_label(src: str, cfg: dict) -> str:
+        for key in (
+            "display_name",
+            "company",
+            "name",
+            "token",
+            "subdomain",
+            "slug",
+            "company_id",
+            "hostname",
+        ):
+            if key in cfg:
+                return str(cfg[key])
+        return str(cfg)
+
+    # ── build table ────────────────────────────────────────────────────────
+    total = len(hardcoded) + len(db_rows)
+    title = f"All scraper companies ({total})"
+    if source:
+        title += f" — {source}"
+
+    table = Table(title=title, show_lines=False)
+    table.add_column("Source", style="cyan", width=16)
+    table.add_column("Company", style="white", min_width=24)
+    table.add_column("Origin", width=12)
+    table.add_column("Active", width=7)
+
+    for src, label in sorted(hardcoded):
+        table.add_row(src, label, "[dim]hardcoded[/dim]", "[green]✓[/green]")
+
+    for row in db_rows:
+        active = "[green]✓[/green]" if row.is_active else "[red]✗[/red]"
+        label = _db_label(row.source_name, row.config)
+        table.add_row(
+            row.source_name,
+            label,
+            f"[green]db:{row.id}[/green]",
+            active,
+        )
+
+    console.print(table)
+    if total == 0:
+        console.print("[dim]No companies found. " "Use [bold]scraper add[/bold].[/dim]")
 
 
 @scraper.command("add")
