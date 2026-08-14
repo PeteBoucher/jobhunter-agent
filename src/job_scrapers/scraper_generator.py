@@ -257,9 +257,13 @@ def _derive_output_path(url: str, output_path: Optional[str]) -> Path:
         return Path(output_path)
     parsed = urlparse(url)
     host = parsed.hostname or "unknown"
-    # Strip www. and common suffixes, use first meaningful segment
-    slug = re.sub(r"^www\.", "", host)
-    slug = re.sub(r"\.(com|io|org|net|co|careers).*$", "", slug)
+    # Strip generic subdomains that don't identify the company
+    slug = re.sub(r"^(www|jobs|careers|work|talent|apply)\.", "", host)
+    # Strip TLD exactly (no .* — avoids eating e.g. "net" inside "netflix")
+    slug = re.sub(r"\.(com|io|org|net|co|uk|jobs|careers|app)$", "", slug)
+    # If dots remain (e.g. "my.company.io" → "my.company"), take last segment
+    if "." in slug:
+        slug = slug.split(".")[-1]
     slug = re.sub(r"[^a-z0-9]+", "_", slug.lower()).strip("_")
     return Path(__file__).parent / f"{slug}_scraper.py"
 

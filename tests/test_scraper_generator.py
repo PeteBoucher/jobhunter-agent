@@ -91,7 +91,8 @@ def test_extract_code_no_fence_returns_stripped():
     [
         ("https://careers.acme.com/jobs", "acme"),
         ("https://www.example.com/careers", "example"),
-        ("https://apply.workable.com/some-company/", "apply_workable"),
+        ("https://jobs.netflix.com/jobs", "netflix"),
+        ("https://apply.workable.com/some-company/", "workable"),
     ],
 )
 def test_derive_output_path_naming(url, expected_contains):
