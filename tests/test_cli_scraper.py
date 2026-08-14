@@ -169,11 +169,19 @@ def test_scraper_add_url_detection(mock_validate, mock_detect, runner):
 
 
 @patch("src.job_scrapers.ats_detector.detect_ats", return_value=None)
-def test_scraper_add_unknown_ats_suggests_generate(mock_detect, runner):
-    """Unknown ATS URL suggests `scraper generate` instead."""
+@patch("src.job_scrapers.scraper_generator.generate_scraper")
+def test_scraper_add_unknown_ats_runs_generator(
+    mock_gen, mock_detect, runner, tmp_path
+):
+    """Unknown ATS URL automatically falls through to AI scraper generation."""
+    out_file = tmp_path / "unknown_scraper.py"
+    out_file.write_text("# draft")
+    mock_gen.return_value = (str(out_file), 2)
+
     result = runner.invoke(cli, ["scraper", "add", "https://careers.unknown.com/jobs"])
-    assert result.exit_code != 0
-    assert "generate" in result.output.lower() or "novel" in result.output.lower()
+    assert result.exit_code == 0
+    mock_gen.assert_called_once()
+    assert "Draft written" in result.output or str(out_file) in result.output
 
 
 # ── scraper disable / remove ──────────────────────────────────────────────────
@@ -244,16 +252,27 @@ def test_scraper_remove_unknown_id(runner):
 # ── scraper generate ──────────────────────────────────────────────────────────
 
 
+@patch("src.job_scrapers.ats_detector.validate_config", return_value=True)
 @patch("src.job_scrapers.ats_detector.detect_ats")
-def test_scraper_generate_known_ats_redirects(mock_detect, runner):
-    """generate redirects to `scraper add` when the URL matches a known ATS."""
+def test_scraper_generate_known_ats_adds_directly(mock_detect, mock_validate, runner):
+    """generate adds to DB directly when the URL matches a known ATS."""
     mock_detect.return_value = ("greenhouse", {"token": "stripe"})
 
     result = runner.invoke(
         cli, ["scraper", "generate", "https://boards.greenhouse.io/stripe"]
     )
     assert result.exit_code == 0
-    assert "scraper add" in result.output
+    assert "greenhouse" in result.output
+    assert "scraper add" not in result.output  # no longer a redirect
+
+    from src.database import get_session
+    from src.models import ScraperConfig
+
+    session = get_session()
+    row = session.query(ScraperConfig).filter_by(source_name="greenhouse").first()
+    session.close()
+    assert row is not None
+    assert row.config["token"] == "stripe"
 
 
 @patch("src.job_scrapers.ats_detector.detect_ats", return_value=None)

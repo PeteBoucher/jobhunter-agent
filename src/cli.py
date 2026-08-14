@@ -1451,10 +1451,30 @@ def scraper_add(
         result = detect_ats(url)
         if result is None:
             console.print(
-                "[red]✗[/red] Could not identify a supported ATS from this URL.\n"
-                "  If this is a novel ATS, use [bold]scraper generate[/bold] instead."
+                "[yellow]⚠ Could not identify a known ATS — "
+                "trying AI-assisted scraper generation…[/yellow]"
             )
-            raise SystemExit(1)
+            from src.job_scrapers.scraper_generator import generate_scraper
+
+            try:
+                output_path, n_confirmed = generate_scraper(url)
+            except Exception as e:
+                console.print(f"[red]✗ Generation failed:[/red] {e}")
+                raise SystemExit(1)
+            console.print(
+                f"[green]✓[/green] Draft written to [bold]{output_path}[/bold]"
+            )
+            if n_confirmed == 0:
+                console.print(
+                    "[red bold]⚠ LOW CONFIDENCE[/red bold] — no live endpoints "
+                    "confirmed. The site may not have a public API."
+                )
+            else:
+                console.print(f"[green]{n_confirmed} endpoint(s) confirmed.[/green]")
+            console.print(
+                "Review the file, add to [bold]registry.py[/bold], then run pytest."
+            )
+            return
         source_name, cfg = result
         console.print(f"[green]✓[/green] Detected: [cyan]{source_name}[/cyan]")
     else:
@@ -1555,18 +1575,36 @@ def scraper_generate(url: str, output: Optional[str]) -> None:
     Example:
       job-agent scraper generate https://company.com/careers
     """
-    from src.job_scrapers.ats_detector import detect_ats
+    from src.job_scrapers.ats_detector import detect_ats, validate_config
     from src.job_scrapers.scraper_generator import generate_scraper
+    from src.models import ScraperConfig
 
-    # First check if this is already a supported ATS
+    # If this is already a supported ATS, add it directly — no generation needed
     console.print("[dim]Checking if this is a known ATS…[/dim]")
     result = detect_ats(url, fetch_page=True)
     if result is not None:
         source_name, cfg = result
         console.print(
-            f"[yellow]ℹ This looks like [bold]{source_name}[/bold] — "
-            f"use [bold]scraper add {url}[/bold] instead.[/yellow]"
+            f"[yellow]ℹ Detected [bold]{source_name}[/bold] — "
+            f"adding to DB directly (no generation needed).[/yellow]"
         )
+        console.print("[dim]Validating against live API…[/dim]")
+        if not validate_config(source_name, cfg):
+            console.print(
+                "[yellow]⚠ Validation returned no jobs — "
+                "double-check the config after adding.[/yellow]"
+            )
+        session = get_session()
+        try:
+            row = ScraperConfig(source_name=source_name, config=cfg, is_active=True)
+            session.add(row)
+            session.commit()
+            console.print(
+                f"[green]✓[/green] Added [cyan]{source_name}[/cyan] "
+                f"config (id={row.id}): {cfg}"
+            )
+        finally:
+            session.close()
         return
 
     console.print("[dim]Unknown ATS — starting AI-assisted scraper generation…[/dim]")
