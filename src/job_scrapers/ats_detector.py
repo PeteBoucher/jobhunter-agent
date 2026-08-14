@@ -153,6 +153,44 @@ def detect_ats(
             if config is not None:
                 return source_name, config
 
+    # SmartRecruiters blind probe — handles custom-domain sites that call SR
+    # internally without exposing it in HTML/JS (e.g. sixt.jobs → slug "sixt").
+    # SR's public API accepts case-insensitive company slugs.
+    sr_id = _probe_smartrecruiters(host, timeout=timeout)
+    if sr_id:
+        return "smartrecruiters", {
+            "company_id": sr_id,
+            "display_name": sr_id.capitalize(),
+        }
+
+    return None
+
+
+def _probe_smartrecruiters(hostname: str, timeout: int = 8) -> Optional[str]:
+    """Try the SmartRecruiters public API with slugs derived from the hostname.
+
+    Returns the working company_id (lowercase slug) or None.
+    Handles custom-domain careers sites that proxy SR without exposing it in HTML.
+    """
+    slug = re.sub(r"^(www|jobs|careers|work|talent|apply)\.", "", hostname)
+    slug = re.sub(r"\.(com|io|org|net|co|uk|jobs|careers|app|us)$", "", slug)
+    if "." in slug:
+        slug = slug.split(".")[-1]
+    slug = slug.lower()
+    if not slug:
+        return None
+
+    for candidate in [slug, slug.capitalize()]:
+        try:
+            resp = requests.get(
+                f"https://api.smartrecruiters.com/v1/companies/{candidate}/postings",
+                params={"limit": 1},
+                timeout=timeout,
+            )
+            if resp.status_code == 200 and resp.json().get("content"):
+                return candidate
+        except Exception:
+            pass
     return None
 
 

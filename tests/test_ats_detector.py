@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.job_scrapers.ats_detector import detect_ats
+from src.job_scrapers.ats_detector import _probe_smartrecruiters, detect_ats
 
 # ── URL pattern tests ─────────────────────────────────────────────────────────
 
@@ -110,3 +110,71 @@ def test_detect_ats_page_fallback_teamtailor(mock_get):
     source_name, config = result
     assert source_name == "teamtailor"
     assert "career_url" in config
+
+
+@patch("src.job_scrapers.ats_detector.requests.get")
+def test_detect_ats_smartrecruiters_blind_probe(mock_get):
+    """Custom-domain SR site detected via blind API probe; no SR fingerprint in HTML."""
+    # First call: page fetch — returns HTML with no SR fingerprints
+    page_resp = MagicMock()
+    page_resp.text = "<html><body>Careers at Sixt</body></html>"
+    page_resp.headers = {}
+
+    # Second call: SR probe with lowercase slug → returns jobs
+    sr_resp = MagicMock()
+    sr_resp.status_code = 200
+    sr_resp.json.return_value = {"content": [{"name": "Some Job"}], "totalFound": 546}
+
+    mock_get.side_effect = [page_resp, sr_resp]
+
+    result = detect_ats("https://www.sixt.jobs/us", fetch_page=True)
+    assert result is not None
+    source_name, config = result
+    assert source_name == "smartrecruiters"
+    assert config["company_id"] == "sixt"
+
+
+@pytest.mark.parametrize(
+    "hostname, expected_slug",
+    [
+        ("www.sixt.jobs", "sixt"),
+        ("jobs.acme.com", "acme"),
+        ("careers.revolut.com", "revolut"),
+        ("work.stripe.io", "stripe"),
+    ],
+)
+def test_probe_smartrecruiters_slug_derivation(hostname, expected_slug):
+    """_probe_smartrecruiters derives the correct slug from the hostname."""
+    with patch("src.job_scrapers.ats_detector.requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"content": [{"name": "Job"}]}
+        mock_get.return_value = mock_resp
+
+        result = _probe_smartrecruiters(hostname)
+        assert result == expected_slug
+        # The first probe candidate should be the lowercase slug
+        first_url = mock_get.call_args_list[0][0][0]
+        assert expected_slug in first_url
+
+
+def test_probe_smartrecruiters_returns_none_on_empty_response():
+    """_probe_smartrecruiters returns None when the API returns no content."""
+    with patch("src.job_scrapers.ats_detector.requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"content": [], "totalFound": 0}
+        mock_get.return_value = mock_resp
+
+        assert _probe_smartrecruiters("www.unknown-site.com") is None
+
+
+def test_probe_smartrecruiters_returns_none_on_404():
+    """_probe_smartrecruiters returns None when the API returns 404."""
+    with patch("src.job_scrapers.ats_detector.requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 404
+        mock_resp.json.return_value = {}
+        mock_get.return_value = mock_resp
+
+        assert _probe_smartrecruiters("www.unknown-site.com") is None
