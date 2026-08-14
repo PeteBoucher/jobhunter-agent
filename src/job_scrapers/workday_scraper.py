@@ -22,7 +22,6 @@ Confirmed working portals (as of 2025-03):
   BP            — bpinternational.wd3 / bpCareers                         (~400 jobs)
   Unilever      — unilever.wd3        / Unilever_Experienced_Professionals (~420 jobs)
   GSK           — gsk.wd5             / GSKCareers                       (~1600 jobs)
-  Netflix       — netflix.wd1         / Netflix                           (~790 jobs)
   Adobe         — adobe.wd5           / external_experienced             (~1100 jobs)
   Accenture     — accenture.wd103     / AccentureCareers                  (~2000 jobs)
 
@@ -156,15 +155,6 @@ WORKDAY_PORTALS: List[WorkdayPortal] = [
         wd="wd5",
         industry="Pharmaceutical",
         size="Enterprise (100k+)",
-        max_jobs=500,
-    ),
-    WorkdayPortal(
-        slug="netflix",
-        portal="Netflix",
-        company="Netflix",
-        wd="wd1",
-        industry="Technology / Media",
-        size="Large (10k+)",
         max_jobs=500,
     ),
     WorkdayPortal(
