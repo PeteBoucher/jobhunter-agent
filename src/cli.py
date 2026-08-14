@@ -1571,22 +1571,52 @@ def scraper_generate(url: str, output: Optional[str]) -> None:
 
     console.print("[dim]Unknown ATS — starting AI-assisted scraper generation…[/dim]")
     try:
-        output_path = generate_scraper(url, output_path=output)
+        output_path, n_confirmed = generate_scraper(url, output_path=output)
         console.print(
             f"[green]✓[/green] Draft scraper written to [bold]{output_path}[/bold]"
         )
         console.print()
-        console.print("[yellow]Next steps:[/yellow]")
-        console.print("  1. Review the generated file and fix any issues")
-        console.print(
-            "  2. Add the class to [bold]src/job_scrapers/registry.py[/bold]"
-            " (SCRAPER_MAP + DEFAULT_SOURCES)"
-        )
-        console.print("  3. Run [bold].venv/bin/python -m pytest[/bold]")
-        console.print(
-            "  4. Run [bold].venv/bin/job-agent scrape --sources <source_name>[/bold]"
-            " to do a live test"
-        )
+
+        if n_confirmed == 0:
+            console.print(
+                "[red bold]⚠ LOW CONFIDENCE DRAFT[/red bold] — "
+                "no live API endpoints were confirmed."
+            )
+            console.print(
+                "  The API URL is Claude's best guess from JS analysis only. "
+                "It is likely wrong."
+            )
+            console.print()
+            console.print("[yellow]Next steps:[/yellow]")
+            console.print(
+                "  1. Open the file and find the API URL — verify it manually "
+                "(e.g. with curl)"
+            )
+            console.print(
+                "  2. If the site uses server-side rendering with no public API, "
+                "it cannot be scraped without a headless browser"
+            )
+            console.print(
+                "  3. Once you have a working endpoint, update the scraper and "
+                "add it to [bold]src/job_scrapers/registry.py[/bold]"
+            )
+        else:
+            console.print(
+                f"[green]{n_confirmed} endpoint(s) confirmed[/green] — "
+                "draft should be a reasonable starting point."
+            )
+            console.print()
+            console.print("[yellow]Next steps:[/yellow]")
+            console.print("  1. Review the generated file and fix any issues")
+            console.print(
+                "  2. Add the class to [bold]src/job_scrapers/registry.py[/bold]"
+                " (SCRAPER_MAP + DEFAULT_SOURCES)"
+            )
+            console.print("  3. Run [bold].venv/bin/python -m pytest[/bold]")
+            console.print(
+                "  4. Run [bold].venv/bin/job-agent scrape --sources"
+                " <source_name>[/bold] to do a live test"
+            )
     except Exception as e:
         console.print(f"[red]✗ Generation failed:[/red] {e}")
         raise SystemExit(1)

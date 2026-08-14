@@ -130,12 +130,16 @@ def test_generate_scraper_writes_file(
     mock_claude.return_value = "```python\nclass ExampleScraper:\n    pass\n```"
 
     out = tmp_path / "example_scraper.py"
-    result_path = generate_scraper("https://example.com/careers", output_path=str(out))
+    result_path, n_confirmed = generate_scraper(
+        "https://example.com/careers", output_path=str(out)
+    )
 
     assert result_path == str(out.resolve())
+    assert n_confirmed == 1
     content = out.read_text()
     assert "AUTO-GENERATED DRAFT" in content
     assert "ExampleScraper" in content
+    assert "LOW CONFIDENCE" not in content
 
 
 @patch("src.job_scrapers.scraper_generator._call_claude")
@@ -145,15 +149,19 @@ def test_generate_scraper_writes_file(
 def test_generate_scraper_no_api_found_still_calls_claude(
     mock_fetch, mock_scan, mock_probe, mock_claude, tmp_path
 ):
-    """Generator calls Claude even when no live API endpoints are found."""
+    """Generator calls Claude with no live endpoints; flags low confidence."""
     mock_fetch.return_value = ("<html><body>Careers</body></html>", {})
     mock_claude.return_value = "class FallbackScraper:\n    pass"
 
     out = tmp_path / "fallback_scraper.py"
-    generate_scraper("https://unknown.com/careers", output_path=str(out))
+    _, n_confirmed = generate_scraper(
+        "https://unknown.com/careers", output_path=str(out)
+    )
 
     mock_claude.assert_called_once()
     assert out.exists()
+    assert n_confirmed == 0
+    assert "LOW CONFIDENCE" in out.read_text()
 
 
 def test_generate_scraper_raises_without_api_key(tmp_path, monkeypatch):

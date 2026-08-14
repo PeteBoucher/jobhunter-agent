@@ -263,7 +263,7 @@ def test_scraper_generate_unknown_ats_calls_generator(
 ):
     """generate calls generate_scraper for unknown ATS URLs."""
     out_file = tmp_path / "unknown_scraper.py"
-    mock_gen.return_value = str(out_file)
+    mock_gen.return_value = (str(out_file), 2)
 
     result = runner.invoke(cli, ["scraper", "generate", "https://careers.unknown.com"])
     assert result.exit_code == 0
