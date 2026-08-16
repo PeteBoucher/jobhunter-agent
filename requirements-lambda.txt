@@ -1,5 +1,5 @@
 # Lambda-only dependencies (no spacy, sklearn, playwright, selenium, CLI tools)
-sqlalchemy==2.0.15
+sqlalchemy==2.0.48
 requests==2.31.0
 beautifulsoup4==4.12.2
 python-dotenv==1.0.0
