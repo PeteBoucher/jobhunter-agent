@@ -16,6 +16,7 @@ from src.job_scrapers.coinbase_scraper import CoinbaseScraper
 from src.job_scrapers.dejobs_scraper import DeJobsScraper
 from src.job_scrapers.github_scraper import GitHubJobsScraper
 from src.job_scrapers.greenhouse_scraper import GreenhouseScraper
+from src.job_scrapers.innovairv_scraper import InnovaIRVScraper
 from src.job_scrapers.lever_scraper import LeverScraper
 from src.job_scrapers.linkedin_scraper import LinkedInScraper
 from src.job_scrapers.microsoft_scraper import MicrosoftScraper
@@ -42,6 +43,7 @@ SCRAPER_MAP: Dict[str, Type[BaseScraper]] = {
     "microsoft": MicrosoftScraper,
     "github": GitHubJobsScraper,
     "coinbase": CoinbaseScraper,
+    "innovairv": InnovaIRVScraper,
     "workable": WorkableScraper,
     "workday": WorkdayScraper,
     "revolut": RevolutScraper,
@@ -72,4 +74,5 @@ DEFAULT_SOURCES: List[str] = [
     "dejobs",
     "teamtailor",
     "workable",
+    "innovairv",
 ]
