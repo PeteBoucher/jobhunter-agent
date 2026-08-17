@@ -16,6 +16,7 @@ Supported ATS platforms (i.e. platforms we already have scrapers for):
   workable        apply.workable.com
   teamtailor      *.teamtailor.com or pages with teamtailor-cdn.com assets
   dejobs          *.dejobs.org
+  jobboardly      *.jobboardly.com or pages with assets.jobboardly.com
 
 Returns None for unsupported or unrecognised platforms.
 """
@@ -41,6 +42,7 @@ _PAGE_FINGERPRINTS: list = [
     ("teamtailor", "teamtailor-cdn.com"),
     ("dejobs", "dejobs.org"),
     ("dejobs", "jobsyn.org"),
+    ("jobboardly", "assets.jobboardly.com"),
 ]
 
 
@@ -122,6 +124,11 @@ def detect_ats(
     # DeJobs: {company}.dejobs.org
     if host.endswith(".dejobs.org"):
         return "dejobs", {"hostname": host, "name": host.split(".")[0], "max_jobs": 500}
+
+    # Jobboardly: {subdomain}.jobboardly.com
+    if host.endswith(".jobboardly.com"):
+        subdomain = host[: -len(".jobboardly.com")]
+        return "jobboardly", {"subdomain": subdomain}
 
     # --- Page fingerprint fallback (requires HTTP fetch) ---
     if not fetch_page:
@@ -263,6 +270,11 @@ def _extract_config_from_page(
         if host.endswith(".dejobs.org"):
             return {"hostname": host, "name": host.split(".")[0], "max_jobs": 500}
 
+    if source_name == "jobboardly":
+        if host.endswith(".jobboardly.com"):
+            subdomain = host[: -len(".jobboardly.com")]
+            return {"subdomain": subdomain}
+
     return None
 
 
@@ -344,6 +356,12 @@ def validate_config(source_name: str, config: Dict, timeout: int = 10) -> bool:
             url = "https://prod-search-api.jobsyn.org/api/v1/solr/search?q=&page=1"
             r = requests.get(url, headers={"x-origin": hostname}, timeout=timeout)
             return r.status_code == 200 and bool(r.json().get("jobs"))
+
+        if source_name == "jobboardly":
+            subdomain = config.get("subdomain", "")
+            url = f"https://{subdomain}.jobboardly.com/jobs.json"
+            r = requests.get(url, timeout=timeout)
+            return r.status_code == 200 and isinstance(r.json(), list)
 
     except Exception:
         pass
