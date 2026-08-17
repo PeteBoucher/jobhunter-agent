@@ -202,23 +202,39 @@ _JOB_CLASS_RE = re.compile(
 def _extract_html_job_sample(html: str) -> Optional[str]:
     """Find job-like container elements in the page HTML.
 
-    Returns HTML of up to 2 representative job blocks, or None if nothing
-    recognisable is found. Used to give Claude concrete selectors to work with
-    when no API endpoint could be confirmed.
+    Handles two patterns:
+    - Block elements (div/article/li/section) with job-related CSS classes
+      + heading + link
+    - Table rows (tr with a class + a link) — SAP SuccessFactors, Taleo, and
+      similar HR portals that render listings as HTML tables
+
+    Returns HTML of up to 2 representative blocks, or None if nothing is found.
     """
     try:
         from bs4 import BeautifulSoup
 
         soup = BeautifulSoup(html, "html.parser")
-
         candidates = []
+
+        # Block elements with job-related class names containing a heading and link
         for tag in soup.find_all(["div", "article", "li", "section"]):
             classes = " ".join(tag.get("class", []))
             if not _JOB_CLASS_RE.search(classes):
                 continue
-            # Must contain a heading and a link to qualify as a job entry
             if tag.find(["h1", "h2", "h3", "h4"]) and tag.find("a"):
                 candidates.append(tag)
+
+        # Table rows: many HR portals (SAP SF, Taleo) render listings as <tr> rows.
+        # Don't require a heading — table rows use <td> cells, not <h3> tags.
+        # Require at least 3 matching rows to avoid false positives (nav tables, etc.)
+        if not candidates:
+            tr_candidates = [
+                tr
+                for tr in soup.find_all("tr")
+                if tr.get("class") and tr.find("a", href=True)
+            ]
+            if len(tr_candidates) >= 3:
+                candidates = tr_candidates
 
         if not candidates:
             return None

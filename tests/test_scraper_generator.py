@@ -249,6 +249,37 @@ def test_extract_html_job_sample_requires_heading_and_link():
     assert sample is None
 
 
+def test_extract_html_job_sample_finds_table_rows():
+    """Table rows with a class and a link are extracted (SAP SuccessFactors pattern)."""
+    html = """
+    <html><body><table>
+      <tr id="header"><th>Title</th><th>Location</th></tr>
+      <tr class="data-row"><td><a href="/job/eng/123/">Engineer</a></td>
+        <td>Madrid, ES</td></tr>
+      <tr class="data-row"><td><a href="/job/pm/456/">PM</a></td>
+        <td>London, GB</td></tr>
+      <tr class="data-row"><td><a href="/job/dev/789/">Developer</a></td>
+        <td>Berlin, DE</td></tr>
+    </table></body></html>
+    """
+    sample = _extract_html_job_sample(html)
+    assert sample is not None
+    assert "data-row" in sample
+    assert "Engineer" in sample or "Product Manager" in sample
+
+
+def test_extract_html_job_sample_ignores_sparse_table_rows():
+    """Fewer than 3 table rows are not treated as a job listing (avoids nav tables)."""
+    html = """
+    <html><body><table>
+      <tr class="nav-item"><td><a href="/about">About</a></td></tr>
+      <tr class="nav-item"><td><a href="/contact">Contact</a></td></tr>
+    </table></body></html>
+    """
+    sample = _extract_html_job_sample(html)
+    assert sample is None
+
+
 def test_extract_html_job_sample_limits_to_two_blocks():
     """At most 2 job blocks are returned even if more exist."""
     blocks = "".join(
