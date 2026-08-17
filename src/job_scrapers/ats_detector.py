@@ -304,7 +304,11 @@ def validate_config(source_name: str, config: Dict, timeout: int = 10) -> bool:
             subdomain = config.get("subdomain", "")
             url = f"https://api.ashbyhq.com/posting-api/job-board/{subdomain}"
             r = requests.get(url, timeout=timeout)
-            return r.status_code == 200 and bool(r.json().get("jobPostings"))
+            data = r.json()
+            # API returns {"jobs": [...], "apiVersion": "..."} — not "jobPostings"
+            return r.status_code == 200 and bool(
+                data.get("jobs") or data.get("jobPostings")
+            )
 
         if source_name == "workday":
             slug = config.get("slug", "")

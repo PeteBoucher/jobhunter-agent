@@ -171,6 +171,27 @@ def test_scraper_add_url_detection(mock_validate, mock_detect, runner):
     assert row.config["token"] == "stripe"
 
 
+@patch("src.job_scrapers.ats_detector.detect_ats")
+@patch("src.job_scrapers.ats_detector.validate_config", return_value=False)
+def test_scraper_add_validation_failure_blocks_insert(
+    mock_validate, mock_detect, runner
+):
+    """Validation failure exits non-zero and does not write to DB."""
+    mock_detect.return_value = ("ashby", {"subdomain": "paddle"})
+
+    result = runner.invoke(cli, ["scraper", "add", "https://www.paddle.com/careers"])
+    assert result.exit_code != 0
+    assert "Validation failed" in result.output
+
+    from src.database import get_session
+    from src.models import ScraperConfig
+
+    session = get_session()
+    count = session.query(ScraperConfig).count()
+    session.close()
+    assert count == 0
+
+
 @patch("src.job_scrapers.ats_detector.detect_ats", return_value=None)
 @patch("src.job_scrapers.scraper_generator.generate_scraper")
 def test_scraper_add_unknown_ats_runs_generator(

@@ -1603,9 +1603,11 @@ def scraper_add(
     ok = validate_config(source_name, cfg)
     if not ok:
         console.print(
-            "[yellow]⚠ Validation failed — API returned no jobs. "
-            "Double-check the config.[/yellow]"
+            "[red]✗ Validation failed[/red] — API returned no jobs for this config.\n"
+            "  Double-check the config, or use "
+            "[cyan]--ats[/cyan] / [cyan]--config[/cyan] to bypass validation."
         )
+        raise SystemExit(1)
 
     if dry_run:
         console.print("[yellow]--dry-run:[/yellow] not written to DB.")
