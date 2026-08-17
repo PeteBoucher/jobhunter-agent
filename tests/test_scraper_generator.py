@@ -8,7 +8,10 @@ from src.job_scrapers.scraper_generator import (
     _derive_output_path,
     _extract_candidate_api_urls,
     _extract_code,
+    _extract_html_job_sample,
     _extract_signals,
+    _is_wordpress,
+    _wp_has_ajax_nonce,
     generate_scraper,
 )
 
@@ -162,6 +165,165 @@ def test_generate_scraper_no_api_found_still_calls_claude(
     assert out.exists()
     assert n_confirmed == 0
     assert "LOW CONFIDENCE" in out.read_text()
+
+
+# ── WordPress detection helpers ───────────────────────────────────────────────
+
+
+def test_is_wordpress_detects_wp_content():
+    """HTML with wp-content is identified as WordPress."""
+    assert _is_wordpress(
+        '<link rel="stylesheet" href="/wp-content/themes/main/style.css">'
+    )
+
+
+def test_is_wordpress_detects_wp_json():
+    """HTML with wp-json reference is identified as WordPress."""
+    assert _is_wordpress('{"url":"https://example.com/wp-json/wp/v2"}')
+
+
+def test_is_wordpress_false_for_plain_html():
+    """Plain HTML with no WordPress indicators is not flagged."""
+    assert not _is_wordpress("<html><body><div class='jobs'>Hello</div></body></html>")
+
+
+def test_wp_has_ajax_nonce_detects_nonce():
+    """Page using admin-ajax.php with a nonce is flagged."""
+    html = 'var config = {"nonce": "a1b2c3d4", "ajaxUrl": "/wp-admin/admin-ajax.php"};'
+    assert _wp_has_ajax_nonce(html)
+
+
+def test_wp_has_ajax_nonce_returns_false_without_nonce():
+    """Page with admin-ajax.php but no nonce is not flagged."""
+    html = 'var ajaxUrl = "/wp-admin/admin-ajax.php";'
+    assert not _wp_has_ajax_nonce(html)
+
+
+def test_wp_has_ajax_nonce_returns_false_without_ajax():
+    """Page with nonce but no admin-ajax.php is not flagged."""
+    html = 'var config = {"nonce": "a1b2c3d4"};'
+    assert not _wp_has_ajax_nonce(html)
+
+
+# ── HTML job sample extraction ────────────────────────────────────────────────
+
+
+def test_extract_html_job_sample_finds_job_divs():
+    """Divs with job-like class names containing headings + links are extracted."""
+    html = """
+    <html><body>
+      <div class="job-listing">
+        <h3>Software Engineer</h3>
+        <p>Join our team.</p>
+        <a href="/jobs/software-engineer">Apply</a>
+      </div>
+      <div class="job-listing">
+        <h3>Product Manager</h3>
+        <p>Lead product.</p>
+        <a href="/jobs/product-manager">Apply</a>
+      </div>
+    </body></html>
+    """
+    sample = _extract_html_job_sample(html)
+    assert sample is not None
+    assert "Software Engineer" in sample or "Product Manager" in sample
+
+
+def test_extract_html_job_sample_returns_none_without_job_elements():
+    """HTML with no job-like elements returns None."""
+    html = "<html><body><div class='content'><p>Welcome</p></div></body></html>"
+    sample = _extract_html_job_sample(html)
+    assert sample is None
+
+
+def test_extract_html_job_sample_requires_heading_and_link():
+    """Container with job class but no heading+link pair is skipped."""
+    html = """
+    <html><body>
+      <div class="job-listing">
+        <p>Some text without a heading or apply link.</p>
+      </div>
+    </body></html>
+    """
+    sample = _extract_html_job_sample(html)
+    assert sample is None
+
+
+def test_extract_html_job_sample_limits_to_two_blocks():
+    """At most 2 job blocks are returned even if more exist."""
+    blocks = "".join(
+        f'<div class="job-item"><h3>Job {i}</h3><a href="/jobs/{i}">Apply</a></div>'
+        for i in range(5)
+    )
+    html = f"<html><body>{blocks}</body></html>"
+    sample = _extract_html_job_sample(html)
+    assert sample is not None
+    # The separator only appears between blocks, so max once for 2 blocks
+    assert sample.count("<!-- next job block -->") <= 1
+
+
+# ── WordPress REST probe integration ─────────────────────────────────────────
+
+
+@patch("src.job_scrapers.scraper_generator._call_claude")
+@patch("src.job_scrapers.scraper_generator._probe_endpoints", return_value=[])
+@patch("src.job_scrapers.scraper_generator._probe_wordpress_rest")
+@patch("src.job_scrapers.scraper_generator._scan_js_bundle", return_value="")
+@patch("src.job_scrapers.scraper_generator._fetch_page")
+def test_generate_scraper_probes_wp_rest_on_wordpress_site(
+    mock_fetch, mock_scan, mock_wp_probe, mock_probe, mock_claude, tmp_path
+):
+    """WordPress sites trigger WP REST API probing as a fallback."""
+    wp_html = '<html><head><link href="/wp-content/themes/main.css"></head></html>'
+    mock_fetch.return_value = (wp_html, {})
+    mock_wp_probe.return_value = [
+        {
+            "url": "https://example.com/wp-json/wp/v2/jobs",
+            "status": 200,
+            "sample": "[{}]",
+        }
+    ]
+    mock_claude.return_value = "class WpScraper:\n    pass"
+
+    out = tmp_path / "wp_scraper.py"
+    _, n_confirmed = generate_scraper(
+        "https://example.com/careers", output_path=str(out)
+    )
+
+    mock_wp_probe.assert_called_once()
+    assert n_confirmed == 1
+    assert "LOW CONFIDENCE" not in out.read_text()
+
+
+@patch("src.job_scrapers.scraper_generator._call_claude")
+@patch("src.job_scrapers.scraper_generator._probe_endpoints", return_value=[])
+@patch("src.job_scrapers.scraper_generator._probe_wordpress_rest", return_value=[])
+@patch("src.job_scrapers.scraper_generator._scan_js_bundle", return_value="")
+@patch("src.job_scrapers.scraper_generator._fetch_page")
+def test_generate_scraper_html_mode_when_wp_rest_fails(
+    mock_fetch, mock_scan, mock_wp_probe, mock_probe, mock_claude, tmp_path
+):
+    """WordPress site with no REST endpoints falls through to HTML scraping mode."""
+    wp_html = """
+    <html>
+      <head><link href="/wp-content/themes/main.css"></head>
+      <body>
+        <div class="job-listing"><h3>Engineer</h3><a href="/jobs/eng">Apply</a></div>
+      </body>
+    </html>
+    """
+    mock_fetch.return_value = (wp_html, {})
+    mock_claude.return_value = "class HtmlScraper:\n    pass"
+
+    out = tmp_path / "html_scraper.py"
+    _, n_confirmed = generate_scraper(
+        "https://example.com/careers", output_path=str(out)
+    )
+
+    assert n_confirmed == 0
+    content = out.read_text()
+    assert "LOW CONFIDENCE" in content
+    assert "HTML scraper" in content
 
 
 def test_generate_scraper_raises_without_api_key(tmp_path, monkeypatch):
