@@ -377,7 +377,8 @@ class TestBCGScraper:
             == "https://careers.bcg.com/global/en/job/11111/Software-Engineer"
         )
 
-    def test_fetch_jobs_filters_to_tech_engineering(self, bcg_scraper):
+    def test_fetch_jobs_returns_all_departments(self, bcg_scraper):
+        """All departments are returned so every job ID gets stored on first run."""
         sitemap_resp = MagicMock()
         sitemap_resp.raise_for_status.return_value = None
         sitemap_resp.text = _SITEMAP_XML
@@ -401,9 +402,10 @@ class TestBCGScraper:
             with patch("time.sleep"):
                 jobs = bcg_scraper._fetch_jobs()
 
-        assert len(jobs) == 1
-        assert jobs[0]["source_job_id"] == "11111"
-        assert jobs[0]["department"] == "Technology and Engineering"
+        assert len(jobs) == 2
+        source_ids = {j["source_job_id"] for j in jobs}
+        assert "11111" in source_ids
+        assert "22222" in source_ids
 
     def test_parse_job_is_passthrough(self, bcg_scraper):
         raw = {"source_job_id": "99", "title": "Tester", "company": "BCG"}

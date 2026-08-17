@@ -3,8 +3,12 @@
 BCG uses Phenom People, a fully client-side-rendered job platform with no
 accessible JSON API.  We discover live jobs via the two XML sitemaps, then
 fetch each new job's HTML page to extract server-rendered OG meta tags
-(title, location, department).  Only Technology and Engineering roles are
-returned; all others are skipped without being stored.
+(title, location, department).
+
+All departments are stored so that every job ID is recorded in the DB after
+the first run.  This prevents non-tech jobs from being re-fetched on every
+subsequent run (they would otherwise appear "new" forever since only stored
+IDs are skipped).  The matching engine handles relevance filtering.
 
 Perf profile:
   First run  — up to ~900 HTTP requests (one per job page, ~200ms each).
@@ -24,7 +28,6 @@ _SITEMAPS = [
     "https://careers.bcg.com/global/en/sitemap1.xml",
     "https://careers.bcg.com/global/en/sitemap2.xml",
 ]
-_DEPARTMENT_FILTER = "technology and engineering"
 _HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -57,14 +60,14 @@ class BCGScraper(BaseScraper):
         for job_id, url in new_jobs:
             try:
                 job = self._fetch_job_meta(job_id, url)
-                if job and _DEPARTMENT_FILTER in (job.get("department") or "").lower():
+                if job:
                     results.append(job)
             except Exception as exc:
                 self.logger.warning("bcg job_id=%s fetch_error=%s", job_id, exc)
             # Polite crawl delay — avoids triggering rate-limits on a large first run
             time.sleep(0.15)
 
-        self.logger.info("bcg tech_eng_jobs=%d", len(results))
+        self.logger.info("bcg fetched_jobs=%d", len(results))
         return results
 
     # ------------------------------------------------------------------
