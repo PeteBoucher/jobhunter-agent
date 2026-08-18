@@ -6,6 +6,7 @@ import pytest
 
 from src.job_scrapers.scraper_generator import (
     _derive_output_path,
+    _detect_external_platform,
     _extract_candidate_api_urls,
     _extract_code,
     _extract_html_job_sample,
@@ -125,6 +126,7 @@ def test_generate_scraper_writes_file(
     mock_fetch.return_value = (
         '<html><head><script src="https://example.com/app.js"></script></head></html>',
         {},
+        "https://example.com/careers",
     )
     mock_scan.return_value = "fetch('https://api.example.com/v1/jobs')"
     mock_probe.return_value = [
@@ -153,7 +155,11 @@ def test_generate_scraper_no_api_found_still_calls_claude(
     mock_fetch, mock_scan, mock_probe, mock_claude, tmp_path
 ):
     """Generator calls Claude with no live endpoints; flags low confidence."""
-    mock_fetch.return_value = ("<html><body>Careers</body></html>", {})
+    mock_fetch.return_value = (
+        "<html><body>Careers</body></html>",
+        {},
+        "https://unknown.com/careers",
+    )
     mock_claude.return_value = "class FallbackScraper:\n    pass"
 
     out = tmp_path / "fallback_scraper.py"
@@ -306,7 +312,7 @@ def test_generate_scraper_probes_wp_rest_on_wordpress_site(
 ):
     """WordPress sites trigger WP REST API probing as a fallback."""
     wp_html = '<html><head><link href="/wp-content/themes/main.css"></head></html>'
-    mock_fetch.return_value = (wp_html, {})
+    mock_fetch.return_value = (wp_html, {}, "https://example.com/careers")
     mock_wp_probe.return_value = [
         {
             "url": "https://example.com/wp-json/wp/v2/jobs",
@@ -343,7 +349,7 @@ def test_generate_scraper_html_mode_when_wp_rest_fails(
       </body>
     </html>
     """
-    mock_fetch.return_value = (wp_html, {})
+    mock_fetch.return_value = (wp_html, {}, "https://example.com/careers")
     mock_claude.return_value = "class HtmlScraper:\n    pass"
 
     out = tmp_path / "html_scraper.py"
@@ -357,6 +363,58 @@ def test_generate_scraper_html_mode_when_wp_rest_fails(
     assert "HTML scraper" in content
 
 
+# ── External platform detection ───────────────────────────────────────────────
+
+
+def test_detect_external_platform_linkedin_redirect():
+    """Final URL on LinkedIn jobs triggers detection."""
+    result = _detect_external_platform(
+        "<html></html>",
+        "https://www.linkedin.com/company/acme/jobs",
+    )
+    assert result is not None
+    platform, _ = result
+    assert platform == "LinkedIn"
+
+
+def test_detect_external_platform_linkedin_href():
+    """Page linking to LinkedIn /company/.../jobs triggers detection."""
+    html = '<a href="https://www.linkedin.com/company/lognext/jobs">View jobs</a>'
+    result = _detect_external_platform(html, "https://www.lognext.com/en/work-with-us/")
+    assert result is not None
+    platform, _ = result
+    assert platform == "LinkedIn"
+
+
+def test_detect_external_platform_social_link_only():
+    """Plain LinkedIn social link (no /jobs path) does not trigger detection."""
+    html = '<a href="https://www.linkedin.com/company/acme">Follow us</a>'
+    result = _detect_external_platform(html, "https://acme.com/careers")
+    assert result is None
+
+
+def test_detect_external_platform_self_hosted():
+    """A standard careers page with no external platform links returns None."""
+    html = '<div class="job"><h3>Engineer</h3><a href="/jobs/eng">Apply</a></div>'
+    result = _detect_external_platform(html, "https://careers.acme.com/jobs")
+    assert result is None
+
+
+@patch("src.job_scrapers.scraper_generator._fetch_page")
+def test_generate_scraper_raises_on_linkedin_redirect(mock_fetch, tmp_path):
+    """generate_scraper raises RuntimeError when the page redirects to LinkedIn."""
+    mock_fetch.return_value = (
+        "<html><body>Redirecting…</body></html>",
+        {},
+        "https://www.linkedin.com/company/acme/jobs",
+    )
+    with pytest.raises(RuntimeError, match="LinkedIn"):
+        generate_scraper(
+            "https://acme.com/work-with-us",
+            output_path=str(tmp_path / "out.py"),
+        )
+
+
 def test_generate_scraper_raises_without_api_key(tmp_path, monkeypatch):
     """generate_scraper raises EnvironmentError when ANTHROPIC_API_KEY is unset."""
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
@@ -364,7 +422,7 @@ def test_generate_scraper_raises_without_api_key(tmp_path, monkeypatch):
     with (
         patch(
             "src.job_scrapers.scraper_generator._fetch_page",
-            return_value=("<html></html>", {}),
+            return_value=("<html></html>", {}, "https://example.com/careers"),
         ),
         patch("src.job_scrapers.scraper_generator._scan_js_bundle", return_value=""),
         patch("src.job_scrapers.scraper_generator._probe_endpoints", return_value=[]),

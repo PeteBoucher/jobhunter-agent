@@ -32,10 +32,14 @@ _HEADERS = {
 
 
 def _fetch_page(url: str, timeout: int = 15) -> tuple:
-    """Fetch a page; return (html_text, response_headers)."""
+    """Fetch a page; return (html_text, response_headers, final_url).
+
+    final_url is the URL after following any redirects — used to detect when
+    a careers page hands off to an external job platform.
+    """
     resp = requests.get(url, timeout=timeout, headers=_HEADERS, allow_redirects=True)
     resp.raise_for_status()
-    return resp.text, dict(resp.headers)
+    return resp.text, dict(resp.headers), resp.url
 
 
 def _extract_signals(
@@ -190,6 +194,53 @@ def _probe_wordpress_rest(base_url: str, timeout: int = 8) -> List[Dict[str, Any
         except Exception:
             pass
     return results
+
+
+# ── External platform detection ──────────────────────────────────────────────
+
+# Job-specific URL patterns for platforms we cannot scrape.
+# Social-media footer links (linkedin.com/company/acme with no /jobs suffix)
+# are intentionally excluded — only job-listing paths trigger the bail-out.
+_EXTERNAL_JOB_PLATFORMS = [
+    (
+        re.compile(r"linkedin\.com/(jobs|company/[^/?#]+/jobs)", re.I),
+        "LinkedIn",
+        "LinkedIn jobs cannot be scraped without their API. "
+        "Check if the company also posts on a supported ATS "
+        "(Greenhouse, Lever, Ashby, Workable, etc.).",
+    ),
+    (
+        re.compile(r"indeed\.com/(cmp/[^/?#]+/jobs|viewjob|jobs\?)", re.I),
+        "Indeed",
+        "Indeed jobs cannot be scraped directly. "
+        "Check if the company posts on a supported ATS.",
+    ),
+    (
+        re.compile(r"glassdoor\.com/Jobs/", re.I),
+        "Glassdoor",
+        "Glassdoor jobs cannot be scraped directly. "
+        "Check if the company posts on a supported ATS.",
+    ),
+]
+
+
+def _detect_external_platform(html: str, final_url: str) -> Optional[tuple]:
+    """Return (platform_name, help_note) if the page hands off to an unsupported
+    external job platform, or None if it looks self-hosted.
+
+    Checks the final URL first (redirect is the clearest signal), then looks
+    for job-specific href links in the page HTML.
+    """
+    for pattern, platform, note in _EXTERNAL_JOB_PLATFORMS:
+        if pattern.search(final_url):
+            return platform, note
+
+    hrefs = re.findall(r'href=["\']([^"\']+)["\']', html, re.I)
+    for pattern, platform, note in _EXTERNAL_JOB_PLATFORMS:
+        if any(pattern.search(h) for h in hrefs):
+            return platform, note
+
+    return None
 
 
 # ── HTML job extraction (fallback when no API found) ─────────────────────────
@@ -440,7 +491,16 @@ def generate_scraper(url: str, output_path: Optional[str] = None) -> tuple:
         EnvironmentError: If ANTHROPIC_API_KEY is not set.
     """
     print(f"  Fetching {url}…")
-    html, headers = _fetch_page(url)
+    html, headers, final_url = _fetch_page(url)
+
+    # Bail out immediately for platforms we cannot scrape
+    ext = _detect_external_platform(html, final_url)
+    if ext:
+        platform, note = ext
+        raise RuntimeError(
+            f"This careers page uses {platform} for job listings, which cannot "
+            f"be scraped directly.\n{note}"
+        )
 
     print("  Extracting page signals…")
     signals = _extract_signals(html, headers, url)
