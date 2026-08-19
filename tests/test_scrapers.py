@@ -11,6 +11,7 @@ from src.job_scrapers.bamboohr_scraper import BambooHRScraper
 from src.job_scrapers.base_scraper import BaseScraper
 from src.job_scrapers.bcg_scraper import BCGScraper
 from src.job_scrapers.github_scraper import GitHubJobsScraper
+from src.job_scrapers.jobboardly_scraper import JobboardlyScraper
 from src.job_scrapers.microsoft_scraper import MicrosoftScraper
 from src.models import Job
 
@@ -569,5 +570,82 @@ class TestBambooHRScraper:
 
         with patch.object(bamboohr_scraper._http, "get", return_value=mock_resp):
             result = bamboohr_scraper._fetch_detail("semble", "999")
-
         assert result == {}
+
+
+# ── Jobboardly scraper ────────────────────────────────────────────────────────
+
+_JOBBOARDLY_RAW = {
+    "_board_subdomain": "iglubit-1",
+    "links": {"self": "/jobs/senior-engineer-abc123"},
+    "title": "Senior Engineer",
+    "location": "onsite",
+    "company": {"name": "Acme", "logo": "", "location": "Sevilla, Spain"},
+    "location_limits": ["ES"],
+    "description": {"html": "<p>Great role</p>", "text": "Great role"},
+    "salary": {"schedule": "yearly", "minimum": None, "maximum": None},
+    "application_link": "https://acme.com/apply/123",
+    "published_at": "2026-08-01T00:00:00Z",
+}
+
+
+@pytest.fixture
+def jobboardly_scraper(session):
+    return JobboardlyScraper(session)
+
+
+class TestJobboardlyScraper:
+    def test_salary_cents_dict_converted_to_float(self, jobboardly_scraper):
+        """salary min/max cents dicts must be converted to float, not passed to DB."""
+        raw = {
+            **_JOBBOARDLY_RAW,
+            "salary": {
+                "schedule": "yearly",
+                "minimum": {"cents": 4190000, "currency_iso": "EUR"},
+                "maximum": {"cents": 6702500, "currency_iso": "EUR"},
+            },
+        }
+        parsed = jobboardly_scraper._parse_job(raw)
+        assert parsed["salary_min"] == 41900.0
+        assert parsed["salary_max"] == 67025.0
+        assert isinstance(parsed["salary_min"], float)
+
+    def test_salary_none_stays_none(self, jobboardly_scraper):
+        """Null salary fields must remain None, not raise."""
+        parsed = jobboardly_scraper._parse_job(_JOBBOARDLY_RAW)
+        assert parsed["salary_min"] is None
+        assert parsed["salary_max"] is None
+
+    def test_remote_onsite_is_none_string(self, jobboardly_scraper):
+        """An onsite job must produce remote=None, not False."""
+        parsed = jobboardly_scraper._parse_job(_JOBBOARDLY_RAW)
+        assert parsed["remote"] is None
+        assert not isinstance(parsed["remote"], bool)
+
+    def test_remote_flag_is_string(self, jobboardly_scraper):
+        """A remote job must produce remote='remote', not True."""
+        raw = {**_JOBBOARDLY_RAW, "location": "remote"}
+        parsed = jobboardly_scraper._parse_job(raw)
+        assert parsed["remote"] == "remote"
+        assert not isinstance(parsed["remote"], bool)
+
+    def test_worldwide_location_limit_becomes_none(self, jobboardly_scraper):
+        """'Worldwide' in location_limits must not be stored as country."""
+        raw = {**_JOBBOARDLY_RAW, "location_limits": ["Worldwide"]}
+        parsed = jobboardly_scraper._parse_job(raw)
+        assert parsed["country"] is None
+
+    def test_iso2_location_limit_stored_lowercase(self, jobboardly_scraper):
+        """Valid ISO2 location limit is stored as lowercase."""
+        parsed = jobboardly_scraper._parse_job(_JOBBOARDLY_RAW)
+        assert parsed["country"] == "es"
+
+    def test_empty_location_limits_gives_none_country(self, jobboardly_scraper):
+        """No location_limits means country is None (base class will infer)."""
+        raw = {**_JOBBOARDLY_RAW, "location_limits": []}
+        parsed = jobboardly_scraper._parse_job(raw)
+        assert parsed["country"] is None
+
+    def test_source_job_id_combines_subdomain_and_slug(self, jobboardly_scraper):
+        parsed = jobboardly_scraper._parse_job(_JOBBOARDLY_RAW)
+        assert parsed["source_job_id"] == "iglubit-1:senior-engineer-abc123"
