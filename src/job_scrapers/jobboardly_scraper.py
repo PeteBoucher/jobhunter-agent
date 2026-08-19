@@ -105,7 +105,7 @@ class JobboardlyScraper(BaseScraper):
         # `location` is "remote" or "onsite" — a work-arrangement flag, not a city.
         # The actual geographic location is in company.location ("Sevilla, Spain").
         arrangement = (raw_job.get("location") or "").strip().lower()
-        remote = arrangement == "remote"
+        remote = "remote" if arrangement == "remote" else None
 
         company_info = raw_job.get("company") or {}
         company = company_info.get("name") if isinstance(company_info, dict) else None
@@ -113,11 +113,13 @@ class JobboardlyScraper(BaseScraper):
             company_info.get("location") if isinstance(company_info, dict) else None
         )
 
-        # Country: prefer location_limits (ISO2 list), fall back to base class inference
+        # Country: prefer location_limits (ISO2 list); ignore "Worldwide" sentinel.
         country: Optional[str] = None
         limits = raw_job.get("location_limits") or []
         if limits and isinstance(limits, list):
-            country = str(limits[0]).upper()
+            first = str(limits[0]).strip().upper()
+            if first and first != "WORLDWIDE":
+                country = first.lower()
 
         description_block = raw_job.get("description") or {}
         description_html = (
@@ -126,9 +128,23 @@ class JobboardlyScraper(BaseScraper):
             else None
         )
 
+        # Salary is in cents: {"cents": 4190000, "currency_iso": "EUR"} → 41900.0
         salary = raw_job.get("salary") or {}
-        salary_min = salary.get("minimum") if isinstance(salary, dict) else None
-        salary_max = salary.get("maximum") if isinstance(salary, dict) else None
+
+        def _cents_to_float(val: Any) -> Optional[float]:
+            if isinstance(val, dict):
+                cents = val.get("cents")
+                return (
+                    round(cents / 100, 2) if isinstance(cents, (int, float)) else None
+                )
+            return None
+
+        salary_min = (
+            _cents_to_float(salary.get("minimum")) if isinstance(salary, dict) else None
+        )
+        salary_max = (
+            _cents_to_float(salary.get("maximum")) if isinstance(salary, dict) else None
+        )
 
         # application_link is the canonical apply URL at the company's own ATS
         apply_url = raw_job.get("application_link") or self_url or None
