@@ -408,6 +408,59 @@ class TestBCGScraper:
         assert "11111" in source_ids
         assert "22222" in source_ids
 
+    def test_fetch_jobs_returns_stubs_for_existing_ids(self, bcg_scraper):
+        """Existing sitemap IDs come back as stubs so scraped_at gets refreshed."""
+        sitemap_resp = MagicMock()
+        sitemap_resp.raise_for_status.return_value = None
+        sitemap_resp.text = _SITEMAP_XML
+
+        get_calls = []
+
+        def get_side_effect(url, **kwargs):
+            get_calls.append(url)
+            return sitemap_resp
+
+        with patch.object(
+            bcg_scraper, "_load_existing_ids", return_value={"11111", "22222"}
+        ):
+            with patch.object(bcg_scraper._http, "get", side_effect=get_side_effect):
+                jobs = bcg_scraper._fetch_jobs()
+
+        # Only sitemap GETs — no job-page fetches for existing IDs
+        assert all("sitemap" in u for u in get_calls)
+        assert len(jobs) == 2
+        for job in jobs:
+            assert list(job.keys()) == ["source_job_id"]
+        source_ids = {j["source_job_id"] for j in jobs}
+        assert source_ids == {"11111", "22222"}
+
+    def test_fetch_jobs_mixed_new_and_existing(self, bcg_scraper):
+        """New IDs are fetched in full; existing IDs come back as stubs."""
+        sitemap_resp = MagicMock()
+        sitemap_resp.raise_for_status.return_value = None
+        sitemap_resp.text = _SITEMAP_XML
+
+        job_page_resp = MagicMock()
+        job_page_resp.status_code = 200
+        job_page_resp.text = _TECH_JOB_HTML
+
+        def get_side_effect(url, **kwargs):
+            if "sitemap" in url:
+                return sitemap_resp
+            return job_page_resp
+
+        # 22222 already in DB; 11111 is new
+        with patch.object(bcg_scraper, "_load_existing_ids", return_value={"22222"}):
+            with patch.object(bcg_scraper._http, "get", side_effect=get_side_effect):
+                with patch("time.sleep"):
+                    jobs = bcg_scraper._fetch_jobs()
+
+        assert len(jobs) == 2
+        stub = next(j for j in jobs if j["source_job_id"] == "22222")
+        full = next(j for j in jobs if j["source_job_id"] == "11111")
+        assert list(stub.keys()) == ["source_job_id"]
+        assert full["title"] == "Software Engineer"
+
     def test_parse_job_is_passthrough(self, bcg_scraper):
         raw = {"source_job_id": "99", "title": "Tester", "company": "BCG"}
         assert bcg_scraper._parse_job(raw) is raw

@@ -241,7 +241,7 @@ def _infer_country(location: Optional[str]) -> Optional[str]:
     return None
 
 
-_EXPIRY_DAYS = 30  # Jobs not re-seen within this window are marked inactive
+_EXPIRY_DAYS = 7  # Jobs not re-seen within this window are marked inactive
 
 # Lazy-initialised clients (cached for Lambda warm starts)
 _sns_client = None

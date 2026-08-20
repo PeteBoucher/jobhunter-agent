@@ -50,13 +50,21 @@ class BCGScraper(BaseScraper):
 
     def _fetch_jobs(self, **kwargs: Any) -> List[Dict[str, Any]]:
         sitemap_jobs = self._jobs_from_sitemaps()
+        sitemap_ids = {jid for jid, _ in sitemap_jobs}
         self.logger.info("bcg sitemap_jobs=%d", len(sitemap_jobs))
 
         existing = self._load_existing_ids()
-        new_jobs = [(jid, url) for jid, url in sitemap_jobs if jid not in existing]
-        self.logger.info("bcg new_jobs=%d", len(new_jobs))
 
-        results: List[Dict[str, Any]] = []
+        # Return lightweight stubs for existing IDs still in the sitemap.
+        # BaseScraper.scrape() adds these to seen_source_ids and bulk-updates
+        # scraped_at, keeping the expiry clock alive without fetching the page
+        # again. Jobs that leave the sitemap stop being touched and expire.
+        stubs = [{"source_job_id": jid} for jid in sitemap_ids if jid in existing]
+
+        new_jobs = [(jid, url) for jid, url in sitemap_jobs if jid not in existing]
+        self.logger.info("bcg new=%d existing_refreshed=%d", len(new_jobs), len(stubs))
+
+        results: List[Dict[str, Any]] = list(stubs)
         for job_id, url in new_jobs:
             try:
                 job = self._fetch_job_meta(job_id, url)
@@ -67,7 +75,6 @@ class BCGScraper(BaseScraper):
             # Polite crawl delay — avoids triggering rate-limits on a large first run
             time.sleep(0.15)
 
-        self.logger.info("bcg fetched_jobs=%d", len(results))
         return results
 
     # ------------------------------------------------------------------
