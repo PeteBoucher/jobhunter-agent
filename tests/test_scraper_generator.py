@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from src.job_scrapers.scraper_generator import (
+    _confirm_network_candidates,
     _derive_output_path,
     _detect_external_platform,
     _extract_candidate_api_urls,
@@ -97,6 +98,11 @@ def test_extract_code_no_fence_returns_stripped():
         ("https://www.example.com/careers", "example"),
         ("https://jobs.netflix.com/jobs", "netflix"),
         ("https://apply.workable.com/some-company/", "workable"),
+        # Regression: a fixed TLD allowlist previously mis-derived any TLD it
+        # didn't enumerate — "www.experis.es" -> "es_scraper.py" (bug).
+        ("https://www.experis.es/es/buscar-trabajo", "experis"),
+        ("https://career.oneflow.com/jobs", "oneflow"),
+        ("https://careers.company.co.uk/jobs", "company"),
     ],
 )
 def test_derive_output_path_naming(url, expected_contains):
@@ -110,6 +116,68 @@ def test_derive_output_path_explicit():
     """Explicit output_path is returned unchanged."""
     path = _derive_output_path("https://example.com", "/tmp/my_scraper.py")
     assert str(path) == "/tmp/my_scraper.py"
+
+
+# ── Headless-capture candidate confirmation ──────────────────────────────────
+
+
+@patch("src.job_scrapers.scraper_generator.requests.post")
+def test_confirm_network_candidates_replays_post_with_body(mock_post):
+    """A captured POST call is replayed with its exact method and JSON body."""
+    mock_resp = mock_post.return_value
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"jobsItems": [{"jobTitle": "Engineer"}]}
+
+    candidates = [
+        {
+            "url": "https://example.com/api/services/Jobs/searchjobs",
+            "method": "POST",
+            "post_data": '{"filter":{"offset":0,"limit":10}}',
+        }
+    ]
+    results = _confirm_network_candidates(candidates)
+
+    assert len(results) == 1
+    assert results[0]["method"] == "POST"
+    assert results[0]["post_data"] == '{"filter":{"offset":0,"limit":10}}'
+    mock_post.assert_called_once()
+    _, kwargs = mock_post.call_args
+    assert kwargs["data"] == '{"filter":{"offset":0,"limit":10}}'
+
+
+@patch("src.job_scrapers.scraper_generator.requests.get")
+def test_confirm_network_candidates_skips_empty_response(mock_get):
+    """A 200 response with an empty/falsy JSON body is not counted as confirmed."""
+    mock_resp = mock_get.return_value
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {}
+
+    candidates = [{"url": "https://example.com/api/empty", "method": "GET"}]
+    results = _confirm_network_candidates(candidates)
+    assert results == []
+
+
+@patch("src.job_scrapers.scraper_generator.requests.get")
+def test_confirm_network_candidates_skips_non_200(mock_get):
+    """A non-200 response is not counted as confirmed."""
+    mock_resp = mock_get.return_value
+    mock_resp.status_code = 404
+    mock_resp.json.return_value = {"jobs": [1]}
+
+    candidates = [{"url": "https://example.com/api/missing", "method": "GET"}]
+    results = _confirm_network_candidates(candidates)
+    assert results == []
+
+
+def test_confirm_network_candidates_caps_at_five():
+    """At most 5 candidates are probed, to avoid hammering the target site."""
+    with patch("src.job_scrapers.scraper_generator.requests.get") as mock_get:
+        mock_get.return_value.status_code = 404
+        candidates = [
+            {"url": f"https://example.com/api/{i}", "method": "GET"} for i in range(10)
+        ]
+        _confirm_network_candidates(candidates)
+        assert mock_get.call_count == 5
 
 
 # ── Integration test: generate_scraper end-to-end (all HTTP mocked) ──────────
@@ -147,12 +215,13 @@ def test_generate_scraper_writes_file(
     assert "LOW CONFIDENCE" not in content
 
 
+@patch("src.job_scrapers.scraper_generator._capture_network_requests", return_value=[])
 @patch("src.job_scrapers.scraper_generator._call_claude")
 @patch("src.job_scrapers.scraper_generator._probe_endpoints", return_value=[])
 @patch("src.job_scrapers.scraper_generator._scan_js_bundle", return_value="")
 @patch("src.job_scrapers.scraper_generator._fetch_page")
 def test_generate_scraper_no_api_found_still_calls_claude(
-    mock_fetch, mock_scan, mock_probe, mock_claude, tmp_path
+    mock_fetch, mock_scan, mock_probe, mock_claude, mock_capture, tmp_path
 ):
     """Generator calls Claude with no live endpoints; flags low confidence."""
     mock_fetch.return_value = (
@@ -332,13 +401,20 @@ def test_generate_scraper_probes_wp_rest_on_wordpress_site(
     assert "LOW CONFIDENCE" not in out.read_text()
 
 
+@patch("src.job_scrapers.scraper_generator._capture_network_requests", return_value=[])
 @patch("src.job_scrapers.scraper_generator._call_claude")
 @patch("src.job_scrapers.scraper_generator._probe_endpoints", return_value=[])
 @patch("src.job_scrapers.scraper_generator._probe_wordpress_rest", return_value=[])
 @patch("src.job_scrapers.scraper_generator._scan_js_bundle", return_value="")
 @patch("src.job_scrapers.scraper_generator._fetch_page")
 def test_generate_scraper_html_mode_when_wp_rest_fails(
-    mock_fetch, mock_scan, mock_wp_probe, mock_probe, mock_claude, tmp_path
+    mock_fetch,
+    mock_scan,
+    mock_wp_probe,
+    mock_probe,
+    mock_claude,
+    mock_capture,
+    tmp_path,
 ):
     """WordPress site with no REST endpoints falls through to HTML scraping mode."""
     wp_html = """
@@ -426,6 +502,10 @@ def test_generate_scraper_raises_without_api_key(tmp_path, monkeypatch):
         ),
         patch("src.job_scrapers.scraper_generator._scan_js_bundle", return_value=""),
         patch("src.job_scrapers.scraper_generator._probe_endpoints", return_value=[]),
+        patch(
+            "src.job_scrapers.scraper_generator._capture_network_requests",
+            return_value=[],
+        ),
         pytest.raises(EnvironmentError, match="ANTHROPIC_API_KEY"),
     ):
         generate_scraper(

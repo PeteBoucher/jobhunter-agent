@@ -46,6 +46,26 @@ _PAGE_FINGERPRINTS: list = [
 ]
 
 
+_CAREER_SUBDOMAIN_PREFIXES = r"^(www|jobs|careers|career|work|talent|apply)\."
+
+
+def _teamtailor_company_from_host(host: str) -> str:
+    """Derive a display company name from a Teamtailor host.
+
+    For {company}.teamtailor.com the subdomain *is* the company slug. For a
+    custom domain (e.g. career.oneflow.com) the leading label is usually a
+    generic careers-page prefix, not the company — strip it and use the
+    registrable domain label instead (oneflow.com -> "Oneflow").
+    """
+    if host.endswith(".teamtailor.com"):
+        slug = host.split(".")[0]
+    else:
+        stripped = re.sub(_CAREER_SUBDOMAIN_PREFIXES, "", host, flags=re.I)
+        parts = stripped.split(".")
+        slug = parts[0] if len(parts) >= 2 else stripped
+    return slug.replace("-", " ").replace("_", " ").title()
+
+
 def detect_ats(
     url: str,
     fetch_page: bool = True,
@@ -118,7 +138,7 @@ def detect_ats(
     if host.endswith(".teamtailor.com"):
         return "teamtailor", {
             "career_url": f"{parsed.scheme}://{host}",
-            "company": host.split(".")[0],
+            "company": _teamtailor_company_from_host(host),
         }
 
     # DeJobs: {company}.dejobs.org
@@ -253,17 +273,11 @@ def _extract_config_from_page(
             return {"slug": m.group(1), "name": m.group(1)}
 
     if source_name == "teamtailor":
-        # The career URL is the host itself if it ends in .teamtailor.com,
-        # otherwise use the full URL as the career base
-        if host.endswith(".teamtailor.com"):
-            return {
-                "career_url": f"{parsed.scheme}://{host}",
-                "company": host.split(".")[0],
-            }
-        # Custom domain — use origin as career_url
+        # career_url is the site origin either way; company name derivation
+        # differs for *.teamtailor.com vs. a custom domain (see helper).
         return {
             "career_url": f"{parsed.scheme}://{host}",
-            "company": host.split(".")[0],
+            "company": _teamtailor_company_from_host(host),
         }
 
     if source_name == "dejobs":

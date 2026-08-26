@@ -110,6 +110,8 @@ def test_detect_ats_page_fallback_teamtailor(mock_get):
     source_name, config = result
     assert source_name == "teamtailor"
     assert "career_url" in config
+    # "careers" is a generic prefix, not the company — derive from the domain
+    assert config["company"] == "Somecompany"
 
 
 @patch("src.job_scrapers.ats_detector.requests.get")

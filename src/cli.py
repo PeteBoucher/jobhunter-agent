@@ -1520,6 +1520,12 @@ def scraper_list(source: Optional[str]) -> None:
 @click.option(
     "--dry-run", is_flag=True, help="Print what would be inserted without writing"
 )
+@click.option(
+    "--insecure",
+    is_flag=True,
+    help="Skip TLS certificate verification during AI scraper generation "
+    "(only for sites with a known broken cert chain)",
+)
 def scraper_add(
     url: Optional[str],
     ats: Optional[str],
@@ -1527,6 +1533,7 @@ def scraper_add(
     name: Optional[str],
     max_jobs: Optional[int],
     dry_run: bool,
+    insecure: bool,
 ) -> None:
     """Add a company to an existing ATS scraper.
 
@@ -1559,8 +1566,13 @@ def scraper_add(
             )
             from src.job_scrapers.scraper_generator import generate_scraper
 
+            if insecure:
+                console.print(
+                    "[yellow]⚠ --insecure: skipping TLS certificate "
+                    "verification for this fetch.[/yellow]"
+                )
             try:
-                output_path, n_confirmed = generate_scraper(url)
+                output_path, n_confirmed = generate_scraper(url, insecure=insecure)
             except Exception as e:
                 console.print(f"[red]✗ Generation failed:[/red] {e}")
                 raise SystemExit(1)
@@ -1670,7 +1682,13 @@ def scraper_remove(id: int) -> None:
     default=None,
     help="Output file path (default: auto-named in src/job_scrapers/)",
 )
-def scraper_generate(url: str, output: Optional[str]) -> None:
+@click.option(
+    "--insecure",
+    is_flag=True,
+    help="Skip TLS certificate verification during generation "
+    "(only for sites with a known broken cert chain)",
+)
+def scraper_generate(url: str, output: Optional[str], insecure: bool) -> None:
     """Generate a draft scraper for an unsupported ATS platform.
 
     Fetches the careers page, discovers the API, then uses Claude to produce
