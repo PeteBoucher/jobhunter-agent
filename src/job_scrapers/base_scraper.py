@@ -195,11 +195,51 @@ class BaseScraper(ABC):
     def _parse_job(self, raw_job: dict) -> dict:
         """Parse raw job data into standardized format.
 
+        The returned dict is read with `.get(key)` by `_create_job_object()`
+        below — a missing or misspelled key fails silently as `None` on that
+        `Job` column, not as an error. This is the one place scraper output
+        actually has to agree with the rest of the codebase, so the field
+        names and types below are load-bearing, not a suggestion. (This bit
+        the generated Experis scraper: it returned "company_name" and
+        "published_date" instead of "company"/"posted_date", so every job
+        silently saved with a null company and null posted_date.)
+
+        Required keys:
+            source_job_id (str), title (str), company (str), apply_url (str)
+                — not "url".
+
+        Optional keys (all default to None via .get() if omitted):
+            department (str), location (str)
+            remote (str) — one of "remote" | "hybrid" | "onsite" | None.
+                NOT a bool — job_matcher.py and job_searcher.py both compare
+                it against these literal strings (`.lower() == "remote"`,
+                `Job.remote == "onsite"`); a bool silently stores as "1"/"0"
+                (or an error, on strict backends) and matches nothing.
+            country (str) — lowercase ISO2 (e.g. "es", "gb"). Leave unset/None
+                when the source has no reliable country data; the base class
+                infers it from description/location rather than guessing.
+            salary_min / salary_max (float)
+            description (str)
+            requirements (str) — despite the DB column being JSON-typed, the
+                convention everywhere in this codebase is a plain string (or
+                None), never an actual list.
+            nice_to_haves (str) — rarely populated; None is fine.
+            posted_date (datetime.datetime) — an actual datetime object, not
+                an ISO date string. SQLAlchemy's DateTime column expects one.
+            company_industry (str), company_size (str)
+            source_type (str) — "company_portal" for a single company's own
+                careers site (defaults to "aggregator" if omitted, which is
+                wrong for a company-portal scraper — set it explicitly).
+
+        There is no `employment_type` field on the `Job` model. Returning one
+        doesn't error, it's just silently discarded — don't spend scraping
+        effort computing a value nothing reads.
+
         Args:
             raw_job: Raw job data from the source
 
         Returns:
-            Parsed job data with standardized fields
+            Parsed job data with standardized fields (see above)
         """
         pass
 

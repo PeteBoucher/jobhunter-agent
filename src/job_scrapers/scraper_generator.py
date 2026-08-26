@@ -451,6 +451,44 @@ _REFERENCE_API_SCRAPER = Path(__file__).parent / "workable_scraper.py"
 _REFERENCE_HTML_SCRAPER = Path(__file__).parent / "innovairv_scraper.py"
 _BASE_SCRAPER = Path(__file__).parent / "base_scraper.py"
 
+_INTERFACE_METHODS = ("_get_source_name", "_fetch_jobs", "_parse_job")
+
+
+def _load_base_scraper_interface() -> str:
+    """Extract the BaseScraper abstract method signatures + docstrings.
+
+    Used instead of a raw `base_scraper.py` file-slice: a fixed character
+    cutoff was cutting off mid-file, in an unrelated regex table, well
+    before ever reaching `_parse_job`'s docstring — the actual output
+    schema. Claude had no ground truth for field names and had to guess,
+    which is exactly what produced the generated Experis scraper's
+    "company_name"/"published_date" instead of the real "company"/
+    "posted_date" columns. Extracting via `ast` instead of copy-pasting the
+    schema into this prompt template keeps the two from drifting apart
+    again — the docstring on `_parse_job` in base_scraper.py is the single
+    source of truth, and whatever it says is what Claude sees.
+    """
+    import ast
+
+    tree = ast.parse(_BASE_SCRAPER.read_text())
+    parts = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.name == "BaseScraper":
+            for item in node.body:
+                if (
+                    isinstance(item, ast.FunctionDef)
+                    and item.name in _INTERFACE_METHODS
+                ):
+                    args = [a.arg for a in item.args.args]
+                    if item.args.kwarg:
+                        args.append(f"**{item.args.kwarg.arg}")
+                    doc = ast.get_docstring(item) or ""
+                    parts.append(
+                        f'def {item.name}({", ".join(args)}):\n    """{doc}"""'
+                    )
+            break
+    return "\n\n".join(parts)
+
 
 def _build_prompt(
     url: str,
@@ -460,7 +498,7 @@ def _build_prompt(
     html_job_sample: Optional[str] = None,
 ) -> str:
     """Build the Claude prompt for scraper generation."""
-    base_src = _BASE_SCRAPER.read_text()[:3000]
+    base_src = _load_base_scraper_interface()
 
     # Choose reference implementation based on scraping mode
     use_html_mode = html_job_sample is not None and not api_samples

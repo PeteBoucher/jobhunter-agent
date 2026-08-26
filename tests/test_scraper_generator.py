@@ -13,6 +13,7 @@ from src.job_scrapers.scraper_generator import (
     _extract_html_job_sample,
     _extract_signals,
     _is_wordpress,
+    _load_base_scraper_interface,
     _wp_has_ajax_nonce,
     generate_scraper,
 )
@@ -116,6 +117,29 @@ def test_derive_output_path_explicit():
     """Explicit output_path is returned unchanged."""
     path = _derive_output_path("https://example.com", "/tmp/my_scraper.py")
     assert str(path) == "/tmp/my_scraper.py"
+
+
+# ── BaseScraper interface extraction ─────────────────────────────────────────
+
+
+def test_load_base_scraper_interface_includes_parse_job_schema():
+    """The prompt must see _parse_job's docstring, not an arbitrary file
+    slice — a fixed char cutoff previously cut off before ever reaching it,
+    so Claude had no ground truth for output field names and guessed wrong
+    (the generated Experis scraper used "company_name"/"published_date"
+    instead of the real "company"/"posted_date" columns)."""
+    text = _load_base_scraper_interface()
+    assert "def _parse_job(" in text
+    assert "source_job_id" in text
+    assert "company" in text
+    assert "posted_date" in text
+
+
+def test_load_base_scraper_interface_includes_all_three_methods():
+    """All three abstract methods scrapers must implement are present."""
+    text = _load_base_scraper_interface()
+    for method in ("_get_source_name", "_fetch_jobs", "_parse_job"):
+        assert f"def {method}(" in text
 
 
 # ── Headless-capture candidate confirmation ──────────────────────────────────

@@ -196,8 +196,14 @@ class ExperisScraper(BaseScraper):
             logger.warning("Error parsing job details: %s", e)
             return ""
 
-    def _infer_remote(self, description: str) -> Optional[bool]:
-        """Infer if job is remote from description text."""
+    def _infer_remote(self, description: str) -> Optional[str]:
+        """Infer "remote"/"onsite"/None from description text.
+
+        Must return one of these literal strings, not a bool — the base
+        class's Job.remote column and the matching engine (job_matcher.py,
+        job_searcher.py) compare it against these exact strings. A bool
+        silently stored as "1"/"0" text and matched neither.
+        """
         if not description:
             return None
 
@@ -215,7 +221,7 @@ class ExperisScraper(BaseScraper):
 
         for keyword in remote_keywords:
             if re.search(keyword, description_lower):
-                return True
+                return "remote"
 
         # Check for on-site indicators
         onsite_keywords = [
@@ -227,6 +233,6 @@ class ExperisScraper(BaseScraper):
 
         for keyword in onsite_keywords:
             if re.search(keyword, description_lower):
-                return False
+                return "onsite"
 
         return None
