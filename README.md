@@ -145,7 +145,7 @@ job-agent applications apply 42 --notes "Applied via website"
 
 ## Adding a new scraper
 
-### Known ATS (Greenhouse, Lever, Ashby, Workday, SmartRecruiters, Teamtailor, Workable, DeJobs)
+### Known ATS (Greenhouse, Lever, Ashby, Workday, SmartRecruiters, Teamtailor, Recruitee, Workable, DeJobs)
 
 Pass the company's careers URL — the ATS is auto-detected:
 
@@ -171,13 +171,17 @@ job-agent scraper add https://careers.somecompany.com
 job-agent scraper generate https://careers.somecompany.com
 ```
 
-Both commands fall through to the AI generator when detection fails. The generator fetches the page, scans JS bundles for API patterns, probes candidate endpoints, then calls Claude Haiku to write a draft `BaseScraper` subclass in `src/job_scrapers/`. After reviewing the output:
+Both commands fall through to the AI generator when detection fails. The generator fetches the page, scans JS bundles for API patterns, and probes candidate endpoints; if that finds nothing, it renders the page in headless Chromium and captures the real network calls it makes (catches client-rendered React/Vue/etc. pages that never expose an API in static HTML), then falls back to scanning for an embedded job listing if there's still no API. It then calls Claude Haiku to write a draft `BaseScraper` subclass in `src/job_scrapers/`.
+
+After writing the draft, both commands automatically run it live against the real site (fetch + parse a sample — nothing is written to the database) and print a pass/fail report: schema problems (wrong/missing fields, wrong types) and cross-record problems (e.g. several different jobs all sharing one link, a sign the per-job extraction is broken and fell back to a generic page). A clean report is a good sign, not a guarantee — review the file before registering it. After reviewing the output:
 
 1. Add the class to `src/job_scrapers/registry.py` (SCRAPER_MAP + DEFAULT_SOURCES)
 2. Run `pytest`
-3. Run `job-agent scrape --sources <source_name>` for a live test
+3. Run `job-agent scrape --sources <source_name>` to re-verify after any manual fixes
 
 > **LOW CONFIDENCE drafts**: if no live API endpoints were confirmed during generation, the file header and CLI output will say so. The API URL is Claude's best guess — verify it manually before registering.
+>
+> **Broken TLS cert chain**: add `--insecure` to `scraper add`/`scraper generate` to skip certificate verification for a site with a known server-side cert misconfiguration. Only use it when you've confirmed the site itself is at fault (e.g. via `openssl s_client`) — it disables verification for every request the generator makes against that host.
 
 ## Testing
 

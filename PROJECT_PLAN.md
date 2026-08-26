@@ -46,6 +46,10 @@ An automated job search and application tracking system. It continuously scrapes
 | SmartRecruiters | ATS platform | Bet365, Playtech, Evolution, Sportradar, EPAM, Ciklum |
 | BambooHR | ATS platform | Various |
 | Teamtailor | ATS platform | The Workshop (Málaga) |
+| Recruitee | ATS platform | Zoi — career-site-builder product, works on custom domains too (`meet.zoi.tech`), not just `*.recruitee.com` |
+| Workable | ATS platform | Public `apply.workable.com/{slug}` API, no auth |
+| DeJobs | ATS/job-board platform | `{slug}.dejobs.org` microsites, shared Solr search API across tenants |
+| Jobboardly | White-label job board | Multi-tenant, `{subdomain}.jobboardly.com`; jobs link out to each company's own ATS |
 | Adzuna | Aggregator | 13 countries; terms and countries from user preferences |
 | The Muse | Job board | Curated tech companies |
 | Reed | Job board | UK; API key required |
@@ -54,6 +58,11 @@ An automated job search and application tracking system. It continuously scrapes
 | Coinbase | Direct | |
 | Revolut | Direct | |
 | Coderland | Direct | Manatal ATS; LATAM staffing company |
+| Indra Group | Direct | Spanish IT/defense; SAP SuccessFactors HTML scrape, no public API |
+| Innova-IRV | Direct | Microelectronics research institute, Málaga |
+| TKH Security | Direct | Netherlands; WordPress wombat-career plugin HTML scrape |
+| Experis | Direct | ManpowerGroup IT staffing/consulting (Spain); confirmed live JSON API |
+| bunq | Direct | Netherlands neobank; Framer-built site, static HTML with per-job detail pages |
 
 #### Matching algorithm
 
