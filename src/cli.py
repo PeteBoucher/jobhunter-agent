@@ -1513,9 +1513,12 @@ def scraper_list(source: Optional[str]) -> None:
 
 def _run_and_report_generated_scraper_test(output_path: str) -> None:
     """Run a freshly-generated scraper against the live site and print a
-    report — the automated version of what caught 5 bugs by hand in the
+    report — the automated version of what caught bugs by hand in the
     generated Experis scraper (wrong field names/types, a mis-read response
-    field, wrong pagination semantics). Never writes to the database."""
+    field, wrong pagination semantics) and the generated bunq scraper
+    (nav/UI chrome matched as jobs, all sharing one generic apply_url — a
+    per-job-shape-valid but semantically-broken dataset per-job validation
+    alone can't see). Never writes to the database."""
     from src.job_scrapers.scraper_generator import run_generated_scraper_check
 
     console.print("[dim]Running a live test against the generated scraper…[/dim]")
@@ -1529,6 +1532,8 @@ def _run_and_report_generated_scraper_test(output_path: str) -> None:
         f"[green]✓[/green] Fetched {result['n_fetched']} job(s), "
         f"validated {result['n_sampled']} sample(s) against the schema"
     )
+
+    found_problems = bool(result["problems"]) or bool(result["batch_problems"])
     if result["problems"]:
         console.print(
             "[red bold]⚠ Schema problems found — fix these before "
@@ -1537,7 +1542,14 @@ def _run_and_report_generated_scraper_test(output_path: str) -> None:
         for idx, problems in result["problems"]:
             for p in problems:
                 console.print(f"  [red]•[/red] sample #{idx}: {p}")
-    else:
+    if result["batch_problems"]:
+        console.print(
+            "[red bold]⚠ Cross-record problems found — the data may look "
+            "individually valid but be semantically wrong:[/red bold]"
+        )
+        for p in result["batch_problems"]:
+            console.print(f"  [red]•[/red] {p}")
+    if not found_problems:
         console.print("[green]✓[/green] No schema problems found in the sample.")
 
 

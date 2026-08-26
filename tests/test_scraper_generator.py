@@ -213,6 +213,34 @@ class EmptyFetchScraper(BaseScraper):
 
 _NO_SCRAPER_CLASS_SRC = "# just a comment, no scraper class here\n"
 
+# The actual bunq bug: a broken selector falls back to matching page
+# chrome as if it were jobs, and every "job" carries the same apply_url
+# (a generic listing page) because the real per-job link was never found.
+# Each individual dict is schema-valid — validate_parsed_job() alone can't
+# catch this; it takes validate_job_batch() looking across the sample.
+_SHARED_URL_SCRAPER_SRC = """
+from typing import Any, Dict, List
+
+from src.job_scrapers.base_scraper import BaseScraper
+
+
+class SharedUrlScraper(BaseScraper):
+    def _get_source_name(self) -> str:
+        return "shared_url"
+
+    def _fetch_jobs(self, **kwargs: Any) -> List[Dict[str, Any]]:
+        return [{"title": "Engineer"}, {"title": "Designer"}, {"title": "Analyst"}]
+
+    def _parse_job(self, raw_job: Dict[str, Any]) -> Dict[str, Any]:
+        title = raw_job["title"]
+        return {
+            "source_job_id": title.lower(),
+            "title": title,
+            "company": "Acme",
+            "apply_url": "https://careers.acme.example/positions",
+        }
+"""
+
 
 def test_import_generated_scraper_finds_the_subclass(tmp_path):
     path = tmp_path / "fake_generated_scraper.py"
@@ -247,8 +275,26 @@ def test_run_generated_scraper_check_reports_clean_output(mock_get_session, tmp_
     assert result["n_fetched"] == 2
     assert result["n_sampled"] == 2
     assert result["problems"] == []
+    assert result["batch_problems"] == []
     mock_session.commit.assert_not_called()
     mock_session.close.assert_called_once()
+
+
+@patch("src.database.get_session")
+def test_run_generated_scraper_check_flags_shared_apply_url(mock_get_session, tmp_path):
+    """The bunq bug, end to end: every individual parsed dict is schema-
+    valid (validate_parsed_job finds nothing), but three different-titled
+    jobs sharing one generic apply_url is caught by the batch check."""
+    path = tmp_path / "shared_url_scraper.py"
+    path.write_text(_SHARED_URL_SCRAPER_SRC)
+
+    result = run_generated_scraper_check(str(path))
+
+    assert result["fetch_error"] is None
+    assert result["n_sampled"] == 3
+    assert result["problems"] == []
+    assert len(result["batch_problems"]) == 1
+    assert "apply_url" in result["batch_problems"][0]
 
 
 @patch("src.database.get_session")
@@ -266,6 +312,7 @@ def test_run_generated_scraper_check_flags_schema_problems(mock_get_session, tmp
     _, problems = result["problems"][0]
     assert any("company_name" in p for p in problems)
     assert any("remote" in p.lower() for p in problems)
+    assert result["batch_problems"] == []  # only 1 sample, nothing to compare
 
 
 @patch("src.database.get_session")

@@ -862,20 +862,33 @@ def run_generated_scraper_check(path: str, sample_size: int = 3) -> Dict[str, An
     results — never `scrape()`/`session.commit()`, so nothing is written to
     the database.
 
+    Also runs validate_job_batch() across every successfully-parsed sample —
+    a per-job dict can be individually well-formed while the *set* of them
+    is still garbage (this is exactly how the generated bunq scraper's
+    output looked "clean": a broken selector fell back to matching nav/UI
+    chrome as jobs, and every one carried the same apply_url — the generic
+    listing page, not a real per-job link — since the real anchor was never
+    found; no single dict's shape was wrong, so per-job validation alone
+    passed it).
+
     Returns a dict:
         n_fetched: total raw jobs `_fetch_jobs()` returned
         n_sampled: how many of those were parsed and validated
         problems: list of (sample_index, [problem strings]); empty if clean
+        batch_problems: list of cross-record problem strings (duplicate
+            apply_url/source_job_id across differently-titled jobs); empty
+            if clean
         fetch_error: description if import/instantiation/`_fetch_jobs()`
             failed outright, else None
     """
     from src.database import get_session
-    from src.job_scrapers.base_scraper import validate_parsed_job
+    from src.job_scrapers.base_scraper import validate_job_batch, validate_parsed_job
 
     result: Dict[str, Any] = {
         "n_fetched": 0,
         "n_sampled": 0,
         "problems": [],
+        "batch_problems": [],
         "fetch_error": None,
     }
 
@@ -903,15 +916,19 @@ def run_generated_scraper_check(path: str, sample_size: int = 3) -> Dict[str, An
 
         sample = raw_jobs[:sample_size]
         result["n_sampled"] = len(sample)
+        parsed_jobs = []
         for i, raw in enumerate(sample):
             try:
                 parsed = scraper._parse_job(raw)
             except Exception as e:
                 result["problems"].append((i, [f"_parse_job() raised: {e}"]))
                 continue
+            parsed_jobs.append(parsed)
             problems = validate_parsed_job(parsed)
             if problems:
                 result["problems"].append((i, problems))
+
+        result["batch_problems"] = validate_job_batch(parsed_jobs)
     finally:
         session.close()
 

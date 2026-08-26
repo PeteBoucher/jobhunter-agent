@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from src.job_scrapers.base_scraper import validate_parsed_job
+from src.job_scrapers.base_scraper import validate_job_batch, validate_parsed_job
 
 
 def _valid_job() -> dict:
@@ -124,3 +124,66 @@ def test_validate_parsed_job_flags_wrong_salary_type():
     job["salary_min"] = "40000"
     problems = validate_parsed_job(job)
     assert any("salary_min" in p for p in problems)
+
+
+# ── Cross-record (batch) validation ──────────────────────────────────────────
+
+
+def _job(title, apply_url, source_job_id):
+    return {
+        "source_job_id": source_job_id,
+        "title": title,
+        "company": "Acme",
+        "apply_url": apply_url,
+    }
+
+
+def test_validate_job_batch_flags_shared_apply_url_across_different_titles():
+    """The exact bunq bug: a broken per-job link extraction falls back to
+    one generic URL for every "job" — individually valid, collectively a
+    sign the scraper never found the real per-job links."""
+    jobs = [
+        _job("Engineer", "https://acme.example/positions", "engineer"),
+        _job("Designer", "https://acme.example/positions", "designer"),
+        _job("Analyst", "https://acme.example/positions", "analyst"),
+    ]
+    problems = validate_job_batch(jobs)
+    assert any("apply_url" in p for p in problems)
+
+
+def test_validate_job_batch_allows_shared_apply_url_for_same_title():
+    """Two entries for literally the same job (e.g. overlapping pagination)
+    sharing a URL isn't the bug pattern — only *different*-titled jobs
+    sharing a URL is suspicious."""
+    jobs = [
+        _job("Engineer", "https://acme.example/jobs/1", "eng-1"),
+        _job("Engineer", "https://acme.example/jobs/1", "eng-1"),
+    ]
+    assert validate_job_batch(jobs) == []
+
+
+def test_validate_job_batch_allows_distinct_urls():
+    jobs = [
+        _job("Engineer", "https://acme.example/jobs/1", "eng"),
+        _job("Designer", "https://acme.example/jobs/2", "des"),
+        _job("Analyst", "https://acme.example/jobs/3", "ana"),
+    ]
+    assert validate_job_batch(jobs) == []
+
+
+def test_validate_job_batch_flags_shared_source_job_id():
+    jobs = [
+        _job("Engineer", "https://acme.example/jobs/1", "dup-id"),
+        _job("Designer", "https://acme.example/jobs/2", "dup-id"),
+    ]
+    problems = validate_job_batch(jobs)
+    assert any("source_job_id" in p for p in problems)
+
+
+def test_validate_job_batch_ignores_single_job():
+    """A batch of one has nothing to cross-check against."""
+    assert validate_job_batch([_job("Engineer", "https://acme.example/1", "e")]) == []
+
+
+def test_validate_job_batch_ignores_empty_list():
+    assert validate_job_batch([]) == []

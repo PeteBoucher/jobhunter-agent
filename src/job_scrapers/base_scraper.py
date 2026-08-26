@@ -5,7 +5,7 @@ import re
 import time
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
@@ -235,9 +235,13 @@ class BaseScraper(ABC):
         doesn't error, it's just silently discarded — don't spend scraping
         effort computing a value nothing reads.
 
-        `validate_parsed_job()` below checks a returned dict against this
-        schema mechanically — the AI scraper generator runs it against a
-        live sample automatically after generating a draft.
+        `validate_parsed_job()` below checks a single returned dict against
+        this schema mechanically; `validate_job_batch()` checks a sample of
+        them against each other for cross-record problems a single dict
+        can't reveal (e.g. multiple different jobs sharing one apply_url —
+        a sign the per-job link extraction is broken and falling back to a
+        generic page). The AI scraper generator runs both automatically
+        against a live sample after generating a draft.
 
         Args:
             raw_job: Raw job data from the source
@@ -632,5 +636,60 @@ def validate_parsed_job(parsed: dict) -> List[str]:
             "— check for a typo against the canonical name (e.g. company_name "
             "instead of company, published_date instead of posted_date)"
         )
+
+    return problems
+
+
+def validate_job_batch(parsed_jobs: List[dict]) -> List[str]:
+    """Cross-record checks that validate_parsed_job() can't see, since it
+    only looks at one dict at a time.
+
+    A per-job dict can be individually well-formed (right keys, right
+    types) while the *set* of them is still garbage — this is what shipped
+    in the generated bunq scraper: a broken selector fell back to matching
+    nav/UI chrome as if it were job listings, and every single one carried
+    the same apply_url (the generic listing page, not a real per-job link)
+    because the real per-job anchor was never found. Every individual dict
+    passed validate_parsed_job() cleanly; the bug was only visible looking
+    at the batch as a whole.
+
+    Returns a list of human-readable problem descriptions; an empty list
+    means nothing suspicious was found. This is a heuristic, not proof of
+    correctness — it catches the specific failure shape above, not "is this
+    real job data" in general.
+    """
+    problems: List[str] = []
+    if len(parsed_jobs) < 2:
+        return problems
+
+    by_url: Dict[Any, List[str]] = {}
+    by_id: Dict[Any, List[str]] = {}
+    for job in parsed_jobs:
+        title = job.get("title") or "(no title)"
+        url = job.get("apply_url")
+        if url:
+            by_url.setdefault(url, []).append(title)
+        job_id = job.get("source_job_id")
+        if job_id:
+            by_id.setdefault(job_id, []).append(title)
+
+    for url, titles in by_url.items():
+        distinct_titles = set(titles)
+        if len(titles) >= 2 and len(distinct_titles) >= 2:
+            problems.append(
+                f"{len(titles)} different-titled jobs share apply_url {url!r} "
+                f"({sorted(distinct_titles)}) — the per-job link extraction is "
+                "likely broken and falling back to a generic page URL instead "
+                "of each job's real link"
+            )
+
+    for job_id, titles in by_id.items():
+        distinct_titles = set(titles)
+        if len(titles) >= 2 and len(distinct_titles) >= 2:
+            problems.append(
+                f"{len(titles)} different-titled jobs share source_job_id "
+                f"{job_id!r} ({sorted(distinct_titles)}) — later ones will "
+                'silently overwrite earlier ones as "already scraped"'
+            )
 
     return problems
