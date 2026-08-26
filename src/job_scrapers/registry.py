@@ -23,6 +23,7 @@ from src.job_scrapers.jobboardly_scraper import JobboardlyScraper
 from src.job_scrapers.lever_scraper import LeverScraper
 from src.job_scrapers.linkedin_scraper import LinkedInScraper
 from src.job_scrapers.microsoft_scraper import MicrosoftScraper
+from src.job_scrapers.recruitee_scraper import RecruiteeScraper
 from src.job_scrapers.reed_scraper import ReedScraper
 from src.job_scrapers.revolut_scraper import RevolutScraper
 from src.job_scrapers.smartrecruiters_scraper import SmartRecruitersScraper
@@ -55,6 +56,7 @@ SCRAPER_MAP: Dict[str, Type[BaseScraper]] = {
     "workday": WorkdayScraper,
     "revolut": RevolutScraper,
     "teamtailor": TeamtailorScraper,
+    "recruitee": RecruiteeScraper,
     "thoughtworks": ThoughtworksScraper,
     "tkhsecurity": TKHSecurityScraper,
     "uber": UberScraper,
@@ -87,4 +89,5 @@ DEFAULT_SOURCES: List[str] = [
     "innovairv",
     "tkhsecurity",
     "experis",
+    "recruitee",
 ]

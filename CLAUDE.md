@@ -8,7 +8,7 @@ An automated job search and application tracking agent that eliminates the manua
 
 **Roadmap** (see `PROJECT_PLAN.md` for full detail):
 
-1. **Done** — Core CLI, CV parsing, job scrapers (Greenhouse, Lever, Adzuna, The Muse, LinkedIn, Ashby, Workday, Thoughtworks, SmartRecruiters, Teamtailor, Workable, BambooHR, DeJobs, and others), matching engine, application tracker, AWS Lambda deployment, SNS notifications, web dashboard (Next.js + FastAPI), multi-user support, stale job expiry, open sign-up (no approval gate), AI content generation (cover letter / tailored CV / recruiter message via `jobhunter-ai`), GitHub Actions CI/CD pipeline, DB-driven scraper config (`scraper_config` table), `job-agent scraper` CLI (add/list/disable/remove/generate), ATS auto-detection, AI scraper draft generator
+1. **Done** — Core CLI, CV parsing, job scrapers (Greenhouse, Lever, Adzuna, The Muse, LinkedIn, Ashby, Workday, Thoughtworks, SmartRecruiters, Teamtailor, Recruitee, Workable, BambooHR, DeJobs, and others), matching engine, application tracker, AWS Lambda deployment, SNS notifications, web dashboard (Next.js + FastAPI), multi-user support, stale job expiry, open sign-up (no approval gate), AI content generation (cover letter / tailored CV / recruiter message via `jobhunter-ai`), GitHub Actions CI/CD pipeline, DB-driven scraper config (`scraper_config` table), `job-agent scraper` CLI (add/list/disable/remove/generate), ATS auto-detection, AI scraper draft generator
 2. **Next** — Improve match quality further
 3. **Future** — Auto-apply workflow, interview prep, email digest
 

@@ -52,6 +52,11 @@ from src.job_scrapers.ats_detector import _probe_smartrecruiters, detect_ats
             "smartrecruiters",
             {"company_id": "Stripe1"},
         ),
+        (
+            "https://acme.recruitee.com",
+            "recruitee",
+            {"career_url": "https://acme.recruitee.com", "company": "Acme"},
+        ),
     ],
 )
 def test_detect_ats_url_patterns(url, expected_source, expected_config_key):
@@ -112,6 +117,34 @@ def test_detect_ats_page_fallback_teamtailor(mock_get):
     assert "career_url" in config
     # "careers" is a generic prefix, not the company — derive from the domain
     assert config["company"] == "Somecompany"
+
+
+@patch("src.job_scrapers.ats_detector.requests.get")
+def test_detect_ats_page_fallback_recruitee(mock_get):
+    """Page-fetch fingerprinting detects Recruitee via its CDN asset host —
+    discovered via meet.zoi.tech, a custom domain with no *.recruitee.com
+    in the URL at all."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.text = (
+        "<html><head>"
+        '<meta content="https://careers.recruiteecdn.com/image/upload/x.png" '
+        'property="og:image"/>'
+        "</head><body>Careers</body></html>"
+    )
+    mock_resp.headers = {}
+    mock_resp.url = "https://meet.zoi.tech/"
+    mock_get.return_value = mock_resp
+
+    result = detect_ats("https://meet.zoi.tech/", fetch_page=True)
+    assert result is not None
+    source_name, config = result
+    assert source_name == "recruitee"
+    assert config["career_url"] == "https://meet.zoi.tech"
+    # Regression: "meet" isn't a recognized generic careers-page prefix
+    # (unlike "careers"/"jobs"), so a naive first-label heuristic picked
+    # "Meet" instead of the actual company "Zoi".
+    assert config["company"] == "Zoi"
 
 
 @patch("src.job_scrapers.ats_detector.requests.get")

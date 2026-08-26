@@ -17,6 +17,7 @@ Supported ATS platforms (i.e. platforms we already have scrapers for):
   teamtailor      *.teamtailor.com or pages with teamtailor-cdn.com assets
   dejobs          *.dejobs.org
   jobboardly      *.jobboardly.com or pages with assets.jobboardly.com
+  recruitee       *.recruitee.com or pages with recruiteecdn.com assets
 
 Returns None for unsupported or unrecognised platforms.
 """
@@ -26,6 +27,8 @@ from typing import Dict, Optional, Tuple
 from urllib.parse import urlparse
 
 import requests
+
+from src.job_scrapers.scraper_generator import _company_label_from_host
 
 # Fingerprints found in page source that identify an ATS even when the URL
 # doesn't make it obvious (e.g. a custom careers subdomain).
@@ -43,26 +46,34 @@ _PAGE_FINGERPRINTS: list = [
     ("dejobs", "dejobs.org"),
     ("dejobs", "jobsyn.org"),
     ("jobboardly", "assets.jobboardly.com"),
+    ("recruitee", "recruiteecdn.com"),
 ]
-
-
-_CAREER_SUBDOMAIN_PREFIXES = r"^(www|jobs|careers|career|work|talent|apply)\."
 
 
 def _teamtailor_company_from_host(host: str) -> str:
     """Derive a display company name from a Teamtailor host.
 
     For {company}.teamtailor.com the subdomain *is* the company slug. For a
-    custom domain (e.g. career.oneflow.com) the leading label is usually a
-    generic careers-page prefix, not the company — strip it and use the
-    registrable domain label instead (oneflow.com -> "Oneflow").
+    custom domain, use the shared label-before-public-suffix heuristic from
+    scraper_generator.py (career.oneflow.com -> "Oneflow", and critically
+    meet.zoi.tech -> "Zoi" rather than "Meet" — "meet" isn't a recognized
+    generic careers-page prefix like "careers"/"jobs", so a naive
+    first-label-after-stripping approach picks the wrong one here).
     """
     if host.endswith(".teamtailor.com"):
         slug = host.split(".")[0]
     else:
-        stripped = re.sub(_CAREER_SUBDOMAIN_PREFIXES, "", host, flags=re.I)
-        parts = stripped.split(".")
-        slug = parts[0] if len(parts) >= 2 else stripped
+        slug = _company_label_from_host(host)
+    return slug.replace("-", " ").replace("_", " ").title()
+
+
+def _recruitee_company_from_host(host: str) -> str:
+    """Derive a display company name from a Recruitee host — see
+    _teamtailor_company_from_host, same logic, different native suffix."""
+    if host.endswith(".recruitee.com"):
+        slug = host.split(".")[0]
+    else:
+        slug = _company_label_from_host(host)
     return slug.replace("-", " ").replace("_", " ").title()
 
 
@@ -139,6 +150,13 @@ def detect_ats(
         return "teamtailor", {
             "career_url": f"{parsed.scheme}://{host}",
             "company": _teamtailor_company_from_host(host),
+        }
+
+    # Recruitee: {company}.recruitee.com
+    if host.endswith(".recruitee.com"):
+        return "recruitee", {
+            "career_url": f"{parsed.scheme}://{host}",
+            "company": _recruitee_company_from_host(host),
         }
 
     # DeJobs: {company}.dejobs.org
@@ -280,6 +298,12 @@ def _extract_config_from_page(
             "company": _teamtailor_company_from_host(host),
         }
 
+    if source_name == "recruitee":
+        return {
+            "career_url": f"{parsed.scheme}://{host}",
+            "company": _recruitee_company_from_host(host),
+        }
+
     if source_name == "dejobs":
         if host.endswith(".dejobs.org"):
             return {"hostname": host, "name": host.split(".")[0], "max_jobs": 500}
@@ -368,6 +392,12 @@ def validate_config(source_name: str, config: Dict, timeout: int = 10) -> bool:
             url = f"{career_url.rstrip('/')}/jobs.json"
             r = requests.get(url, timeout=timeout)
             return r.status_code == 200
+
+        if source_name == "recruitee":
+            career_url = config.get("career_url", "")
+            url = f"{career_url.rstrip('/')}/api/offers/"
+            r = requests.get(url, timeout=timeout)
+            return r.status_code == 200 and bool(r.json().get("offers"))
 
         if source_name == "dejobs":
             hostname = config.get("hostname", "")
