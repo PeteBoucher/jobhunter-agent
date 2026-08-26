@@ -12,10 +12,12 @@ from src.job_scrapers.scraper_generator import (
     _extract_code,
     _extract_html_job_sample,
     _extract_signals,
+    _import_generated_scraper,
     _is_wordpress,
     _load_base_scraper_interface,
     _wp_has_ajax_nonce,
     generate_scraper,
+    run_generated_scraper_check,
 )
 
 # ── Unit tests for helper functions ──────────────────────────────────────────
@@ -140,6 +142,148 @@ def test_load_base_scraper_interface_includes_all_three_methods():
     text = _load_base_scraper_interface()
     for method in ("_get_source_name", "_fetch_jobs", "_parse_job"):
         assert f"def {method}(" in text
+
+
+# ── Live test run of a generated draft ───────────────────────────────────────
+
+_VALID_SCRAPER_SRC = """
+from typing import Any, Dict, List
+
+from src.job_scrapers.base_scraper import BaseScraper
+
+
+class FakeGeneratedScraper(BaseScraper):
+    def _get_source_name(self) -> str:
+        return "fake_generated"
+
+    def _fetch_jobs(self, **kwargs: Any) -> List[Dict[str, Any]]:
+        return [{"id": 1}, {"id": 2}]
+
+    def _parse_job(self, raw_job: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "source_job_id": str(raw_job["id"]),
+            "title": "Engineer",
+            "company": "Acme",
+            "apply_url": "https://acme.example/jobs/" + str(raw_job["id"]),
+        }
+"""
+
+# Same schema-drift bugs the generated Experis scraper actually shipped with:
+# "company_name" instead of "company", and remote as a bool instead of the
+# "remote"/"onsite" string enum.
+_INVALID_SCRAPER_SRC = """
+from typing import Any, Dict, List
+
+from src.job_scrapers.base_scraper import BaseScraper
+
+
+class BuggyGeneratedScraper(BaseScraper):
+    def _get_source_name(self) -> str:
+        return "buggy_generated"
+
+    def _fetch_jobs(self, **kwargs: Any) -> List[Dict[str, Any]]:
+        return [{"id": 1}]
+
+    def _parse_job(self, raw_job: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "source_job_id": str(raw_job["id"]),
+            "title": "Engineer",
+            "company_name": "Acme",
+            "apply_url": "https://acme.example/jobs/1",
+            "remote": True,
+        }
+"""
+
+_EMPTY_FETCH_SCRAPER_SRC = """
+from typing import Any, Dict, List
+
+from src.job_scrapers.base_scraper import BaseScraper
+
+
+class EmptyFetchScraper(BaseScraper):
+    def _get_source_name(self) -> str:
+        return "empty_fetch"
+
+    def _fetch_jobs(self, **kwargs: Any) -> List[Dict[str, Any]]:
+        return []
+
+    def _parse_job(self, raw_job: Dict[str, Any]) -> Dict[str, Any]:
+        return {}
+"""
+
+_NO_SCRAPER_CLASS_SRC = "# just a comment, no scraper class here\n"
+
+
+def test_import_generated_scraper_finds_the_subclass(tmp_path):
+    path = tmp_path / "fake_generated_scraper.py"
+    path.write_text(_VALID_SCRAPER_SRC)
+
+    from src.job_scrapers.base_scraper import BaseScraper
+
+    cls = _import_generated_scraper(str(path))
+    assert cls.__name__ == "FakeGeneratedScraper"
+    assert issubclass(cls, BaseScraper)
+
+
+def test_import_generated_scraper_raises_when_no_subclass_present(tmp_path):
+    path = tmp_path / "empty_scraper.py"
+    path.write_text(_NO_SCRAPER_CLASS_SRC)
+
+    with pytest.raises(ImportError, match="No BaseScraper subclass"):
+        _import_generated_scraper(str(path))
+
+
+@patch("src.database.get_session")
+def test_run_generated_scraper_check_reports_clean_output(mock_get_session, tmp_path):
+    """A well-formed generated scraper fetches, parses, and validates clean —
+    never writes to the database (session.commit is never called)."""
+    mock_session = mock_get_session.return_value
+    path = tmp_path / "fake_generated_scraper.py"
+    path.write_text(_VALID_SCRAPER_SRC)
+
+    result = run_generated_scraper_check(str(path))
+
+    assert result["fetch_error"] is None
+    assert result["n_fetched"] == 2
+    assert result["n_sampled"] == 2
+    assert result["problems"] == []
+    mock_session.commit.assert_not_called()
+    mock_session.close.assert_called_once()
+
+
+@patch("src.database.get_session")
+def test_run_generated_scraper_check_flags_schema_problems(mock_get_session, tmp_path):
+    """The exact bugs the generated Experis scraper shipped with — wrong key
+    name, remote as bool — are caught automatically."""
+    path = tmp_path / "buggy_generated_scraper.py"
+    path.write_text(_INVALID_SCRAPER_SRC)
+
+    result = run_generated_scraper_check(str(path))
+
+    assert result["fetch_error"] is None
+    assert result["n_sampled"] == 1
+    assert len(result["problems"]) == 1
+    _, problems = result["problems"][0]
+    assert any("company_name" in p for p in problems)
+    assert any("remote" in p.lower() for p in problems)
+
+
+@patch("src.database.get_session")
+def test_run_generated_scraper_check_reports_empty_fetch(mock_get_session, tmp_path):
+    path = tmp_path / "empty_fetch_scraper.py"
+    path.write_text(_EMPTY_FETCH_SCRAPER_SRC)
+
+    result = run_generated_scraper_check(str(path))
+
+    assert result["n_fetched"] == 0
+    assert "no jobs" in result["fetch_error"].lower()
+
+
+def test_run_generated_scraper_check_handles_missing_file():
+    """A bad path fails gracefully with a fetch_error, not an exception."""
+    result = run_generated_scraper_check("/nonexistent/path/scraper.py")
+    assert result["fetch_error"] is not None
+    assert result["n_fetched"] == 0
 
 
 # ── Headless-capture candidate confirmation ──────────────────────────────────

@@ -1511,6 +1511,36 @@ def scraper_list(source: Optional[str]) -> None:
         console.print("[dim]No companies found. " "Use [bold]scraper add[/bold].[/dim]")
 
 
+def _run_and_report_generated_scraper_test(output_path: str) -> None:
+    """Run a freshly-generated scraper against the live site and print a
+    report — the automated version of what caught 5 bugs by hand in the
+    generated Experis scraper (wrong field names/types, a mis-read response
+    field, wrong pagination semantics). Never writes to the database."""
+    from src.job_scrapers.scraper_generator import run_generated_scraper_check
+
+    console.print("[dim]Running a live test against the generated scraper…[/dim]")
+    result = run_generated_scraper_check(output_path)
+
+    if result["fetch_error"]:
+        console.print(f"[red]✗ Live test failed:[/red] {result['fetch_error']}")
+        return
+
+    console.print(
+        f"[green]✓[/green] Fetched {result['n_fetched']} job(s), "
+        f"validated {result['n_sampled']} sample(s) against the schema"
+    )
+    if result["problems"]:
+        console.print(
+            "[red bold]⚠ Schema problems found — fix these before "
+            "registering:[/red bold]"
+        )
+        for idx, problems in result["problems"]:
+            for p in problems:
+                console.print(f"  [red]•[/red] sample #{idx}: {p}")
+    else:
+        console.print("[green]✓[/green] No schema problems found in the sample.")
+
+
 @scraper.command("add")
 @click.argument("url", required=False)
 @click.option("--ats", default=None, help="ATS source name (e.g. greenhouse, workday)")
@@ -1586,6 +1616,7 @@ def scraper_add(
                 )
             else:
                 console.print(f"[green]{n_confirmed} endpoint(s) confirmed.[/green]")
+            _run_and_report_generated_scraper_test(output_path)
             console.print(
                 "Review the file, add to [bold]registry.py[/bold], then run pytest."
             )
@@ -1731,8 +1762,15 @@ def scraper_generate(url: str, output: Optional[str], insecure: bool) -> None:
         return
 
     console.print("[dim]Unknown ATS — starting AI-assisted scraper generation…[/dim]")
+    if insecure:
+        console.print(
+            "[yellow]⚠ --insecure: skipping TLS certificate "
+            "verification for this fetch.[/yellow]"
+        )
     try:
-        output_path, n_confirmed = generate_scraper(url, output_path=output)
+        output_path, n_confirmed = generate_scraper(
+            url, output_path=output, insecure=insecure
+        )
         console.print(
             f"[green]✓[/green] Draft scraper written to [bold]{output_path}[/bold]"
         )
@@ -1747,6 +1785,8 @@ def scraper_generate(url: str, output: Optional[str], insecure: bool) -> None:
                 "  The API URL is Claude's best guess from JS analysis only. "
                 "It is likely wrong."
             )
+            console.print()
+            _run_and_report_generated_scraper_test(output_path)
             console.print()
             console.print("[yellow]Next steps:[/yellow]")
             console.print(
@@ -1767,6 +1807,8 @@ def scraper_generate(url: str, output: Optional[str], insecure: bool) -> None:
                 "draft should be a reasonable starting point."
             )
             console.print()
+            _run_and_report_generated_scraper_test(output_path)
+            console.print()
             console.print("[yellow]Next steps:[/yellow]")
             console.print("  1. Review the generated file and fix any issues")
             console.print(
@@ -1776,7 +1818,7 @@ def scraper_generate(url: str, output: Optional[str], insecure: bool) -> None:
             console.print("  3. Run [bold].venv/bin/python -m pytest[/bold]")
             console.print(
                 "  4. Run [bold].venv/bin/job-agent scrape --sources"
-                " <source_name>[/bold] to do a live test"
+                " <source_name>[/bold] to re-verify after any manual fixes"
             )
     except Exception as e:
         console.print(f"[red]✗ Generation failed:[/red] {e}")

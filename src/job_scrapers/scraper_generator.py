@@ -820,3 +820,99 @@ def generate_scraper(
         f"# {confidence}\n\n" + code
     )
     return str(out_path.resolve()), n_confirmed
+
+
+# ── Live test run of a generated draft ──────────────────────────────────────
+
+
+def _import_generated_scraper(path: str) -> type:
+    """Dynamically import a freshly-written scraper file and return its
+    BaseScraper subclass."""
+    import importlib.util
+
+    from src.job_scrapers.base_scraper import BaseScraper
+
+    spec = importlib.util.spec_from_file_location("_generated_scraper_under_test", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load a module spec from {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    for name in dir(module):
+        obj = getattr(module, name)
+        if (
+            isinstance(obj, type)
+            and issubclass(obj, BaseScraper)
+            and obj is not BaseScraper
+        ):
+            return obj
+    raise ImportError(f"No BaseScraper subclass found in {path}")
+
+
+def run_generated_scraper_check(path: str, sample_size: int = 3) -> Dict[str, Any]:
+    """Run a freshly-generated scraper against the live site and validate
+    its output against BaseScraper's documented schema.
+
+    This is the automated version of what caught 5 separate bugs in the
+    generated Experis scraper by hand: a response field read from the wrong
+    path, a pagination parameter with different semantics than assumed, and
+    three schema mismatches (company_name/published_date instead of
+    company/posted_date, remote returned as bool instead of string). Calls
+    `_fetch_jobs()` once, then `_parse_job()` on up to `sample_size` of the
+    results — never `scrape()`/`session.commit()`, so nothing is written to
+    the database.
+
+    Returns a dict:
+        n_fetched: total raw jobs `_fetch_jobs()` returned
+        n_sampled: how many of those were parsed and validated
+        problems: list of (sample_index, [problem strings]); empty if clean
+        fetch_error: description if import/instantiation/`_fetch_jobs()`
+            failed outright, else None
+    """
+    from src.database import get_session
+    from src.job_scrapers.base_scraper import validate_parsed_job
+
+    result: Dict[str, Any] = {
+        "n_fetched": 0,
+        "n_sampled": 0,
+        "problems": [],
+        "fetch_error": None,
+    }
+
+    try:
+        scraper_cls = _import_generated_scraper(path)
+    except Exception as e:
+        result["fetch_error"] = f"Could not import generated scraper: {e}"
+        return result
+
+    session = get_session()
+    try:
+        try:
+            scraper = scraper_cls(session)
+            raw_jobs = scraper._fetch_jobs()
+        except Exception as e:
+            result["fetch_error"] = f"Could not run the generated scraper: {e}"
+            return result
+
+        result["n_fetched"] = len(raw_jobs)
+        if not raw_jobs:
+            result[
+                "fetch_error"
+            ] = "_fetch_jobs() returned no jobs — check the endpoint URL/selectors"
+            return result
+
+        sample = raw_jobs[:sample_size]
+        result["n_sampled"] = len(sample)
+        for i, raw in enumerate(sample):
+            try:
+                parsed = scraper._parse_job(raw)
+            except Exception as e:
+                result["problems"].append((i, [f"_parse_job() raised: {e}"]))
+                continue
+            problems = validate_parsed_job(parsed)
+            if problems:
+                result["problems"].append((i, problems))
+    finally:
+        session.close()
+
+    return result

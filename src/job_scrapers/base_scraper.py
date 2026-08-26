@@ -235,6 +235,10 @@ class BaseScraper(ABC):
         doesn't error, it's just silently discarded — don't spend scraping
         effort computing a value nothing reads.
 
+        `validate_parsed_job()` below checks a returned dict against this
+        schema mechanically — the AI scraper generator runs it against a
+        live sample automatically after generating a draft.
+
         Args:
             raw_job: Raw job data from the source
 
@@ -544,3 +548,89 @@ class BaseScraper(ABC):
             company_size=parsed_data.get("company_size"),
             source_type=parsed_data.get("source_type", "aggregator"),
         )
+
+
+# ── _parse_job() output validation ──────────────────────────────────────────
+#
+# Checks a _parse_job() dict against the schema documented on _parse_job()
+# above — the same problems (wrong key name, wrong type) that were caught by
+# hand in the generated Experis scraper. Kept next to _create_job_object(),
+# the method that actually reads these keys, so the two can't drift apart.
+
+REQUIRED_PARSED_JOB_KEYS = ("source_job_id", "title", "company", "apply_url")
+
+KNOWN_OPTIONAL_PARSED_JOB_KEYS = frozenset(
+    {
+        "department",
+        "location",
+        "remote",
+        "country",
+        "salary_min",
+        "salary_max",
+        "description",
+        "requirements",
+        "nice_to_haves",
+        "posted_date",
+        "company_industry",
+        "company_size",
+        "source_type",
+    }
+)
+
+_VALID_REMOTE_VALUES = frozenset({"remote", "hybrid", "onsite"})
+
+
+def validate_parsed_job(parsed: dict) -> List[str]:
+    """Check a _parse_job() output dict against the documented schema.
+
+    Returns a list of human-readable problem descriptions; an empty list
+    means the dict is valid. Does not require a database or a live scraper
+    instance — pure dict-in, list-out.
+    """
+    problems: List[str] = []
+
+    for key in REQUIRED_PARSED_JOB_KEYS:
+        if not parsed.get(key):
+            problems.append(f"missing or empty required key {key!r}")
+
+    remote = parsed.get("remote")
+    if remote is not None and remote not in _VALID_REMOTE_VALUES:
+        problems.append(
+            f'"remote" must be "remote"/"hybrid"/"onsite"/None, got '
+            f"{remote!r} ({type(remote).__name__}) — job_matcher.py and "
+            "job_searcher.py compare it against these exact strings"
+        )
+
+    posted_date = parsed.get("posted_date")
+    if posted_date is not None and not isinstance(posted_date, datetime):
+        problems.append(
+            '"posted_date" must be a datetime object or None, got '
+            f"{type(posted_date).__name__} — SQLAlchemy's DateTime column "
+            "expects one, not an ISO string"
+        )
+
+    for key in ("salary_min", "salary_max"):
+        val = parsed.get(key)
+        if val is not None and not isinstance(val, (int, float)):
+            problems.append(
+                f'"{key}" must be a number or None, got {type(val).__name__}'
+            )
+
+    if "employment_type" in parsed:
+        problems.append(
+            '"employment_type" is not a Job model field — it is silently '
+            "discarded by _create_job_object(), don't spend scraping effort "
+            "computing it"
+        )
+
+    unknown = (
+        set(parsed) - set(REQUIRED_PARSED_JOB_KEYS) - KNOWN_OPTIONAL_PARSED_JOB_KEYS
+    )
+    if unknown:
+        problems.append(
+            f"unknown key(s) not read by _create_job_object(): {sorted(unknown)} "
+            "— check for a typo against the canonical name (e.g. company_name "
+            "instead of company, published_date instead of posted_date)"
+        )
+
+    return problems
