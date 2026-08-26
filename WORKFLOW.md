@@ -156,6 +156,7 @@ Check deploy status at the Render and Vercel dashboards.
 ### Receiving feedback
 
 Beta users give feedback via:
+
 - Direct messages (WhatsApp, email, etc.)
 - GitHub Issues (preferred for tracking — ask users to open one)
 
