@@ -23,6 +23,25 @@ To add a new company: find their Recruitee career URL (look for
 'recruiteecdn.com' or "recruitee" in page source), verify the
 /api/offers/ endpoint works, then add a RecruiteeBoard entry to
 DEFAULT_BOARDS below.
+
+Most of the companies below were sourced from Recruitee's own customer
+list (recruitee.com/customer-success-stories) and confirmed live by
+guessing the default {slug}.recruitee.com subdomain — the platform default
+before a company points a custom domain at it. Several customer-list
+companies (Ströer X, SPECTO, Sword Group, Equalture, Incentro, Teamleader,
+Origin Materials, Heras, Mopinion, Makerstreet, Slingshot Group) did NOT
+resolve on the guessable subdomain pattern; they likely use a custom
+domain that would need individual lookup to find, same as bunq/Zoi.
+
+bunq is a special case: its public careers page (careers.bunq.com) is a
+custom Framer-built UI with zero Recruitee branding or fingerprints in the
+page source, so ats_detector.py can't and won't ever detect it — but
+bunq.recruitee.com serves the identical 10 jobs (same titles, same
+careers_url pointing back to careers.bunq.com), confirming the Framer
+front-end is just a skin over the same Recruitee backend. Listed here
+instead of a hand-rolled HTML scraper for that reason: it's simpler and
+gives richer structured data (full city/region/country, reliable
+descriptions) than scraping the custom front-end ever could.
 """
 
 import logging
@@ -51,6 +70,54 @@ DEFAULT_BOARDS: List[RecruiteeBoard] = [
     RecruiteeBoard(
         company="Zoi",
         career_url="https://meet.zoi.tech",
+    ),
+    RecruiteeBoard(
+        company="bunq",
+        career_url="https://bunq.recruitee.com",
+    ),
+    RecruiteeBoard(
+        company="Keolis",
+        career_url="https://keolis.recruitee.com",
+    ),
+    RecruiteeBoard(
+        company="Pret A Manger",
+        career_url="https://pretamanger.recruitee.com",
+    ),
+    RecruiteeBoard(
+        company="Livestorm",
+        career_url="https://livestorm.recruitee.com",
+    ),
+    RecruiteeBoard(
+        company="Van Cranenbroek",
+        career_url="https://vancranenbroek.recruitee.com",
+    ),
+    RecruiteeBoard(
+        company="Woonzorg Flevoland",
+        career_url="https://woonzorgflevoland.recruitee.com",
+    ),
+    RecruiteeBoard(
+        company="Betty Blocks",
+        career_url="https://bettyblocks.recruitee.com",
+    ),
+    RecruiteeBoard(
+        company="CM.com",
+        career_url="https://cmcom.recruitee.com",
+    ),
+    RecruiteeBoard(
+        company="Greenpeace CEE",
+        career_url="https://greenpeacecee.recruitee.com",
+    ),
+    RecruiteeBoard(
+        company="Sircle Collection",
+        career_url="https://sirclecollection.recruitee.com",
+    ),
+    RecruiteeBoard(
+        company="Solutions 4 Delivery",
+        career_url="https://solutions4delivery.recruitee.com",
+    ),
+    RecruiteeBoard(
+        company="Trusted Shops",
+        career_url="https://trustedshops.recruitee.com",
     ),
 ]
 
@@ -131,8 +198,10 @@ class RecruiteeScraper(BaseScraper):
         remote = _parse_remote(raw_job)
 
         salary = raw_job.get("salary") or {}
-        salary_min = salary.get("min")
-        salary_max = salary.get("max")
+        period = salary.get("period")
+        hours_per_week = raw_job.get("max_hours") or raw_job.get("min_hours")
+        salary_min = _annual_salary(salary.get("min"), period, hours_per_week)
+        salary_max = _annual_salary(salary.get("max"), period, hours_per_week)
 
         posted_date = _parse_date(raw_job.get("published_at"))
 
@@ -169,6 +238,42 @@ def _parse_remote(offer: Dict[str, Any]) -> Optional[str]:
     if offer.get("on_site"):
         return "onsite"
     return None
+
+
+_SALARY_PERIOD_MULTIPLIERS = {"year": 1, "month": 12, "week": 52, "day": 260}
+
+
+def _annual_salary(
+    value: Any, period: Optional[str], hours_per_week: Any
+) -> Optional[float]:
+    """Convert a Recruitee salary figure to an approximate annual amount.
+
+    salary.min/max come back as numeric strings (e.g. "2500", "3592.96"),
+    not numbers — found live on Van Cranenbroek/Woonzorg Flevoland/Keolis
+    (Zoi's own postings never set a salary, so this went unnoticed until
+    scraping companies that do). salary.period also varies ("month" for
+    most, "hour" for Keolis's transport roles) — every other salary_min/
+    salary_max in this codebase is an implicitly annual figure (see
+    adzuna_scraper.py, whose API always returns annual), so storing a raw
+    monthly/hourly number as-is would silently corrupt salary matching.
+    Hourly rates are annualized using the posting's own hours-per-week
+    when available, falling back to a 40-hour full-time assumption.
+    """
+    if value in (None, ""):
+        return None
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return None
+
+    period = (period or "year").lower()
+    if period == "hour":
+        try:
+            hours = float(hours_per_week) if hours_per_week else 40.0
+        except (TypeError, ValueError):
+            hours = 40.0
+        return amount * hours * 52
+    return amount * _SALARY_PERIOD_MULTIPLIERS.get(period, 1)
 
 
 def _parse_date(date_str: Optional[str]) -> datetime:

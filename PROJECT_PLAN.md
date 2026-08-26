@@ -46,7 +46,7 @@ An automated job search and application tracking system. It continuously scrapes
 | SmartRecruiters | ATS platform | Bet365, Playtech, Evolution, Sportradar, EPAM, Ciklum |
 | BambooHR | ATS platform | Various |
 | Teamtailor | ATS platform | The Workshop (Málaga) |
-| Recruitee | ATS platform | Zoi — career-site-builder product, works on custom domains too (`meet.zoi.tech`), not just `*.recruitee.com` |
+| Recruitee | ATS platform | Zoi, bunq, Keolis, Pret A Manger, Livestorm, Van Cranenbroek, Woonzorg Flevoland, Betty Blocks, CM.com, Greenpeace CEE, Sircle Collection, Solutions 4 Delivery, Trusted Shops — career-site-builder product; some on custom domains (`meet.zoi.tech`, `careers.bunq.com`), most on `{company}.recruitee.com` |
 | Workable | ATS platform | Public `apply.workable.com/{slug}` API, no auth |
 | DeJobs | ATS/job-board platform | `{slug}.dejobs.org` microsites, shared Solr search API across tenants |
 | Jobboardly | White-label job board | Multi-tenant, `{subdomain}.jobboardly.com`; jobs link out to each company's own ATS |
@@ -62,7 +62,6 @@ An automated job search and application tracking system. It continuously scrapes
 | Innova-IRV | Direct | Microelectronics research institute, Málaga |
 | TKH Security | Direct | Netherlands; WordPress wombat-career plugin HTML scrape |
 | Experis | Direct | ManpowerGroup IT staffing/consulting (Spain); confirmed live JSON API |
-| bunq | Direct | Netherlands neobank; Framer-built site, static HTML with per-job detail pages |
 
 #### Matching algorithm
 
