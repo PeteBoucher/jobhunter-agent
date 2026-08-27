@@ -20,6 +20,8 @@ logger = logging.getLogger("jobhunter.scrapers.lever")
 
 # Companies using Lever with confirmed public job boards.
 DEFAULT_COMPANY_SLUGS = [
+    # Data & analytics
+    "palantir",
     # QA / testing tooling
     "browserstack",
     "saucelabs",

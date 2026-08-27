@@ -39,15 +39,15 @@ An automated job search and application tracking system. It continuously scrapes
 
 | Source | Type | Notable companies |
 | --- | --- | --- |
-| Greenhouse | ATS platform | Cloudflare, Airbnb, Figma, Adyen, Ebury, Lottoland, Kambi, Cabify, and ~20 more |
-| Lever | ATS platform | Spotify, Palantir, and more |
+| Greenhouse | ATS platform | Anthropic, Cloudflare, Airbnb, Figma, Adyen, Ebury, Lottoland, Kambi, Cabify, and ~20 more |
+| Lever | ATS platform | Palantir, Spotify, and more |
 | Ashby | ATS platform | OpenAI, Notion, Deel, ElevenLabs, Synthesia, Cursor, Perplexity, Mollie, and ~30 more |
-| Workday | ATS platform | Accenture (500), GSK (500), Adobe (500), Netflix (500), AstraZeneca (500), Airbus (500), Maersk (500), BP (400), Unilever (400), Shell (200), Solera (250), Betway, Flutter |
+| Workday | ATS platform | Accenture (500), GSK (500), Adobe (500), AstraZeneca (500), Airbus (500), Maersk (500), BP (400), Unilever (400), Shell (200), Solera (250), Betway, Flutter |
 | SmartRecruiters | ATS platform | Bet365, Playtech, Evolution, Sportradar, EPAM, Ciklum |
 | BambooHR | ATS platform | Various |
-| Teamtailor | ATS platform | The Workshop (Málaga) |
+| Teamtailor | ATS platform | Oatly, Hedvig, Storytel, The Workshop (Málaga) |
 | Recruitee | ATS platform | Zoi, bunq, Keolis, Pret A Manger, Livestorm, Van Cranenbroek, Woonzorg Flevoland, Betty Blocks, CM.com, Greenpeace CEE, Sircle Collection, Solutions 4 Delivery, Trusted Shops — career-site-builder product; some on custom domains (`meet.zoi.tech`, `careers.bunq.com`), most on `{company}.recruitee.com` |
-| Workable | ATS platform | Public `apply.workable.com/{slug}` API, no auth |
+| Workable | ATS platform | Rentokil Initial; public `apply.workable.com/{slug}` API, no auth |
 | DeJobs | ATS/job-board platform | `{slug}.dejobs.org` microsites, shared Solr search API across tenants |
 | Jobboardly | White-label job board | Multi-tenant, `{subdomain}.jobboardly.com`; jobs link out to each company's own ATS |
 | Adzuna | Aggregator | 13 countries; terms and countries from user preferences |

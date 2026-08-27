@@ -30,6 +30,8 @@ COMPANY_NAMES: Dict[str, str] = {
 # Companies using Greenhouse with confirmed public job boards.
 # Covers a broad range of industries to serve diverse user profiles.
 DEFAULT_BOARD_TOKENS = [
+    # AI & ML
+    "anthropic",
     # iGaming & sports betting
     "lottoland",
     "geniussports",

@@ -39,13 +39,15 @@ Jobs are scraped once into a shared pool. Each user has their own profile, match
 
 | Scraper | Companies covered | Notes |
 | --- | --- | --- |
-| **Greenhouse** | Cloudflare, Airbnb, Figma, Discord, Adyen, Ebury, Lottoland, Kambi, Rush Street Interactive, Genius Sports, Fanatics, Cabify, and ~20 more | `boards-api.greenhouse.io` |
-| **Lever** | Spotify, Palantir, Plaid, and more | `jobs.lever.co` |
-| **Ashby** | OpenAI, Notion, Deel, ElevenLabs, Synthesia, Cursor, Perplexity, Mollie, Paddle, and ~30 more | `api.ashbyhq.com` |
-| **Workday** | Accenture, Airbus, GSK, Adobe, Netflix, AstraZeneca, Maersk, BP, Unilever, Shell, Betway, Flutter Entertainment, Solera Holdings | Per-portal cap; large portals (Accenture, GSK…) scrape up to 500 jobs/run |
+| **Greenhouse** | Anthropic, Cloudflare, Airbnb, Figma, Discord, Adyen, Ebury, Lottoland, Kambi, Rush Street Interactive, Genius Sports, Fanatics, Cabify, and ~20 more | `boards-api.greenhouse.io` |
+| **Lever** | Palantir, Spotify, and more | `jobs.lever.co` |
+| **Ashby** | OpenAI, Notion, Deel, ElevenLabs, Synthesia, Cursor, Perplexity, Mollie, Paddle, Plaid, and ~30 more | `api.ashbyhq.com` |
+| **Workday** | Accenture, Airbus, GSK, Adobe, AstraZeneca, Maersk, BP, Unilever, Shell, Betway, Flutter Entertainment, Solera Holdings | Per-portal cap; large portals (Accenture, GSK…) scrape up to 500 jobs/run |
 | **SmartRecruiters** | Bet365, Playtech, Evolution, Sportradar, EPAM Systems, Ciklum | `api.smartrecruiters.com` |
 | **BambooHR** | Various | `api.bamboohr.com` |
-| **Teamtailor** | The Workshop | `/jobs.json` JSON Feed; Schema.org location data |
+| **Teamtailor** | Oatly, Hedvig, Storytel, The Workshop | `/jobs.json` JSON Feed; Schema.org location data |
+| **Recruitee** | Zoi, bunq, Keolis, Trusted Shops, CM.com, and 8 more | `/api/offers/` JSON API; works on custom domains too |
+| **Workable** | Rentokil Initial, 360dialog | `apply.workable.com/api/v3` |
 
 ### Job boards / aggregators
 

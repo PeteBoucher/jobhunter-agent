@@ -42,6 +42,18 @@ DEFAULT_BOARDS: List[TeamtailorBoard] = [
         company="The Workshop",
         career_url="https://careers.theworkshop.com",
     ),
+    TeamtailorBoard(
+        company="Oatly",
+        career_url="https://oatly.teamtailor.com",
+    ),
+    TeamtailorBoard(
+        company="Hedvig",
+        career_url="https://hedvig.teamtailor.com",
+    ),
+    TeamtailorBoard(
+        company="Storytel",
+        career_url="https://storytel.teamtailor.com",
+    ),
 ]
 
 

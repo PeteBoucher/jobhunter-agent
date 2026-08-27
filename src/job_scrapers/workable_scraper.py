@@ -42,6 +42,7 @@ class WorkableCompany:
 
 DEFAULT_COMPANIES: List[WorkableCompany] = [
     WorkableCompany(slug="360dialog-gmbh", name="360dialog"),
+    WorkableCompany(slug="rentokil-initial", name="Rentokil Initial"),
 ]
 
 
