@@ -1,6 +1,6 @@
 """Tests for the AI-assisted scraper generator."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -15,6 +15,7 @@ from src.job_scrapers.scraper_generator import (
     _import_generated_scraper,
     _is_wordpress,
     _load_base_scraper_interface,
+    _request_to_dict,
     _wp_has_ajax_nonce,
     generate_scraper,
     run_generated_scraper_check,
@@ -331,6 +332,71 @@ def test_run_generated_scraper_check_handles_missing_file():
     result = run_generated_scraper_check("/nonexistent/path/scraper.py")
     assert result["fetch_error"] is not None
     assert result["n_fetched"] == 0
+
+
+# ── Per-request capture (network event -> dict) ──────────────────────────────
+
+
+def _mock_request(
+    resource_type="xhr", url="https://example.com/api/jobs", method="GET"
+):
+    req = MagicMock()
+    req.resource_type = resource_type
+    req.url = url
+    req.method = method
+    return req
+
+
+def test_request_to_dict_captures_xhr_and_fetch():
+    for rtype in ("xhr", "fetch"):
+        req = _mock_request(resource_type=rtype)
+        req.post_data = None
+        info = _request_to_dict(req)
+        assert info == {
+            "url": "https://example.com/api/jobs",
+            "method": "GET",
+            "post_data": None,
+        }
+
+
+def test_request_to_dict_ignores_non_xhr_fetch_resource_types():
+    for rtype in ("document", "script", "stylesheet", "image", "font"):
+        req = _mock_request(resource_type=rtype)
+        assert _request_to_dict(req) is None
+
+
+def test_request_to_dict_includes_post_data_when_readable():
+    req = _mock_request(method="POST")
+    req.post_data = '{"query": "engineer"}'
+    info = _request_to_dict(req)
+    assert info["post_data"] == '{"query": "engineer"}'
+
+
+class _RaisingPostDataRequest:
+    """A plain (non-MagicMock) request double whose post_data property
+    raises — mutating a MagicMock's *class* to add a raising property would
+    leak onto the shared MagicMock type and break unrelated tests."""
+
+    resource_type = "xhr"
+    url = "https://example.com/api/jobs"
+    method = "POST"
+
+    @property
+    def post_data(self) -> str:
+        raise UnicodeDecodeError("utf-8", b"\x1f\x8b", 1, 2, "invalid start byte")
+
+
+def test_request_to_dict_drops_post_data_on_decode_failure():
+    """Binary (e.g. gzip-compressed) POST bodies make Playwright's
+    post_data property raise UnicodeDecodeError — this must not propagate
+    and must not lose the rest of the request's info (seen live on
+    careers.nebius.com, where it crashed the entire headless capture)."""
+    info = _request_to_dict(_RaisingPostDataRequest())
+    assert info == {
+        "url": "https://example.com/api/jobs",
+        "method": "POST",
+        "post_data": None,
+    }
 
 
 # ── Headless-capture candidate confirmation ──────────────────────────────────

@@ -235,6 +235,28 @@ _IGNORED_NETWORK_HOST_RE = re.compile(
 )
 
 
+def _request_to_dict(req: Any) -> Optional[Dict[str, Any]]:
+    """Build a {"url", "method", "post_data"} dict from a Playwright Request,
+    or None if it's not an XHR/fetch call worth keeping.
+
+    req.post_data UTF-8-decodes the raw body internally; a binary (e.g.
+    gzip-compressed) payload raises UnicodeDecodeError there. Playwright's
+    sync API dispatches request events through a greenlet, so an exception
+    from inside this callback doesn't propagate as a normal Python
+    exception to the caller — it aborts the whole capture instead of just
+    this one request (seen live on careers.nebius.com). post_data is only
+    used to show Claude an API's request shape, so it's dropped for that
+    one request rather than losing the capture.
+    """
+    if req.resource_type not in ("xhr", "fetch"):
+        return None
+    try:
+        post_data = req.post_data
+    except Exception:
+        post_data = None
+    return {"url": req.url, "method": req.method, "post_data": post_data}
+
+
 def _capture_network_requests(
     url: str, timeout: int = 25, verify: bool = True
 ) -> List[Dict[str, Any]]:
@@ -250,7 +272,7 @@ def _capture_network_requests(
     from playwright.sync_api import sync_playwright
 
     captured: List[Dict[str, Any]] = []
-    seen_urls = set()
+    seen_urls: set = set()
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -265,15 +287,12 @@ def _capture_network_requests(
             page = context.new_page()
 
             def on_request(req: Any) -> None:
-                if req.resource_type in ("xhr", "fetch") and req.url not in seen_urls:
+                if req.url in seen_urls:
+                    return
+                info = _request_to_dict(req)
+                if info is not None:
                     seen_urls.add(req.url)
-                    captured.append(
-                        {
-                            "url": req.url,
-                            "method": req.method,
-                            "post_data": req.post_data,
-                        }
-                    )
+                    captured.append(info)
 
             page.on("request", on_request)
             try:

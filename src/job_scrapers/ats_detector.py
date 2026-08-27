@@ -4,15 +4,23 @@ Given a URL (or a careers page URL), returns the source_name and a config dict
 suitable for inserting into the scraper_config table.
 
 Detection is URL-pattern-first; for ambiguous URLs a page fetch checks CSP
-headers, script src tags, and page content for known ATS fingerprints.
+headers, script src tags, and page content for known ATS fingerprints. As a
+last resort, custom-domain sites that proxy an ATS server-side (so nothing
+ATS-specific ever reaches client-visible HTML/JS) are caught by a blind
+probe: guess a company slug from the hostname, hit that ATS's public API
+directly, and see if it responds with real data. See _probe_smartrecruiters
+and _probe_greenhouse.
 
 Supported ATS platforms (i.e. platforms we already have scrapers for):
 
-  greenhouse      boards.greenhouse.io / job-boards.greenhouse.io
+  greenhouse      boards.greenhouse.io / job-boards.greenhouse.io, or a
+                  custom-domain site whose hostname-derived slug resolves
+                  as a board token (blind probe)
   lever           jobs.lever.co / lever.co
   ashby           app.ashbyhq.com / jobs.ashbyhq.com
   workday         *.wd{N}.myworkdayjobs.com
-  smartrecruiters jobs.smartrecruiters.com / smartrecruiters.com/…
+  smartrecruiters jobs.smartrecruiters.com / smartrecruiters.com/…, or a
+                  custom-domain site (blind probe)
   workable        apply.workable.com
   teamtailor      *.teamtailor.com or pages with teamtailor-cdn.com assets
   dejobs          *.dejobs.org
@@ -208,7 +216,26 @@ def detect_ats(
             "display_name": sr_id.capitalize(),
         }
 
+    # Greenhouse blind probe — handles custom front-ends (often Next.js)
+    # that fetch from Greenhouse server-side during SSR, leaving no board
+    # token anywhere client-visible (e.g. careers.nebius.com → "nebius").
+    gh_token = _probe_greenhouse(host, timeout=timeout)
+    if gh_token:
+        return "greenhouse", {"token": gh_token}
+
     return None
+
+
+def _slug_from_hostname(hostname: str) -> str:
+    """Derive a plausible ATS company slug from a careers-page hostname —
+    strip generic careers-page subdomain prefixes and the TLD, e.g.
+    "careers.nebius.com" -> "nebius", "www.sixt.jobs" -> "sixt".
+    """
+    slug = re.sub(r"^(www|jobs|careers|work|talent|apply)\.", "", hostname)
+    slug = re.sub(r"\.(com|io|org|net|co|uk|jobs|careers|app|us)$", "", slug)
+    if "." in slug:
+        slug = slug.split(".")[-1]
+    return slug.lower()
 
 
 def _probe_smartrecruiters(hostname: str, timeout: int = 8) -> Optional[str]:
@@ -217,11 +244,7 @@ def _probe_smartrecruiters(hostname: str, timeout: int = 8) -> Optional[str]:
     Returns the working company_id (lowercase slug) or None.
     Handles custom-domain careers sites that proxy SR without exposing it in HTML.
     """
-    slug = re.sub(r"^(www|jobs|careers|work|talent|apply)\.", "", hostname)
-    slug = re.sub(r"\.(com|io|org|net|co|uk|jobs|careers|app|us)$", "", slug)
-    if "." in slug:
-        slug = slug.split(".")[-1]
-    slug = slug.lower()
+    slug = _slug_from_hostname(hostname)
     if not slug:
         return None
 
@@ -233,6 +256,36 @@ def _probe_smartrecruiters(hostname: str, timeout: int = 8) -> Optional[str]:
                 timeout=timeout,
             )
             if resp.status_code == 200 and resp.json().get("content"):
+                return candidate
+        except Exception:
+            pass
+    return None
+
+
+def _probe_greenhouse(hostname: str, timeout: int = 8) -> Optional[str]:
+    """Try the Greenhouse public Job Board API with a slug derived from the
+    hostname. Returns the working board token or None.
+
+    Handles custom-domain careers sites (often Next.js/React front-ends)
+    that fetch from Greenhouse server-side during SSR and never expose
+    boards-api.greenhouse.io, boards.greenhouse.io, or a board token
+    anywhere in client-visible HTML/JS — found live on careers.nebius.com,
+    where the only client-visible Greenhouse signal at all is
+    greenhouse.io/ai_opt_out_request links, which carry a job ID, not the
+    board token. Same blind-guess idea as _probe_smartrecruiters: most
+    companies use their own name as their board token.
+    """
+    slug = _slug_from_hostname(hostname)
+    if not slug:
+        return None
+
+    for candidate in [slug, slug.replace("-", "")]:
+        try:
+            resp = requests.get(
+                f"https://boards-api.greenhouse.io/v1/boards/{candidate}/jobs",
+                timeout=timeout,
+            )
+            if resp.status_code == 200 and resp.json().get("jobs"):
                 return candidate
         except Exception:
             pass

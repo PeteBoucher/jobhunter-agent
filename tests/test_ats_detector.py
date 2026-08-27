@@ -4,7 +4,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.job_scrapers.ats_detector import _probe_smartrecruiters, detect_ats
+from src.job_scrapers.ats_detector import (
+    _probe_greenhouse,
+    _probe_smartrecruiters,
+    detect_ats,
+)
 
 # ── URL pattern tests ─────────────────────────────────────────────────────────
 
@@ -213,3 +217,77 @@ def test_probe_smartrecruiters_returns_none_on_404():
         mock_get.return_value = mock_resp
 
         assert _probe_smartrecruiters("www.unknown-site.com") is None
+
+
+@patch("src.job_scrapers.ats_detector.requests.get")
+@patch("src.job_scrapers.ats_detector._probe_smartrecruiters", return_value=None)
+def test_detect_ats_greenhouse_blind_probe(mock_sr_probe, mock_get):
+    """Custom-domain site (Next.js SSR proxy) detected via blind Greenhouse
+    probe; no board token anywhere in client-visible HTML — the exact shape
+    of careers.nebius.com, whose only client-visible Greenhouse signal is
+    ai_opt_out_request links that carry a job ID, not the board token.
+    SmartRecruiters probing (tried first) is stubbed out here so the mocked
+    requests.get calls are only about the Greenhouse path being tested."""
+    page_resp = MagicMock()
+    page_resp.text = (
+        "<html><body>Careers at Nebius"
+        '<a href="https://greenhouse.io/ai_opt_out_request/job_post/123/ai_opt_out">'
+        "opt out</a></body></html>"
+    )
+    page_resp.headers = {}
+
+    gh_resp = MagicMock()
+    gh_resp.status_code = 200
+    gh_resp.json.return_value = {"jobs": [{"title": "Some Job"}]}
+
+    mock_get.side_effect = [page_resp, gh_resp]
+
+    result = detect_ats("https://careers.nebius.com/", fetch_page=True)
+    assert result is not None
+    source_name, config = result
+    assert source_name == "greenhouse"
+    assert config["token"] == "nebius"
+
+
+@pytest.mark.parametrize(
+    "hostname, expected_slug",
+    [
+        ("careers.nebius.com", "nebius"),
+        ("jobs.acme.com", "acme"),
+        ("careers.revolut.com", "revolut"),
+    ],
+)
+def test_probe_greenhouse_slug_derivation(hostname, expected_slug):
+    """_probe_greenhouse derives the correct slug from the hostname."""
+    with patch("src.job_scrapers.ats_detector.requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"jobs": [{"title": "Job"}]}
+        mock_get.return_value = mock_resp
+
+        result = _probe_greenhouse(hostname)
+        assert result == expected_slug
+        first_url = mock_get.call_args_list[0][0][0]
+        assert expected_slug in first_url
+
+
+def test_probe_greenhouse_returns_none_on_empty_response():
+    """_probe_greenhouse returns None when the API returns no jobs."""
+    with patch("src.job_scrapers.ats_detector.requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"jobs": []}
+        mock_get.return_value = mock_resp
+
+        assert _probe_greenhouse("www.unknown-site.com") is None
+
+
+def test_probe_greenhouse_returns_none_on_404():
+    """_probe_greenhouse returns None when the API returns 404."""
+    with patch("src.job_scrapers.ats_detector.requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 404
+        mock_resp.json.return_value = {}
+        mock_get.return_value = mock_resp
+
+        assert _probe_greenhouse("www.unknown-site.com") is None
