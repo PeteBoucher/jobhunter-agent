@@ -1,5 +1,7 @@
 # Jobhunter
 
+[![CI](https://github.com/PeteBoucher/jobhunter-agent/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/PeteBoucher/jobhunter-agent/actions/workflows/ci.yml)
+
 A hosted web app + CLI tool that scrapes job listings, scores them against your CV, and tracks your applications. Free to use — sign in with Google to get started.
 
 ## Architecture
