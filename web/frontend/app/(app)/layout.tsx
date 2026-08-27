@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import posthog from "posthog-js";
+import { GitHubIcon } from "@/components/GitHubIcon";
 
 const navLinks = [
   { href: "/feed", label: "Jobs" },
@@ -42,8 +43,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <div className="flex h-dvh overflow-hidden">
       {/* Sidebar — desktop only */}
       <aside className="hidden md:flex w-56 shrink-0 border-r border-gray-200 bg-white flex-col">
-        <div className="px-6 py-5 border-b border-gray-100">
+        <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
           <span className="text-lg font-bold text-blue-600">Jobhunter</span>
+          <a
+            href="https://github.com/PeteBoucher/jobhunter-agent"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="View source on GitHub"
+            className="text-gray-400 hover:text-gray-900 transition-colors"
+          >
+            <GitHubIcon className="h-4 w-4" />
+          </a>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
           {navLinks.map((link) => {
@@ -93,13 +103,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Mobile top bar */}
         <header className="md:hidden flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 shrink-0">
           <span className="text-lg font-bold text-blue-600">Jobhunter</span>
-          {session.user?.image && (
-            <img
-              src={session.user.image}
-              alt="avatar"
-              className="h-8 w-8 rounded-full"
-            />
-          )}
+          <div className="flex items-center gap-3">
+            <a
+              href="https://github.com/PeteBoucher/jobhunter-agent"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="View source on GitHub"
+              className="text-gray-400 hover:text-gray-900 transition-colors"
+            >
+              <GitHubIcon className="h-5 w-5" />
+            </a>
+            {session.user?.image && (
+              <img
+                src={session.user.image}
+                alt="avatar"
+                className="h-8 w-8 rounded-full"
+              />
+            )}
+          </div>
         </header>
 
         <main className="flex-1 overflow-auto">{children}</main>

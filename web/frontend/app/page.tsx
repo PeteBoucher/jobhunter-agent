@@ -3,6 +3,7 @@
 import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import { GitHubIcon } from "@/components/GitHubIcon";
 
 export default function LandingPage() {
   const { data: session, status } = useSession();
@@ -27,12 +28,23 @@ export default function LandingPage() {
       {/* Nav */}
       <nav className="flex items-center justify-between px-6 py-4 max-w-5xl mx-auto">
         <span className="text-xl font-bold text-blue-600">Jobhunter</span>
-        <button
-          onClick={() => signIn("google", { callbackUrl: "/" })}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-        >
-          Sign in
-        </button>
+        <div className="flex items-center gap-4">
+          <a
+            href="https://github.com/PeteBoucher/jobhunter-agent"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="View source on GitHub"
+            className="text-gray-500 hover:text-gray-900 transition-colors"
+          >
+            <GitHubIcon />
+          </a>
+          <button
+            onClick={() => signIn("google", { callbackUrl: "/" })}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+          >
+            Sign in
+          </button>
+        </div>
       </nav>
 
       {/* Hero */}
