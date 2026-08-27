@@ -38,6 +38,19 @@ def test_scraper_list_shows_hardcoded_defaults(runner):
     assert "hardcoded" in result.output
 
 
+def test_scraper_list_includes_every_multi_company_scraper(runner):
+    """Regression: recruitee (13 boards) and jobboardly (1 board) were
+    missing from `scraper list`'s hand-maintained hardcoded-defaults
+    enumeration — added when those scrapers were, undercounting the real
+    total. Every scraper module that defines a DEFAULT_BOARDS/
+    DEFAULT_COMPANIES-style constant must have a matching _hc() call in
+    cli.py's scraper_list."""
+    result = runner.invoke(cli, ["scraper", "list"])
+    assert result.exit_code == 0
+    assert "recruitee" in result.output
+    assert "jobboardly" in result.output
+
+
 def test_scraper_list_shows_row_after_insert(runner, tmp_path):
     """A row inserted into scraper_config appears in `scraper list` output."""
     from src.database import get_session
