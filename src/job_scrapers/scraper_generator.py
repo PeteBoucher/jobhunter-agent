@@ -323,6 +323,30 @@ def _capture_network_requests(
     return same_site
 
 
+_BOT_CHALLENGE_RE = re.compile(
+    r"interrogation|captcha|datadome|perimeterx|_px\d?|challenge.?response",
+    re.I,
+)
+
+
+def _looks_like_bot_challenge(url: str, post_data: Optional[str]) -> bool:
+    """A captured request whose URL or body looks like a bot-detection
+    challenge/response exchange, not a real data API.
+
+    Found live on an InfoJobs company microsite: a POST body shaped like
+    {"solution":{"interrogation":{...}}} replayed successfully via plain
+    requests — the captured solution is still valid for a short window
+    right after a real browser solves it, which made this look like a
+    normal "confirmed" endpoint. It isn't: a static scraper can never
+    generate a fresh solution to a new interrogation, so treating this as
+    a stable API gives false confidence. Excluding it here means the
+    generator honestly reports low confidence instead of "confirmed" on
+    any future site using a similar (or the same vendor's) challenge.
+    """
+    haystack = url + (post_data or "")
+    return bool(_BOT_CHALLENGE_RE.search(haystack))
+
+
 def _confirm_network_candidates(
     candidates: List[Dict[str, Any]], timeout: int = 8, verify: bool = True
 ) -> List[Dict[str, Any]]:
@@ -333,6 +357,8 @@ def _confirm_network_candidates(
         method = (c.get("method") or "GET").upper()
         url = c["url"]
         post_data = c.get("post_data")
+        if _looks_like_bot_challenge(url, post_data):
+            continue
         headers = {**_HEADERS, "Accept": "application/json"}
         try:
             if method == "POST":
@@ -388,6 +414,23 @@ _EXTERNAL_JOB_PLATFORMS = [
         "Glassdoor",
         "Glassdoor jobs cannot be scraped directly. "
         "Check if the company posts on a supported ATS.",
+    ),
+    (
+        re.compile(r"infojobs\.net", re.I),
+        "InfoJobs",
+        "InfoJobs (Spain's largest job board) gates its listings behind a "
+        'JS-computed bot-detection challenge — an "interrogation"/'
+        '"solution" request-response pair that only a real browser can '
+        "solve, even for a company's own branded microsite (e.g. "
+        "{company}.ofertas-trabajo.infojobs.net). A captured solution "
+        "replays successfully for a short window (which is why the "
+        'generator\'s headless capture can misreport it as a "confirmed" '
+        "endpoint), but a static scraper can never generate a fresh one, "
+        "so it's not actually scrapable. Building a bypass would mean "
+        "circumventing deliberate anti-bot protection, not working around "
+        "an obscure-but-open API — treated the same as LinkedIn/Indeed/"
+        "Glassdoor above. Check if the company also posts on a supported "
+        "ATS instead.",
     ),
 ]
 

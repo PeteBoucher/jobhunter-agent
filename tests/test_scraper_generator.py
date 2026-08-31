@@ -15,6 +15,7 @@ from src.job_scrapers.scraper_generator import (
     _import_generated_scraper,
     _is_wordpress,
     _load_base_scraper_interface,
+    _looks_like_bot_challenge,
     _request_to_dict,
     _wp_has_ajax_nonce,
     generate_scraper,
@@ -461,6 +462,48 @@ def test_confirm_network_candidates_caps_at_five():
         assert mock_get.call_count == 5
 
 
+def test_looks_like_bot_challenge_interrogation_url():
+    """A captured URL naming the interrogation/solution exchange is flagged."""
+    assert _looks_like_bot_challenge(
+        "https://abalia.ofertas-trabajo.infojobs.net/interrogation", None
+    )
+
+
+def test_looks_like_bot_challenge_solution_body():
+    """A POST body containing a challenge/solution payload is flagged."""
+    assert _looks_like_bot_challenge(
+        "https://example.com/api/verify",
+        '{"solution":{"interrogation":{"p":"abc123"}}}',
+    )
+
+
+def test_looks_like_bot_challenge_datadome_and_perimeterx():
+    """Known bot-detection vendor names in the URL are flagged."""
+    assert _looks_like_bot_challenge("https://example.com/datadome-js", None)
+    assert _looks_like_bot_challenge("https://example.com/_px3/xhr", None)
+
+
+def test_looks_like_bot_challenge_negative():
+    """A normal-looking data API call is not flagged."""
+    assert not _looks_like_bot_challenge(
+        "https://api.example.com/v1/jobs", '{"query":"engineer"}'
+    )
+
+
+@patch("src.job_scrapers.scraper_generator.requests.get")
+def test_confirm_network_candidates_skips_bot_challenge(mock_get):
+    """Candidates that look like bot-detection challenges are never probed."""
+    candidates = [
+        {
+            "url": "https://abalia.ofertas-trabajo.infojobs.net/interrogation",
+            "method": "GET",
+        }
+    ]
+    results = _confirm_network_candidates(candidates)
+    assert results == []
+    mock_get.assert_not_called()
+
+
 # ── Integration test: generate_scraper end-to-end (all HTTP mocked) ──────────
 
 
@@ -755,6 +798,18 @@ def test_detect_external_platform_self_hosted():
     html = '<div class="job"><h3>Engineer</h3><a href="/jobs/eng">Apply</a></div>'
     result = _detect_external_platform(html, "https://careers.acme.com/jobs")
     assert result is None
+
+
+def test_detect_external_platform_infojobs():
+    """InfoJobs-hosted microsites (incl. custom subdomains) bail out immediately."""
+    result = _detect_external_platform(
+        "<html></html>",
+        "https://abalia.ofertas-trabajo.infojobs.net/ofertas",
+    )
+    assert result is not None
+    platform, message = result
+    assert platform == "InfoJobs"
+    assert "bot-detection" in message
 
 
 @patch("src.job_scrapers.scraper_generator._fetch_page")
