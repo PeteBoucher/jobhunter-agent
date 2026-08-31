@@ -402,6 +402,15 @@ def _do_scrape(sns_topic_arn: str, function_name: str) -> Dict[str, Any]:
                 deactivated,
                 _EXPIRY_DAYS,
             )
+
+        from src.application_tracker import archive_applications_for_inactive_jobs
+
+        archived = archive_applications_for_inactive_jobs(session)
+        if archived:
+            logger.info(
+                "Archived %d application(s) linked to expired job listings",
+                archived,
+            )
     except Exception:
         logger.exception("Error deactivating stale jobs")
     finally:

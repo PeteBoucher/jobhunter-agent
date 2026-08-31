@@ -189,6 +189,55 @@ def test_stale_jobs_are_deactivated(
     assert stale_job.is_active is False
 
 
+def test_applications_are_archived_when_job_expires(
+    mock_sns_client, mock_scrapers, tmp_path, monkeypatch
+):
+    """Saved/Applied applications on a newly-deactivated job get archived too."""
+    from datetime import datetime, timedelta
+
+    db_path = str(tmp_path / "archive.db")
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
+
+    from src.application_tracker import ApplicationTracker
+    from src.database import get_session, init_db
+    from src.models import Job
+
+    init_db()
+    session = get_session()
+
+    fresh = Job(source="test", source_job_id="fresh", title="Fresh Job", company="A")
+    stale = Job(
+        source="test",
+        source_job_id="stale",
+        title="Stale Job",
+        company="B",
+        scraped_at=datetime.utcnow() - timedelta(days=31),
+    )
+    session.add_all([fresh, stale])
+    session.commit()
+
+    tracker = ApplicationTracker(session)
+    fresh_app = tracker.save_job(fresh.id)
+    stale_app = tracker.save_job(stale.id)
+    fresh_app_id, stale_app_id = fresh_app.id, stale_app.id
+    session.close()
+
+    from src.lambda_handler import lambda_handler
+
+    lambda_handler({}, None)
+
+    from src.models import Application
+
+    session = get_session()
+    fresh_app = session.query(Application).get(fresh_app_id)
+    stale_app = session.query(Application).get(stale_app_id)
+    session.close()
+
+    assert fresh_app.archived is False
+    assert stale_app.archived is True
+    assert stale_app.archived_at is not None
+
+
 def test_matching_is_scoped_per_user(
     mock_sns_client, mock_scrapers, tmp_path, monkeypatch
 ):

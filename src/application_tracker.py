@@ -134,7 +134,9 @@ class ApplicationTracker:
         """Get applications by status."""
         return (
             self._user_filter(
-                self.session.query(Application).filter(Application.status == status)
+                self.session.query(Application)
+                .filter(Application.status == status)
+                .filter(Application.archived.is_(False))
             )
             .order_by(Application.created_at.desc())
             .limit(limit)
@@ -144,7 +146,9 @@ class ApplicationTracker:
     def get_all_applications(self, limit: int = 200) -> List[Application]:
         """Get all applications for the current user."""
         return (
-            self._user_filter(self.session.query(Application))
+            self._user_filter(
+                self.session.query(Application).filter(Application.archived.is_(False))
+            )
             .order_by(Application.created_at.desc())
             .limit(limit)
             .all()
@@ -156,6 +160,7 @@ class ApplicationTracker:
             self.session.query(Job)
             .join(Application, Job.id == Application.job_id)
             .filter(Application.status == "saved")
+            .filter(Application.archived.is_(False))
             .filter(
                 Application.user_id == self.user_id
                 if self.user_id is not None
@@ -172,6 +177,7 @@ class ApplicationTracker:
             self.session.query(Job)
             .join(Application, Job.id == Application.job_id)
             .filter(Application.status == "applied")
+            .filter(Application.archived.is_(False))
             .filter(
                 Application.user_id == self.user_id
                 if self.user_id is not None
@@ -186,10 +192,33 @@ class ApplicationTracker:
         """Get scheduled interviews."""
         return (
             self._user_filter(
-                self.session.query(Application).filter(
-                    Application.status == "interview_scheduled"
-                )
+                self.session.query(Application)
+                .filter(Application.status == "interview_scheduled")
+                .filter(Application.archived.is_(False))
             )
             .limit(limit)
             .all()
         )
+
+
+def archive_applications_for_inactive_jobs(session: Session) -> int:
+    """Archive applications (any status) whose linked job has expired.
+
+    Soft-archives rather than deletes, so old kanban entries stop cluttering
+    Saved/Applied/etc. views once the underlying listing has gone stale
+    (``Job.is_active=False``, set by the Lambda's expiry sweep), while the
+    record itself stays recoverable. Cross-user — called once per scrape run,
+    not scoped to a single ``ApplicationTracker``.
+    """
+    inactive_job_ids = session.query(Job.id).filter(Job.is_active.is_(False))
+    count = (
+        session.query(Application)
+        .filter(Application.archived.is_(False))
+        .filter(Application.job_id.in_(inactive_job_ids))
+        .update(
+            {"archived": True, "archived_at": datetime.utcnow()},
+            synchronize_session=False,
+        )
+    )
+    session.commit()
+    return count

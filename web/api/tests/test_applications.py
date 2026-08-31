@@ -1,4 +1,5 @@
 """Tests for applications router: CRUD + user isolation."""
+
 from src.models import Application, Job, User
 
 
@@ -93,6 +94,28 @@ class TestListApplications:
         resp = client.get("/applications")
         assert resp.status_code == 200
         assert resp.json() == []
+
+    def test_excludes_archived_applications(self, client, db_session, test_user):
+        job1 = _make_job(db_session, "Active Job")
+        job2 = _make_job(db_session, "Expired Job")
+        db_session.add_all(
+            [
+                Application(job_id=job1.id, user_id=test_user.id, status="saved"),
+                Application(
+                    job_id=job2.id,
+                    user_id=test_user.id,
+                    status="saved",
+                    archived=True,
+                ),
+            ]
+        )
+        db_session.commit()
+
+        resp = client.get("/applications")
+        assert resp.status_code == 200
+        results = resp.json()
+        assert len(results) == 1
+        assert results[0]["job_id"] == job1.id
 
 
 class TestUpdateApplication:

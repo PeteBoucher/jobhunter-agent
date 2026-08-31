@@ -71,6 +71,8 @@ export interface Application {
   status: string | null;
   application_date: string | null;
   notes: string | null;
+  archived: boolean;
+  archived_at: string | null;
   created_at: string | null;
   updated_at: string | null;
   job_title: string | null;

@@ -1,4 +1,5 @@
 """SQLAlchemy models for Jobhunter Agent database."""
+
 # mypy: ignore-errors
 
 from datetime import datetime
@@ -145,6 +146,8 @@ class Application(Base):
     application_date = Column(DateTime)
     application_method = Column(String(50))  # auto, manual, tailored
     notes = Column(String)
+    archived = Column(Boolean, nullable=False, default=False)
+    archived_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

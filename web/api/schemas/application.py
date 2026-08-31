@@ -22,6 +22,8 @@ class ApplicationOut(BaseModel):
     status: Optional[str] = None
     application_date: Optional[datetime] = None
     notes: Optional[str] = None
+    archived: bool = False
+    archived_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     job_title: Optional[str] = None
