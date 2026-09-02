@@ -220,9 +220,18 @@ class BaseScraper(ABC):
                 infers it from description/location rather than guessing.
             salary_min / salary_max (float)
             description (str)
-            requirements (str) — despite the DB column being JSON-typed, the
-                convention everywhere in this codebase is a plain string (or
-                None), never an actual list.
+            requirements (str or List[str]) — either shape is fine and
+                job_matcher.py's `_score_skills()` normalizes both via
+                `_requirement_items()`: a free-text string gets split into
+                sentence-like phrases, a list is used as-is. Use whichever
+                is more natural to extract from the source (a raw
+                qualifications blob → string; discrete bullet points already
+                split by the API → list). Historically this docstring said
+                "always a plain string" while greenhouse_scraper.py/
+                lever_scraper.py always returned a list — job_matcher.py
+                assumed list and silently mis-scored every string-typed
+                job (see git history for the fix) until it was made to
+                handle both.
             nice_to_haves (str) — rarely populated; None is fine.
             posted_date (datetime.datetime) — an actual datetime object, not
                 an ISO date string. SQLAlchemy's DateTime column expects one.
