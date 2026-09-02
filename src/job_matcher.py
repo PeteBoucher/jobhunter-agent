@@ -13,7 +13,7 @@ Scoring weights (max pts per dimension, must sum to 100):
 """
 import re
 from difflib import SequenceMatcher
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from sqlalchemy.orm import Session
 
@@ -60,6 +60,11 @@ _USER_SENIORITY = {"junior": 1, "mid": 2, "senior": 3, "lead": 3}
 # Delimiters used when CV parsers concatenate multiple skills into one string.
 # Splits on: pipe, bullet (●), 2+ spaces, or " . " (dot surrounded by spaces).
 _SKILL_SPLIT_RE = re.compile(r"[|●\n]+|(?:\s+\.\s+)|\s{2,}")
+
+# Delimiters for splitting a free-text `requirements` string into individual
+# requirement phrases: newlines, bullet markers, or a sentence boundary
+# (period/!/? followed by whitespace and a capital letter or digit).
+_REQUIREMENTS_SPLIT_RE = re.compile(r"[\n\r]+|[•●]|(?<=[.!?])\s+(?=[A-Z0-9])")
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +138,27 @@ def _normalize_skills(user_skills: List[Skill]) -> List[str]:
     return result
 
 
+def _requirement_items(requirements: Optional[Union[str, List[str]]]) -> List[str]:
+    """Normalize a job's `requirements` field into a list of requirement phrases.
+
+    Most scrapers store `List[str]` (one phrase/keyword per item, e.g.
+    greenhouse/lever). A few — Recruitee, SmartRecruiters, Workable — store a
+    single free-text string instead, per `base_scraper.py`'s documented
+    convention. Iterating that string directly (`for r in requirements`)
+    walks it character-by-character, which silently produced near-zero
+    skill_score for every job from those three sources (each "requirement"
+    ends up a single letter, which almost never matches a real skill token).
+    This splits a string blob into sentence-like chunks so it scores the
+    same way a list does.
+    """
+    if isinstance(requirements, list):
+        return [str(r) for r in requirements if r]
+    if isinstance(requirements, str):
+        parts = _REQUIREMENTS_SPLIT_RE.split(requirements)
+        return [p.strip(" .;:") for p in parts if p and len(p.strip()) > 3]
+    return []
+
+
 def _skill_matches(req: str, skill: str) -> bool:
     """True if *skill* meaningfully covers *req*.
 
@@ -174,7 +200,9 @@ def _score_title(job_title: Optional[str], target_titles: Optional[List[str]]) -
     return best * _MAX_TITLE
 
 
-def _score_skills(requirements: Optional[List[str]], user_skills: List[Skill]) -> float:
+def _score_skills(
+    requirements: Optional[Union[str, List[str]]], user_skills: List[Skill]
+) -> float:
     """Fraction of job requirements covered by user skills. Up to 35 pts.
 
     When a job lists no requirements (common for LinkedIn/Ashby scrapers that
@@ -184,9 +212,13 @@ def _score_skills(requirements: Optional[List[str]], user_skills: List[Skill]) -
     if not requirements:
         # No requirements listed — give neutral partial credit (40 % of max)
         return _MAX_SKILLS * 0.4
+    reqs = [r.lower() for r in _requirement_items(requirements)]
+    if not reqs:
+        # String requirements that didn't split into anything usable —
+        # same neutral fallback as "no requirements listed".
+        return _MAX_SKILLS * 0.4
     if not user_skills:
         return 0.0
-    reqs = [r.lower() for r in requirements]
     skill_names = _normalize_skills(user_skills)
     if not skill_names:
         return 0.0

@@ -6,6 +6,7 @@ import pytest
 from src.job_matcher import (
     _location_terms,
     _normalize_skills,
+    _requirement_items,
     _score_experience,
     _score_location_remote,
     _score_salary,
@@ -214,6 +215,57 @@ class TestScoreSkills:
         reqs = ["Salesforce CRM"]
         skills = [_skill("Excel | Power BI | Salesforce")]
         assert _score_skills(reqs, skills) == pytest.approx(35.0)
+
+    def test_string_requirements_are_split_not_iterated_as_chars(self):
+        # Regression: Recruitee/SmartRecruiters/Workable store `requirements`
+        # as a single free-text string, not a list. Iterating it directly
+        # (`for r in requirements`) walks it character-by-character and
+        # silently zeroes out skill_score for every job from those sources.
+        reqs = "2+ years of Python experience. Strong knowledge of SQL and Docker."
+        skills = [_skill("python"), _skill("sql"), _skill("docker")]
+        score = _score_skills(reqs, skills)
+        assert score > 17.5  # meaningful match, not near-zero
+
+    def test_string_requirements_still_penalise_no_match(self):
+        reqs = "Fluency in French and German required for this legal role."
+        skills = [_skill("python"), _skill("sql")]
+        assert _score_skills(reqs, skills) == 0.0
+
+
+# ---------------------------------------------------------------------------
+# _requirement_items
+# ---------------------------------------------------------------------------
+
+
+class TestRequirementItems:
+    def test_list_passthrough(self):
+        assert _requirement_items(["Python", "SQL"]) == ["Python", "SQL"]
+
+    def test_list_drops_falsy_items(self):
+        assert _requirement_items(["Python", "", None, "SQL"]) == ["Python", "SQL"]
+
+    def test_string_splits_on_sentence_boundary(self):
+        text = "2+ years of Python experience. Strong knowledge of SQL and Docker."
+        items = _requirement_items(text)
+        assert len(items) == 2
+        assert items[0].startswith("2+ years")
+        assert items[1].startswith("Strong knowledge")
+
+    def test_string_splits_on_bullet(self):
+        text = "●Python required●SQL required"
+        items = _requirement_items(text)
+        assert len(items) == 2
+
+    def test_string_splits_on_newline(self):
+        text = "Python required\nSQL required"
+        items = _requirement_items(text)
+        assert len(items) == 2
+
+    def test_none_returns_empty(self):
+        assert _requirement_items(None) == []
+
+    def test_empty_string_returns_empty(self):
+        assert _requirement_items("") == []
 
 
 # ---------------------------------------------------------------------------
