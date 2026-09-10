@@ -43,7 +43,7 @@ Jobs are scraped once into a shared pool. Each user has their own profile, match
 | **Lever** | Palantir, Spotify, and more | `jobs.lever.co` |
 | **Ashby** | OpenAI, Notion, Deel, ElevenLabs, Synthesia, Cursor, Perplexity, Mollie, Paddle, Plaid, and ~30 more | `api.ashbyhq.com` |
 | **Workday** | Accenture, Airbus, GSK, Adobe, AstraZeneca, Maersk, BP, Unilever, Shell, Betway, Flutter Entertainment, Solera Holdings | Per-portal cap; large portals (Accenture, GSK…) scrape up to 500 jobs/run |
-| **SmartRecruiters** | Bet365, Playtech, Evolution, Sportradar, EPAM Systems, Ciklum | `api.smartrecruiters.com` |
+| **SmartRecruiters** | Talan, Bet365, Playtech, Evolution, Sportradar, EPAM Systems, Ciklum | `api.smartrecruiters.com`; detected via API probe on custom domains too (`talan.com` is a Nuxt/Drupal front-end over SmartRecruiters) |
 | **BambooHR** | Various | `api.bamboohr.com` |
 | **Teamtailor** | Oatly, Hedvig, Storytel, The Workshop | `/jobs.json` JSON Feed; Schema.org location data |
 | **Recruitee** | Zoi, bunq, Keolis, Trusted Shops, CM.com, and 8 more | `/api/offers/` JSON API; works on custom domains too |
