@@ -48,6 +48,7 @@ Jobs are scraped once into a shared pool. Each user has their own profile, match
 | **Teamtailor** | Oatly, Hedvig, Storytel, The Workshop | `/jobs.json` JSON Feed; Schema.org location data |
 | **Recruitee** | Zoi, bunq, Keolis, Trusted Shops, CM.com, and 8 more | `/api/offers/` JSON API; works on custom domains too |
 | **Workable** | Rentokil Initial, 360dialog | `apply.workable.com/api/v3` |
+| **50skills** | Carbfix | `static-jobs-api.50skills.app`; the front-end (`jobs.50skills.com`) is a bare client-rendered SPA with no server-side signal — API found by scanning the JS bundle |
 
 ### Job boards / aggregators
 
@@ -149,7 +150,7 @@ job-agent applications apply 42 --notes "Applied via website"
 
 ## Adding a new scraper
 
-### Known ATS (Greenhouse, Lever, Ashby, Workday, SmartRecruiters, Teamtailor, Recruitee, Workable, DeJobs)
+### Known ATS (Greenhouse, Lever, Ashby, Workday, SmartRecruiters, Teamtailor, Recruitee, Workable, DeJobs, 50skills)
 
 Pass the company's careers URL — the ATS is auto-detected:
 

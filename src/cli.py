@@ -1466,6 +1466,13 @@ def scraper_list(source: Optional[str]) -> None:
             _hc("jobboardly", jb["display_name"])
     except ImportError:
         pass
+    try:
+        from src.job_scrapers.fiftyskills_scraper import DEFAULT_BOARDS as FS_DEFAULT
+
+        for fb in FS_DEFAULT:
+            _hc("fiftyskills", fb.company)
+    except ImportError:
+        pass
 
     # ── collect DB rows ────────────────────────────────────────────────────
     db_rows = []

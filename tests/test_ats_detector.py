@@ -61,6 +61,11 @@ from src.job_scrapers.ats_detector import (
             "recruitee",
             {"career_url": "https://acme.recruitee.com", "company": "Acme"},
         ),
+        (
+            "https://jobs.50skills.com/carbfix/en",
+            "fiftyskills",
+            {"slug": "carbfix"},
+        ),
     ],
 )
 def test_detect_ats_url_patterns(url, expected_source, expected_config_key):

@@ -15,6 +15,7 @@ from src.job_scrapers.coderland_scraper import CodelandScraper
 from src.job_scrapers.coinbase_scraper import CoinbaseScraper
 from src.job_scrapers.dejobs_scraper import DeJobsScraper
 from src.job_scrapers.experis_scraper import ExperisScraper
+from src.job_scrapers.fiftyskills_scraper import FiftySkillsScraper
 from src.job_scrapers.github_scraper import GitHubJobsScraper
 from src.job_scrapers.greenhouse_scraper import GreenhouseScraper
 from src.job_scrapers.indragroup_scraper import IndraGroupScraper
@@ -42,6 +43,7 @@ SCRAPER_MAP: Dict[str, Type[BaseScraper]] = {
     "coderland": CodelandScraper,
     "dejobs": DeJobsScraper,
     "experis": ExperisScraper,
+    "fiftyskills": FiftySkillsScraper,
     "bcg": BCGScraper,
     "greenhouse": GreenhouseScraper,
     "lever": LeverScraper,
@@ -90,4 +92,5 @@ DEFAULT_SOURCES: List[str] = [
     "tkhsecurity",
     "experis",
     "recruitee",
+    "fiftyskills",
 ]

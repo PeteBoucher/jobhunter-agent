@@ -48,6 +48,7 @@ An automated job search and application tracking system. It continuously scrapes
 | Teamtailor | ATS platform | Oatly, Hedvig, Storytel, The Workshop (Málaga) |
 | Recruitee | ATS platform | Zoi, bunq, Keolis, Pret A Manger, Livestorm, Van Cranenbroek, Woonzorg Flevoland, Betty Blocks, CM.com, Greenpeace CEE, Sircle Collection, Solutions 4 Delivery, Trusted Shops — career-site-builder product; some on custom domains (`meet.zoi.tech`, `careers.bunq.com`), most on `{company}.recruitee.com` |
 | Workable | ATS platform | Rentokil Initial; public `apply.workable.com/{slug}` API, no auth |
+| 50skills | ATS platform | Carbfix; `jobs.50skills.com/{slug}` is a client-rendered SPA with no server-side signal, API (`static-jobs-api.50skills.app`) found via JS bundle scan |
 | DeJobs | ATS/job-board platform | `{slug}.dejobs.org` microsites, shared Solr search API across tenants |
 | Jobboardly | White-label job board | Multi-tenant, `{subdomain}.jobboardly.com`; jobs link out to each company's own ATS |
 | Adzuna | Aggregator | 13 countries; terms and countries from user preferences |

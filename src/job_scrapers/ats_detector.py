@@ -26,6 +26,7 @@ Supported ATS platforms (i.e. platforms we already have scrapers for):
   dejobs          *.dejobs.org
   jobboardly      *.jobboardly.com or pages with assets.jobboardly.com
   recruitee       *.recruitee.com or pages with recruiteecdn.com assets
+  fiftyskills     jobs.50skills.com/{slug}
 
 Returns None for unsupported or unrecognised platforms.
 """
@@ -175,6 +176,14 @@ def detect_ats(
     if host.endswith(".jobboardly.com"):
         subdomain = host[: -len(".jobboardly.com")]
         return "jobboardly", {"subdomain": subdomain}
+
+    # 50skills: jobs.50skills.com/{slug}[/{lang}] — a bare React SPA with no
+    # server-rendered content and no ATS fingerprint anywhere in the shell
+    # HTML, so this URL-pattern rule is the only reliable detection path;
+    # there is no page-fingerprint fallback for it below.
+    if host == "jobs.50skills.com" and path_parts:
+        slug = path_parts[0]
+        return "fiftyskills", {"slug": slug, "company": slug.replace("-", " ").title()}
 
     # --- Page fingerprint fallback (requires HTTP fetch) ---
     if not fetch_page:
@@ -461,6 +470,12 @@ def validate_config(source_name: str, config: Dict, timeout: int = 10) -> bool:
         if source_name == "jobboardly":
             subdomain = config.get("subdomain", "")
             url = f"https://{subdomain}.jobboardly.com/jobs.json"
+            r = requests.get(url, timeout=timeout)
+            return r.status_code == 200 and isinstance(r.json(), list)
+
+        if source_name == "fiftyskills":
+            slug = config.get("slug", "")
+            url = f"https://static-jobs-api.50skills.app/public/{slug}/jobs.json"
             r = requests.get(url, timeout=timeout)
             return r.status_code == 200 and isinstance(r.json(), list)
 
