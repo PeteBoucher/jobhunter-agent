@@ -26,6 +26,41 @@ def cli_runner():
     return CliRunner()
 
 
+class TestDotenvFallback:
+    """Regression: `job-agent scraper generate` failed with "ANTHROPIC_API_KEY
+    is not set" even when it was present in .env, because nothing in the CLI
+    ever loaded .env into the process environment — python-dotenv was a
+    listed dependency but unused. cli.py now calls load_dotenv() at import
+    time; these tests pin down the exact fallback semantics that call must
+    have (shell env wins, .env only fills gaps) using python-dotenv directly,
+    since src.cli is already cached in sys.modules by the time these run."""
+
+    def test_env_var_loaded_from_dotenv_when_unset_in_shell(
+        self, tmp_path, monkeypatch
+    ):
+        from dotenv import load_dotenv
+
+        monkeypatch.delenv("SOME_TEST_KEY", raising=False)
+        env_file = tmp_path / ".env"
+        env_file.write_text("SOME_TEST_KEY=from-dotenv\n")
+
+        load_dotenv(dotenv_path=env_file)
+
+        assert os.environ.get("SOME_TEST_KEY") == "from-dotenv"
+        monkeypatch.delenv("SOME_TEST_KEY", raising=False)
+
+    def test_shell_env_var_takes_precedence_over_dotenv(self, tmp_path, monkeypatch):
+        from dotenv import load_dotenv
+
+        monkeypatch.setenv("SOME_TEST_KEY", "from-shell")
+        env_file = tmp_path / ".env"
+        env_file.write_text("SOME_TEST_KEY=from-dotenv\n")
+
+        load_dotenv(dotenv_path=env_file)  # override=False by default
+
+        assert os.environ.get("SOME_TEST_KEY") == "from-shell"
+
+
 @pytest.fixture
 def sample_cv_file(tmp_path):
     """Create a sample CV file for testing."""

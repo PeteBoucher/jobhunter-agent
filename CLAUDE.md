@@ -68,6 +68,8 @@ Always use the project virtualenv, not system Python:
 .venv/bin/python -m src.cli <command>
 ```
 
+`src/cli.py` loads `.env` (via `python-dotenv`, `override=False`) as a fallback for any variable not already set in the shell — real shell env vars always win, `.env` only fills gaps. This is CLI-only; `lambda_handler.py` never imports `cli.py`, so Lambda is unaffected and still relies solely on its SAM-configured environment.
+
 Run tests:
 
 ```bash

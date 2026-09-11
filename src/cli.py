@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 
 import click
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import (
@@ -28,6 +29,15 @@ from src.models import Job, User
 from src.prometheus_exporter import create_exporter
 from src.user_profile import UserProfile
 from src.worker import setup_signal_handlers, start_worker
+
+# Load .env as a fallback for any variable not already set in the shell
+# environment (ANTHROPIC_API_KEY, ADZUNA_APP_ID, DATABASE_URL, ...).
+# override=False (the default) means real shell env vars always win — this
+# only fills gaps, never shadows an explicit `FOO=bar job-agent ...` call.
+# Lambda never imports this module, so this has no effect there. None of the
+# imports above read env vars at import time (all lazy, inside functions),
+# so it's safe to load after them rather than before.
+load_dotenv()
 
 console = Console()
 
