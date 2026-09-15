@@ -139,3 +139,104 @@ def test_match_cli_invocation(session_tmp, capsys):
     runner = CliRunner()
     result = runner.invoke(cli, ["match"])
     assert result.exit_code == 0
+
+
+# ---------------------------------------------------------------------------
+# Rejection-affinity penalty
+# ---------------------------------------------------------------------------
+
+
+def test_rejection_penalty_applies_after_repeated_company_rejection(session_tmp):
+    """A job at a company the user has rejected twice takes a score hit."""
+    from src.job_rejections import reject_job
+    from src.models import JobMatch
+
+    session = session_tmp
+    user = User(name="Dana")
+    session.add(user)
+    session.commit()
+
+    rejected_1 = Job(title="Support Engineer", company="BadCo", source="test")
+    rejected_2 = Job(title="Ops Engineer", company="BadCo", source="test")
+    candidate = Job(title="Platform Engineer", company="BadCo", source="test")
+    session.add_all([rejected_1, rejected_2, candidate])
+    session.commit()
+
+    reject_job(session, user.id, rejected_1.id)
+    reject_job(session, user.id, rejected_2.id)
+
+    jm = compute_match_for_user(session, candidate, user)
+    assert jm.rejection_penalty > 0
+    assert jm.match_score == pytest.approx(
+        jm.skill_score
+        + jm.title_score
+        + jm.experience_score
+        + jm.location_or_remote_score
+        + jm.salary_score
+        - jm.rejection_penalty
+    )
+
+    reloaded = (
+        session.query(JobMatch)
+        .filter(JobMatch.job_id == candidate.id, JobMatch.user_id == user.id)
+        .first()
+    )
+    assert reloaded.rejection_penalty == jm.rejection_penalty
+
+
+def test_rejection_penalty_applies_for_similar_title(session_tmp):
+    """A near-identical title to a rejected job takes a score hit, even at a
+    different company."""
+    from src.job_rejections import reject_job
+
+    session = session_tmp
+    user = User(name="Eve")
+    session.add(user)
+    session.commit()
+
+    rejected = Job(title="Senior Backend Engineer", company="Acme", source="test")
+    similar = Job(title="Senior Backend Engineer", company="Other Co", source="test")
+    session.add_all([rejected, similar])
+    session.commit()
+
+    reject_job(session, user.id, rejected.id)
+
+    jm = compute_match_for_user(session, similar, user)
+    assert jm.rejection_penalty > 0
+
+
+def test_rejection_penalty_is_zero_with_no_rejections(session_tmp):
+    session = session_tmp
+    user = User(name="Frank")
+    session.add(user)
+    session.commit()
+
+    job = Job(title="Data Scientist", company="Acme", source="test")
+    session.add(job)
+    session.commit()
+
+    jm = compute_match_for_user(session, job, user)
+    assert jm.rejection_penalty == 0.0
+
+
+def test_rejection_penalty_is_capped(session_tmp):
+    """Combined company + title penalties never exceed _MAX_REJECTION_PENALTY."""
+    from src.job_matcher import _MAX_REJECTION_PENALTY
+    from src.job_rejections import reject_job
+
+    session = session_tmp
+    user = User(name="Gina")
+    session.add(user)
+    session.commit()
+
+    rejected_1 = Job(title="Growth Marketing Manager", company="BadCo", source="test")
+    rejected_2 = Job(title="Growth Marketing Manager", company="BadCo", source="test")
+    candidate = Job(title="Growth Marketing Manager", company="BadCo", source="test")
+    session.add_all([rejected_1, rejected_2, candidate])
+    session.commit()
+
+    reject_job(session, user.id, rejected_1.id)
+    reject_job(session, user.id, rejected_2.id)
+
+    jm = compute_match_for_user(session, candidate, user)
+    assert jm.rejection_penalty == _MAX_REJECTION_PENALTY

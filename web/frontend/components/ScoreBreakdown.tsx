@@ -45,6 +45,12 @@ export function ScoreBreakdown({ match }: Props) {
           );
         })}
       </div>
+      {!!match.rejection_penalty && (
+        <div className="mt-3 flex justify-between text-xs text-red-500">
+          <span>Similar to jobs you rejected</span>
+          <span className="font-medium">−{match.rejection_penalty.toFixed(0)} pts</span>
+        </div>
+      )}
       <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3">
         <span className="text-sm font-semibold text-gray-700">Total</span>
         <span className="text-lg font-bold text-blue-600">

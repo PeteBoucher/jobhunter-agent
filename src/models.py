@@ -127,6 +127,11 @@ class JobMatch(Base):
     experience_score = Column(Float)
     location_or_remote_score = Column(Float)
     salary_score = Column(Float)
+    # Post-sum penalty for similarity to jobs this user has rejected (company
+    # repetition + title similarity) — see job_matcher._rejection_penalty().
+    # Not one of the five weighted dimensions above; stored so the UI can show
+    # why match_score is lower than the five dimension bars would sum to.
+    rejection_penalty = Column(Float, nullable=False, default=0.0)
     calculated_at = Column(DateTime, default=datetime.utcnow)
 
     job = relationship("Job", back_populates="job_matches")
@@ -188,6 +193,27 @@ class Offer(Base):
     notes = Column(String)
 
     application = relationship("Application", back_populates="offers")
+
+
+class RejectedJob(Base):
+    """A job the user explicitly dismissed as not of interest.
+
+    Distinct from ``Application.status == "rejected"``, which means the
+    *employer* rejected the candidate's application. A rejection here can be
+    recorded for any job, applied to or not, and feeds back into
+    ``job_matcher._rejection_penalty`` to lower the score of similar future
+    jobs (same company, near-identical title).
+    """
+
+    __tablename__ = "rejected_jobs"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("user.id"), index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), index=True)
+    reason = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    job = relationship("Job")
 
 
 class ScraperConfig(Base):

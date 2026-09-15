@@ -1868,5 +1868,74 @@ def scraper_generate(url: str, output: Optional[str], insecure: bool) -> None:
         raise SystemExit(1)
 
 
+@jobs.command("reject")
+@click.argument("job_id", type=int)
+@click.option("--reason", help="Optional short reason (e.g. 'wrong location')")
+def jobs_reject(job_id: int, reason: Optional[str]) -> None:
+    """Mark a job as not of interest.
+
+    Example:
+        job-agent jobs reject 2296 --reason "not remote"
+    """
+    from src.job_rejections import reject_job
+
+    session = get_session()
+    try:
+        job = session.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            console.print(f"[red]✗[/red] Job {job_id} not found")
+            return
+        reject_job(session, user_id=None, job_id=job_id, reason=reason)
+        console.print(f"[green]✓[/green] Rejected {job.title} at {job.company}")
+    finally:
+        session.close()
+
+
+@jobs.command("unreject")
+@click.argument("job_id", type=int)
+def jobs_unreject(job_id: int) -> None:
+    """Undo a rejection.
+
+    Example:
+        job-agent jobs unreject 2296
+    """
+    from src.job_rejections import unreject_job
+
+    session = get_session()
+    try:
+        if unreject_job(session, user_id=None, job_id=job_id):
+            console.print(f"[green]✓[/green] Un-rejected job {job_id}")
+        else:
+            console.print(f"[yellow]Job {job_id} was not rejected[/yellow]")
+    finally:
+        session.close()
+
+
+@jobs.command("list-rejected")
+@click.option("--limit", type=int, default=20, help="Maximum results")
+def jobs_list_rejected(limit: int) -> None:
+    """List rejected jobs."""
+    from src.job_rejections import get_rejected_jobs
+
+    session = get_session()
+    try:
+        rejected = get_rejected_jobs(session, user_id=None, limit=limit)
+        if not rejected:
+            console.print("[yellow]No rejected jobs[/yellow]")
+            return
+
+        table = Table(title="Rejected Jobs")
+        table.add_column("ID", style="cyan")
+        table.add_column("Job", style="magenta")
+        table.add_column("Company", style="green")
+
+        for job in rejected:
+            table.add_row(str(job.id), (job.title or "")[:40], job.company or "")
+
+        console.print(table)
+    finally:
+        session.close()
+
+
 if __name__ == "__main__":
     cli()

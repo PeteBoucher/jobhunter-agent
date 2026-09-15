@@ -11,6 +11,11 @@ class MatchScoreOut(BaseModel):
     experience_score: Optional[float] = None
     location_or_remote_score: Optional[float] = None
     salary_score: Optional[float] = None
+    # Capped penalty subtracted from the sum of the five dimensions above for
+    # similarity to jobs this user has rejected (company repetition / title
+    # similarity) — see job_matcher._rejection_penalty(). Not one of the five
+    # weighted dimensions, so it has no corresponding *_max field.
+    rejection_penalty: float = 0.0
 
     # Maximum possible values for each dimension — derived from the scoring
     # constants in src/job_matcher.py. Included so the frontend never needs
@@ -50,6 +55,10 @@ class JobOut(BaseModel):
     company_industry: Optional[str] = None
     # Caller-populated match scores (joined from JobMatch for current user)
     match: Optional[MatchScoreOut] = None
+    # Set True only by GET /jobs/rejected; unset (None) on the normal feed,
+    # which excludes rejected jobs entirely rather than flagging them.
+    is_rejected: Optional[bool] = None
+    rejection_reason: Optional[str] = None
 
     @field_validator("requirements", "nice_to_haves", mode="before")
     @classmethod
