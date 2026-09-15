@@ -28,6 +28,7 @@ Jobs are scraped once into a shared pool. Each user has their own profile, match
 - **CV upload** — markdown, PDF, or DOCX; skills auto-extracted via LLM and jobs re-scored
 - **Preferences** — target titles, salary, remote preference, locations (city-level), countries to search (ISO2)
 - **Applications kanban** — drag cards across Saved → Applied → Interview → Offer/Rejected
+- **Reject jobs** — mark any job "not interested" (with an optional reason) to hide it from your feed; the matcher learns from it and lowers future scores for similar jobs (same company, close title match)
 - **Shared scraping** — Lambda scrapes all sources every 6h concurrently; search terms and countries derived automatically from user preferences
 - **Stale job expiry** — jobs not re-seen within 30 days are automatically marked inactive and hidden from the feed
 - **Location-filtered notifications** — SNS alerts only fire for jobs in your preferred countries (fully remote jobs bypass the filter)

@@ -68,6 +68,27 @@ export function getJob(token: string, id: number): Promise<Job> {
   return request<Job>(`/jobs/${id}`, token);
 }
 
+// ── Rejections ("not interested") ───────────────────────────────────────────
+
+export function rejectJob(
+  token: string,
+  jobId: number,
+  reason?: string
+): Promise<{ job_id: number; reason: string | null; created_at: string | null }> {
+  return request(`/jobs/${jobId}/reject`, token, {
+    method: "POST",
+    body: JSON.stringify({ reason: reason || undefined }),
+  });
+}
+
+export function unrejectJob(token: string, jobId: number): Promise<void> {
+  return request<void>(`/jobs/${jobId}/reject`, token, { method: "DELETE" });
+}
+
+export function getRejectedJobs(token: string, limit = 100): Promise<Job[]> {
+  return request<Job[]>(`/jobs/rejected?limit=${limit}`, token);
+}
+
 // ── Profile ──────────────────────────────────────────────────────────────────
 
 export function getProfile(token: string): Promise<User> {

@@ -2,9 +2,16 @@
 
 import DOMPurify from "dompurify";
 import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import useSWR from "swr";
-import { createApplication, generateContent, getApplications, getJob } from "@/lib/api";
+import {
+  createApplication,
+  generateContent,
+  getApplications,
+  getJob,
+  rejectJob,
+} from "@/lib/api";
 import { ScoreBreakdown } from "@/components/ScoreBreakdown";
 import { MatchScoreBar } from "@/components/MatchScoreBar";
 import type { ApplicationStatus } from "@/lib/types";
@@ -52,6 +59,7 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
   const { data: session } = useSession();
   const token = (session as any)?.apiToken as string | undefined;
   const jobId = Number(params.id);
+  const router = useRouter();
 
   const { data: job } = useSWR(
     token ? ["job", jobId] : null,
@@ -116,6 +124,7 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
   }
 
   const existingApp = applications?.find((a) => a.job_id === jobId);
+  const [rejecting, setRejecting] = useState(false);
 
   async function handleApply(status: ApplicationStatus) {
     if (!token) return;
@@ -129,6 +138,22 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
       setToast("Something went wrong.");
     } finally {
       setApplying(false);
+    }
+  }
+
+  async function handleReject() {
+    if (!token) return;
+    const reason = window.prompt(
+      "Optional: why isn't this job for you? (leave blank to skip)"
+    );
+    if (reason === null) return; // cancelled
+    setRejecting(true);
+    try {
+      await rejectJob(token, jobId, reason.trim() || undefined);
+      router.push("/feed");
+    } catch {
+      setToast("Something went wrong.");
+      setRejecting(false);
     }
   }
 
@@ -207,6 +232,13 @@ export default function JobDetailPage({ params }: { params: { id: string } }) {
             Status: {existingApp.status}
           </span>
         )}
+        <button
+          onClick={handleReject}
+          disabled={rejecting}
+          className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-400 hover:border-red-200 hover:bg-red-50 hover:text-red-500 disabled:opacity-50"
+        >
+          Not interested
+        </button>
         {toast && (
           <span className="text-sm text-green-600">{toast}</span>
         )}

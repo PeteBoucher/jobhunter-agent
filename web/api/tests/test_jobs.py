@@ -1,5 +1,6 @@
 """Tests for jobs router: GET /jobs, GET /jobs/{id}."""
-from src.models import Job, JobMatch, UserPreferences
+
+from src.models import Job, JobMatch, RejectedJob, UserPreferences
 
 
 class TestListJobs:
@@ -378,3 +379,100 @@ class TestGetJob:
         resp = client.get(f"/jobs/{job.id}")
         assert resp.status_code == 200
         assert resp.json()["match"] is None
+
+
+class TestRejectJob:
+    def test_reject_creates_row_and_returns_it(self, client, db_session, test_user):
+        job = Job(title="Analyst", company="Corp", source="test")
+        db_session.add(job)
+        db_session.commit()
+
+        resp = client.post(f"/jobs/{job.id}/reject", json={"reason": "wrong location"})
+        assert resp.status_code == 201
+        assert resp.json()["job_id"] == job.id
+        assert resp.json()["reason"] == "wrong location"
+
+        row = db_session.query(RejectedJob).filter(RejectedJob.job_id == job.id).first()
+        assert row is not None
+        assert row.user_id == test_user.id
+
+    def test_reject_without_body_is_reasonless(self, client, db_session):
+        job = Job(title="Analyst", company="Corp", source="test")
+        db_session.add(job)
+        db_session.commit()
+
+        resp = client.post(f"/jobs/{job.id}/reject")
+        assert resp.status_code == 201
+        assert resp.json()["reason"] is None
+
+    def test_reject_unknown_job_returns_404(self, client):
+        resp = client.post("/jobs/99999/reject")
+        assert resp.status_code == 404
+
+    def test_rejected_job_is_excluded_from_default_feed(self, client, db_session):
+        job = Job(title="Analyst", company="Corp", source="test")
+        db_session.add(job)
+        db_session.commit()
+
+        # sort=date avoids the JobMatch JOIN, so absent that filter this job
+        # would show up regardless — proves exclusion is due to the rejection.
+        assert [j["id"] for j in client.get("/jobs?sort=date").json()] == [job.id]
+
+        client.post(f"/jobs/{job.id}/reject")
+
+        resp = client.get("/jobs?sort=date")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    def test_unreject_restores_job_to_feed(self, client, db_session):
+        job = Job(title="Analyst", company="Corp", source="test")
+        db_session.add(job)
+        db_session.commit()
+
+        client.post(f"/jobs/{job.id}/reject")
+        del_resp = client.delete(f"/jobs/{job.id}/reject")
+        assert del_resp.status_code == 204
+
+        # sort=date avoids the JobMatch JOIN so a job without a score is included
+        resp = client.get("/jobs?sort=date")
+        assert [j["id"] for j in resp.json()] == [job.id]
+
+    def test_unreject_is_a_no_op_when_not_rejected(self, client, db_session):
+        job = Job(title="Analyst", company="Corp", source="test")
+        db_session.add(job)
+        db_session.commit()
+
+        resp = client.delete(f"/jobs/{job.id}/reject")
+        assert resp.status_code == 204
+
+    def test_list_rejected_returns_reason_and_flag(self, client, db_session):
+        job = Job(title="Analyst", company="Corp", source="test")
+        db_session.add(job)
+        db_session.commit()
+
+        client.post(f"/jobs/{job.id}/reject", json={"reason": "too junior"})
+
+        resp = client.get("/jobs/rejected")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["id"] == job.id
+        assert data[0]["is_rejected"] is True
+        assert data[0]["rejection_reason"] == "too junior"
+
+    def test_list_rejected_is_scoped_per_user(self, client, db_session):
+        from src.models import User
+
+        other = User(google_id="other-222", email="other2@example.com", name="Other")
+        db_session.add(other)
+        db_session.commit()
+
+        job = Job(title="Analyst", company="Corp", source="test")
+        db_session.add(job)
+        db_session.commit()
+        db_session.add(RejectedJob(user_id=other.id, job_id=job.id))
+        db_session.commit()
+
+        resp = client.get("/jobs/rejected")
+        assert resp.status_code == 200
+        assert resp.json() == []

@@ -9,6 +9,9 @@ import {
   deleteSkill,
   getJob,
   getJobs,
+  getRejectedJobs,
+  rejectJob,
+  unrejectJob,
   updateApplication,
 } from "../lib/api";
 
@@ -107,6 +110,41 @@ describe("deleteSkill", () => {
   it("throws on 401 (unauthenticated)", async () => {
     mockFetch({ detail: "Not authenticated" }, 401);
     await expect(deleteSkill(TOKEN, 1)).rejects.toThrow("session_expired");
+  });
+});
+
+describe("rejectJob", () => {
+  it("POSTs the reason to the correct URL", async () => {
+    const spy = mockFetch({ job_id: 42, reason: "too senior" }, 201);
+    await rejectJob(TOKEN, 42, "too senior");
+    expect(spy.mock.calls[0][0]).toContain("/jobs/42/reject");
+    expect(spy.mock.calls[0][1]?.method).toBe("POST");
+    const body = JSON.parse(spy.mock.calls[0][1]?.body as string);
+    expect(body).toEqual({ reason: "too senior" });
+  });
+
+  it("omits reason when not given", async () => {
+    const spy = mockFetch({ job_id: 42, reason: null }, 201);
+    await rejectJob(TOKEN, 42);
+    const body = JSON.parse(spy.mock.calls[0][1]?.body as string);
+    expect(body).toEqual({ reason: undefined });
+  });
+});
+
+describe("unrejectJob", () => {
+  it("sends DELETE to the correct URL", async () => {
+    const spy = mockFetch(null, 204);
+    await unrejectJob(TOKEN, 42);
+    expect(spy.mock.calls[0][0]).toContain("/jobs/42/reject");
+    expect(spy.mock.calls[0][1]?.method).toBe("DELETE");
+  });
+});
+
+describe("getRejectedJobs", () => {
+  it("fetches the rejected-jobs URL", async () => {
+    const spy = mockFetch([]);
+    await getRejectedJobs(TOKEN);
+    expect(spy.mock.calls[0][0]).toContain("/jobs/rejected");
   });
 });
 

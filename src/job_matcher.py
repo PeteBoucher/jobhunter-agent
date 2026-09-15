@@ -10,14 +10,22 @@ Scoring weights (max pts per dimension, must sum to 100):
   experience 15 pts  — seniority level alignment
   location   15 pts  — remote preference OR location substring match
   salary     10 pts  — gradient fit within preferred range
+
+After the five dimensions are summed, a capped **rejection penalty** is
+subtracted (not one of the weighted dimensions, doesn't change their maxima):
+jobs at a company the user has repeatedly rejected, or with a title similar to
+one they've rejected, score lower — see `_rejection_penalty()`. This is how
+`RejectedJob` rows (src/job_rejections.py) feed back into the feed.
 """
+
 import re
+from collections import Counter
 from difflib import SequenceMatcher
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 from sqlalchemy.orm import Session
 
-from src.models import Job, JobMatch, Skill, User, UserPreferences
+from src.models import Job, JobMatch, RejectedJob, Skill, User, UserPreferences
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -30,6 +38,13 @@ _MAX_LOCATION = 15.0
 _MAX_SALARY = 10.0
 
 _STOPWORDS = {"the", "a", "an", "and", "or", "of", "in", "at", "for", "to", "with"}
+
+# Rejection-affinity penalty (post-sum, capped — see module docstring).
+_REJECTION_COMPANY_THRESHOLD = 2  # rejections at same company before penalizing
+_COMPANY_REJECTION_PENALTY = 15.0
+_TITLE_SIM_THRESHOLD = 0.5  # Jaccard similarity to a rejected title
+_MAX_TITLE_SIM_PENALTY = 10.0
+_MAX_REJECTION_PENALTY = 20.0
 
 
 _SENIORITY_KEYWORDS: List[tuple] = [
@@ -321,6 +336,57 @@ def _score_salary(job: Job, user_prefs: Optional[UserPreferences]) -> float:
 
 
 # ---------------------------------------------------------------------------
+# Rejection-affinity penalty
+# ---------------------------------------------------------------------------
+
+
+def _load_rejection_signals(session: Session, user_id: int) -> Dict:
+    """One query gathering everything needed to penalize similar future jobs.
+
+    Meant to be cached per-user by the caller (see `compute_match_for_user`) —
+    every call site loops per-user-then-per-job, so this is one extra query
+    per user per run, not one per job.
+    """
+    rows = (
+        session.query(Job.title, Job.company)
+        .join(RejectedJob, RejectedJob.job_id == Job.id)
+        .filter(RejectedJob.user_id == user_id)
+        .all()
+    )
+    companies = Counter(r.company.lower() for r in rows if r.company)
+    title_word_sets = [_title_words(r.title) for r in rows if r.title]
+    return {
+        "companies": companies,
+        "title_word_sets": [s for s in title_word_sets if s],
+    }
+
+
+def _rejection_penalty(job: Job, signals: Dict) -> float:
+    """Capped penalty for a job resembling ones this user has rejected."""
+    if not signals:
+        return 0.0
+
+    penalty = 0.0
+
+    company = (job.company or "").lower()
+    if company and signals["companies"].get(company, 0) >= _REJECTION_COMPANY_THRESHOLD:
+        penalty += _COMPANY_REJECTION_PENALTY
+
+    title_word_sets = signals["title_word_sets"]
+    if job.title and title_word_sets:
+        job_words = _title_words(job.title)
+        if job_words:
+            best_sim = max(
+                (len(job_words & tw) / len(job_words | tw) for tw in title_word_sets),
+                default=0.0,
+            )
+            if best_sim >= _TITLE_SIM_THRESHOLD:
+                penalty += best_sim * _MAX_TITLE_SIM_PENALTY
+
+    return min(penalty, _MAX_REJECTION_PENALTY)
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -336,6 +402,12 @@ def compute_match_for_user(session: Session, job: Job, user: User) -> JobMatch:
     location_score = _score_location_remote(job, prefs)
     salary_score = _score_salary(job, prefs)
 
+    # Cached on the user instance — the same `user` object is reused across the
+    # inner per-job loop at every call site, so this is O(1) queries per user.
+    if not hasattr(user, "_rejection_signals"):
+        user._rejection_signals = _load_rejection_signals(session, user.id)
+    rejection_penalty = _rejection_penalty(job, user._rejection_signals)
+
     total = max(
         0.0,
         min(
@@ -344,7 +416,8 @@ def compute_match_for_user(session: Session, job: Job, user: User) -> JobMatch:
             + skill_score
             + experience_score
             + location_score
-            + salary_score,
+            + salary_score
+            - rejection_penalty,
         ),
     )
 
@@ -363,6 +436,7 @@ def compute_match_for_user(session: Session, job: Job, user: User) -> JobMatch:
     jm.experience_score = experience_score
     jm.location_or_remote_score = location_score
     jm.salary_score = salary_score
+    jm.rejection_penalty = rejection_penalty
     session.commit()
     return jm
 

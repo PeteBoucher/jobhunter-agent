@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import useSWR from "swr";
-import { getJobs, getProfile } from "@/lib/api";
+import { getJobs, getProfile, getRejectedJobs, rejectJob, unrejectJob } from "@/lib/api";
 import { JobCard } from "@/components/JobCard";
 
 export default function FeedPage() {
@@ -14,6 +14,7 @@ export default function FeedPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [showRejected, setShowRejected] = useState(false);
 
   const { data: profile } = useSWR(
     token ? ["profile"] : null,
@@ -41,8 +42,10 @@ export default function FeedPage() {
 
   const excludeStatuses = hideRejected ? ["rejected"] : [];
 
-  const { data: jobs, isLoading, error } = useSWR(
-    token ? ["jobs", keywords, remote, minScore, sort, hideRejected] : null,
+  const { data: jobs, isLoading, error, mutate: mutateJobs } = useSWR(
+    token && !showRejected
+      ? ["jobs", keywords, remote, minScore, sort, hideRejected]
+      : null,
     () =>
       getJobs(token!, {
         keywords: keywords || undefined,
@@ -54,6 +57,35 @@ export default function FeedPage() {
       }),
     { revalidateOnFocus: false }
   );
+
+  const {
+    data: rejectedJobs,
+    isLoading: rejectedLoading,
+    mutate: mutateRejected,
+  } = useSWR(
+    token && showRejected ? ["rejected-jobs"] : null,
+    () => getRejectedJobs(token!),
+    { revalidateOnFocus: false }
+  );
+
+  async function handleReject(jobId: number, reason?: string) {
+    if (!token) return;
+    await rejectJob(token, jobId, reason);
+    // Optimistically drop it from the current feed view.
+    mutateJobs(
+      (current) => current?.filter((j) => j.id !== jobId),
+      { revalidate: false }
+    );
+  }
+
+  async function handleUndoReject(jobId: number) {
+    if (!token) return;
+    await unrejectJob(token, jobId);
+    mutateRejected(
+      (current) => current?.filter((j) => j.id !== jobId),
+      { revalidate: false }
+    );
+  }
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
@@ -140,22 +172,46 @@ export default function FeedPage() {
             }
             className="rounded"
           />
-          Hide rejected
+          Hide employer-rejected
         </label>
       </div>
 
+      {/* Feed / Not interested tabs */}
+      <div className="mb-4 flex gap-4 border-b border-gray-200 text-sm">
+        <button
+          onClick={() => setShowRejected(false)}
+          className={`-mb-px border-b-2 px-1 pb-2 font-medium ${
+            !showRejected
+              ? "border-blue-600 text-blue-600"
+              : "border-transparent text-gray-400 hover:text-gray-600"
+          }`}
+        >
+          Feed
+        </button>
+        <button
+          onClick={() => setShowRejected(true)}
+          className={`-mb-px border-b-2 px-1 pb-2 font-medium ${
+            showRejected
+              ? "border-blue-600 text-blue-600"
+              : "border-transparent text-gray-400 hover:text-gray-600"
+          }`}
+        >
+          Not interested
+        </button>
+      </div>
+
       {/* Job list */}
-      {isLoading && (
+      {!showRejected && isLoading && (
         <div className="flex justify-center py-12">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
         </div>
       )}
-      {error && error.message !== "session_expired" && (
+      {!showRejected && error && error.message !== "session_expired" && (
         <div className="rounded-lg bg-red-50 p-4 text-sm text-red-600">
           Something went wrong loading jobs. Try refreshing the page.
         </div>
       )}
-      {jobs && jobs.length === 0 && (
+      {!showRejected && jobs && jobs.length === 0 && (
         <p className="text-center text-gray-400 py-12">
           No jobs found — try adjusting your filters or{" "}
           <a href="/profile" className="text-blue-600 underline">
@@ -164,10 +220,48 @@ export default function FeedPage() {
           .
         </p>
       )}
-      {jobs && (
+      {!showRejected && jobs && (
         <div className="space-y-3">
           {jobs.map((job) => (
-            <JobCard key={job.id} job={job} />
+            <JobCard key={job.id} job={job} onReject={handleReject} />
+          ))}
+        </div>
+      )}
+
+      {/* Not interested view */}
+      {showRejected && rejectedLoading && (
+        <div className="flex justify-center py-12">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+        </div>
+      )}
+      {showRejected && rejectedJobs && rejectedJobs.length === 0 && (
+        <p className="text-center text-gray-400 py-12">
+          You haven&apos;t marked any jobs as not interested.
+        </p>
+      )}
+      {showRejected && rejectedJobs && rejectedJobs.length > 0 && (
+        <div className="space-y-3">
+          {rejectedJobs.map((job) => (
+            <div
+              key={job.id}
+              className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white p-4"
+            >
+              <div className="min-w-0">
+                <p className="truncate font-medium text-gray-900">{job.title}</p>
+                <p className="truncate text-sm text-gray-500">{job.company}</p>
+                {job.rejection_reason && (
+                  <p className="mt-1 truncate text-xs italic text-gray-400">
+                    &ldquo;{job.rejection_reason}&rdquo;
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => handleUndoReject(job.id)}
+                className="shrink-0 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50"
+              >
+                Undo
+              </button>
+            </div>
           ))}
         </div>
       )}

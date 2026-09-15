@@ -42,6 +42,10 @@ export interface MatchScore {
   experience_score_max: number;
   location_or_remote_score_max: number;
   salary_score_max: number;
+  // Capped penalty already folded into match_score for similarity to jobs
+  // this user rejected — not one of the five dimensions above, so it has no
+  // corresponding *_max field.
+  rejection_penalty: number;
 }
 
 export interface Job {
@@ -62,6 +66,10 @@ export interface Job {
   scraped_at: string | null;
   company_industry: string | null;
   match: MatchScore | null;
+  // Set only by GET /jobs/rejected; unset elsewhere (rejected jobs are
+  // excluded from the normal feed rather than flagged).
+  is_rejected?: boolean | null;
+  rejection_reason?: string | null;
 }
 
 export interface Application {
