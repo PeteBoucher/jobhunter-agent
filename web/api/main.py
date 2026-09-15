@@ -20,6 +20,8 @@ _PROJECT_ROOT = os.path.dirname(
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
+from contextlib import asynccontextmanager  # noqa: E402
+
 from auth import decode_jwt  # noqa: E402
 from fastapi import FastAPI, Request  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
@@ -31,6 +33,9 @@ from routers import (  # noqa: E402
     preferences_router,
     profile_router,
 )
+
+from src.database import create_engine_instance  # noqa: E402
+from src.models import Base  # noqa: E402
 
 
 class _LokiLogHandler(logging.Handler):
@@ -99,10 +104,30 @@ def _setup_logging() -> None:
 _setup_logging()
 logger = logging.getLogger("jobhunter.api")
 
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    # Create any tables that don't exist yet (idempotent — CREATE TABLE IF NOT
+    # EXISTS under the hood; never touches existing tables/columns). Lambda and
+    # the CLI already call this via src.database.init_db() on every run; this
+    # service never did, so a new model could ship (tests green, PR merged)
+    # without its table existing here — see CLAUDE.md's "Job rejections" note.
+    # Best-effort: a transient DB hiccup at boot must not crash the whole API
+    # (Render would then crash-loop it) — log and continue either way.
+    try:
+        engine = create_engine_instance()
+        Base.metadata.create_all(engine)
+        engine.dispose()
+    except Exception:
+        logger.exception("startup_create_tables_failed")
+    yield
+
+
 app = FastAPI(
     title="Jobhunter API",
     description="REST API for the Jobhunter Agent web frontend",
     version="1.0.0",
+    lifespan=_lifespan,
 )
 
 # CORS — allow the Next.js frontend (localhost:3000 in dev, Vercel in prod)
