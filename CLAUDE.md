@@ -139,6 +139,8 @@ All services are intentionally co-located in Europe to minimise latency:
 
 Vercel defaults to `east-us-1` (Virginia) — the `regions` override in `vercel.json` is intentional. Do not remove it.
 
+**`jobhunter-api` (Render) is on the free instance plan** — it spins down after ~15 min with no traffic and cold-starts (10–30s) on the next request. There is no `render.yaml` in this repo; the service (`srv-d6n97714tr6s738tafvg`) is configured directly in the Render dashboard. Symptom: the production frontend intermittently "shows no feed" after a period of low traffic — the Vercel page calls `NEXT_PUBLIC_API_URL` (the Render URL), the API is asleep, and the request hangs or fails before the cold start finishes rather than erroring cleanly. Diagnose by checking `jobhunter-api` app logs for a `Shutting down` / next `Running 'uvicorn main:app...'` gap right before the report — that gap (not a code regression) is almost always the cause; a plain GET to `/health` will wake it back up immediately, and Neon job counts/`scraped_at` are the fastest way to confirm the scrape/match pipeline itself is unaffected. Fix is an infra decision (upgrade to Starter, or add a keep-alive ping), not a code change — flag it rather than silently re-diagnosing it each time it recurs.
+
 ### Invoke Lambda manually
 
 The Lambda runs in two phases. Trigger them independently:
