@@ -325,7 +325,11 @@ def _extract_config_from_page(
             return {"company": m.group(1)}
 
     if source_name == "ashby":
-        m = re.search(r"ashbyhq\.com/([a-z0-9_-]+)", page_text, re.I)
+        # Ashby lets a company use its full domain (incl. TLD) as its job
+        # board slug, e.g. jobs.ashbyhq.com/happyrobot.ai — the character
+        # class must include "." or the slug silently truncates at the dot
+        # (captures "happyrobot" instead of "happyrobot.ai", a 404).
+        m = re.search(r"ashbyhq\.com/([a-z0-9_.-]+)", page_text, re.I)
         if m:
             return {"subdomain": m.group(1)}
 

@@ -157,6 +157,30 @@ def test_detect_ats_page_fallback_recruitee(mock_get):
 
 
 @patch("src.job_scrapers.ats_detector.requests.get")
+def test_detect_ats_page_fallback_ashby_dotted_slug(mock_get):
+    """Page-fetch fingerprinting for Ashby must not truncate a job-board slug
+    at a dot — Ashby lets a company use its full domain (incl. TLD) as its
+    slug, e.g. jobs.ashbyhq.com/happyrobot.ai. A character class missing "."
+    silently captured "happyrobot" instead, which 404s against Ashby's API."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.text = (
+        "<html><body>"
+        '<a href="https://jobs.ashbyhq.com/happyrobot.ai/abc123">View role</a>'
+        "</body></html>"
+    )
+    mock_resp.headers = {}
+    mock_resp.url = "https://www.happyrobot.ai/careers"
+    mock_get.return_value = mock_resp
+
+    result = detect_ats("https://www.happyrobot.ai/careers", fetch_page=True)
+    assert result is not None
+    source_name, config = result
+    assert source_name == "ashby"
+    assert config["subdomain"] == "happyrobot.ai"
+
+
+@patch("src.job_scrapers.ats_detector.requests.get")
 def test_detect_ats_smartrecruiters_blind_probe(mock_get):
     """Custom-domain SR site detected via blind API probe; no SR fingerprint in HTML."""
     # First call: page fetch — returns HTML with no SR fingerprints
