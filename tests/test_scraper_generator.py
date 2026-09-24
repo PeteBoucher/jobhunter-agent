@@ -15,7 +15,9 @@ from src.job_scrapers.scraper_generator import (
     _import_generated_scraper,
     _is_wordpress,
     _load_base_scraper_interface,
+    _looks_like_api_error,
     _looks_like_bot_challenge,
+    _probe_endpoints,
     _request_to_dict,
     _wp_has_ajax_nonce,
     generate_scraper,
@@ -504,6 +506,83 @@ def test_confirm_network_candidates_skips_bot_challenge(mock_get):
     mock_get.assert_not_called()
 
 
+# ── API error envelope detection ─────────────────────────────────────────────
+#
+# Found live on DHL's Phenom People-powered careers site: a generic CMS
+# content endpoint (unrelated to job listings) returned 200 with a parseable
+# JSON body that was actually an error message — the old truthy-JSON check
+# treated it as "confirmed", feeding Claude a dead-end endpoint instead of
+# the real (CSRF-gated) jobs search API and producing a broken HTML-scraper
+# draft with silently high reported confidence.
+
+
+def test_looks_like_api_error_top_level_envelope():
+    """A top-level {"status": "error"/"failure", ...} envelope is flagged."""
+    assert _looks_like_api_error({"status": "error", "errorMsg": "bad request"})
+    assert _looks_like_api_error({"status": "failure", "data": None})
+
+
+def test_looks_like_api_error_nested_envelope():
+    """Phenom People nests the envelope under the endpoint/ddoKey name itself
+    — the exact shape seen live: {"caasContentV1": {"status": "error", ...}}."""
+    assert _looks_like_api_error(
+        {
+            "caasContentV1": {
+                "status": "error",
+                "errorCode": None,
+                "errorMsg": 'missing required params : ["refNum","siteType"]',
+                "data": None,
+            }
+        }
+    )
+
+
+def test_looks_like_api_error_error_code_without_status():
+    """An envelope with errorMsg/errorCode but no "status" key is still flagged."""
+    assert _looks_like_api_error({"errorMsg": "Tenant not identified", "data": None})
+
+
+def test_looks_like_api_error_negative_real_data():
+    """Real job data (no error envelope shape) is not flagged."""
+    assert not _looks_like_api_error({"jobs": [{"title": "Engineer"}], "total": 1})
+    assert not _looks_like_api_error({"status": "ok", "jobs": []})
+
+
+def test_looks_like_api_error_non_dict_is_not_flagged():
+    """A list response (e.g. a bare JSON array of jobs) is never an error envelope."""
+    assert not _looks_like_api_error([{"title": "Engineer"}])
+
+
+@patch("src.job_scrapers.scraper_generator.requests.get")
+def test_probe_endpoints_skips_api_error_envelope(mock_get):
+    """A candidate that 200s with an error-envelope JSON body is not confirmed."""
+    mock_resp = mock_get.return_value
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "caasContentV1": {"status": "error", "errorMsg": "missing required params"}
+    }
+
+    results = _probe_endpoints(["https://content-ir.example.com/api/caasContentV1"])
+    assert results == []
+
+
+@patch("src.job_scrapers.scraper_generator.requests.get")
+def test_confirm_network_candidates_skips_api_error_envelope(mock_get):
+    """Same check applies to headless-capture candidates, not just static probes."""
+    mock_resp = mock_get.return_value
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "status": "failure",
+        "errorMsg": "Tenant not identified",
+    }
+
+    candidates = [
+        {"url": "https://careers.example.com/api/apply/v2/jobs", "method": "GET"}
+    ]
+    results = _confirm_network_candidates(candidates)
+    assert results == []
+
+
 # ── Integration test: generate_scraper end-to-end (all HTTP mocked) ──────────
 
 
@@ -810,6 +889,19 @@ def test_detect_external_platform_infojobs():
     platform, message = result
     assert platform == "InfoJobs"
     assert "bot-detection" in message
+
+
+def test_detect_external_platform_jobleads():
+    """JobLeads is a paid aggregator whose ToS/robots.txt explicitly ban
+    scraping — bail out immediately rather than generating a draft."""
+    result = _detect_external_platform(
+        "<html></html>",
+        "https://www.jobleads.com/home",
+    )
+    assert result is not None
+    platform, message = result
+    assert platform == "JobLeads"
+    assert "aggregator" in message
 
 
 @patch("src.job_scrapers.scraper_generator._fetch_page")

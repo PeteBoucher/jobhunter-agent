@@ -97,10 +97,39 @@ def _scan_js_bundle(js_url: str, timeout: int = 10, verify: bool = True) -> str:
     return ""
 
 
+def _looks_like_api_error(data: Any) -> bool:
+    """A 200 response with parseable, non-empty JSON can still be a dead end
+    — an API error envelope, not real content. Found live on DHL's Phenom
+    People-powered site: content-ir.phenompeople.com/api/content-delivery/
+    caasContentV1 returns 200 {"caasContentV1":{"status":"error","errorMsg":
+    "missing required params..."}}, which the old truthy-JSON check treated
+    as "confirmed" — feeding Claude a dead-end endpoint (a generic CMS
+    content API, not the jobs search API) instead of correctly reporting
+    zero confirmed endpoints, which would have triggered the HTML-sample /
+    low-confidence path instead of a silently-wrong "high confidence" draft.
+
+    Checks both a top-level envelope ({"status": "error", ...}) and Phenom's
+    pattern of nesting it under the endpoint/ddoKey name itself
+    ({"caasContentV1": {"status": "error", ...}}).
+    """
+    if not isinstance(data, dict):
+        return False
+
+    def _is_error_envelope(d: Dict) -> bool:
+        if str(d.get("status", "")).lower() in ("error", "failure", "fail"):
+            return True
+        return bool(d.get("errorMsg") or d.get("errorCode"))
+
+    if _is_error_envelope(data):
+        return True
+    return any(isinstance(v, dict) and _is_error_envelope(v) for v in data.values())
+
+
 def _probe_endpoints(
     candidates: List[str], timeout: int = 8, verify: bool = True
 ) -> List[Dict[str, Any]]:
-    """Probe up to 3 candidate endpoints; return those that return JSON."""
+    """Probe up to 3 candidate endpoints; return those that return real JSON
+    content (not an API error envelope — see _looks_like_api_error)."""
     results = []
     for url in candidates[:3]:
         try:
@@ -113,9 +142,10 @@ def _probe_endpoints(
             if resp.status_code == 200:
                 try:
                     data = resp.json()
-                    results.append(
-                        {"url": url, "status": 200, "sample": str(data)[:600]}
-                    )
+                    if data and not _looks_like_api_error(data):
+                        results.append(
+                            {"url": url, "status": 200, "sample": str(data)[:600]}
+                        )
                 except Exception:
                     pass
         except Exception:
@@ -376,7 +406,7 @@ def _confirm_network_candidates(
             data = resp.json()
         except Exception:
             continue
-        if not data:
+        if not data or _looks_like_api_error(data):
             continue
         results.append(
             {
@@ -431,6 +461,19 @@ _EXTERNAL_JOB_PLATFORMS = [
         "an obscure-but-open API — treated the same as LinkedIn/Indeed/"
         "Glassdoor above. Check if the company also posts on a supported "
         "ATS instead.",
+    ),
+    (
+        re.compile(r"jobleads\.com", re.I),
+        "JobLeads",
+        "JobLeads is a paid job-matching aggregator, not a company careers "
+        "page — its listings are sourced from other boards/employers, so "
+        "scraping it would just re-scrape jobs already reachable at their "
+        "original source. robots.txt explicitly disallows /jobs/global/, "
+        "/api/, and /jobextern/, and its Terms of Use explicitly prohibit "
+        '"mecanismos, software o scripts" and bots/crawlers ("robot/'
+        'crawler") for commercial use of the data — a stated ToS '
+        "prohibition on top of being an aggregator, not just an obscure "
+        "API. Treated the same as LinkedIn/Indeed/Glassdoor above.",
     ),
 ]
 
