@@ -334,8 +334,19 @@ def _extract_config_from_page(
             return {"subdomain": m.group(1)}
 
     if source_name == "workday":
+        # Job-detail links look like {slug}.{wd}.myworkdayjobs.com/{portal}/job/...
+        # (some tenants add a locale segment first: .../en-US/{portal}/job/...).
+        # The portal is whatever segment sits directly before the literal
+        # "/job/" — capturing the segment right after the domain instead
+        # (as an earlier version of this regex did) grabs the locale or the
+        # literal "job" itself when there's no locale, e.g. UPS's
+        # hcmportal.wd5.myworkdayjobs.com/Search/job/... previously produced
+        # portal="job" (a 404) instead of the real portal, "Search".
         m = re.search(
-            r'([a-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com/[^/]*/([^/"]+)', page_text, re.I
+            r"([a-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com/"
+            r'(?:[a-z]{2}-[A-Z]{2}/)?([^/"]+)/job/',
+            page_text,
+            re.I,
         )
         if m:
             return {

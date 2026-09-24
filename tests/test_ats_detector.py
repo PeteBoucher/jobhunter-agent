@@ -181,6 +181,63 @@ def test_detect_ats_page_fallback_ashby_dotted_slug(mock_get):
 
 
 @patch("src.job_scrapers.ats_detector.requests.get")
+def test_detect_ats_page_fallback_workday_portal_before_job_segment(mock_get):
+    """Page-fetch fingerprinting for Workday must capture the portal segment
+    that sits directly before the "/job/" literal, not the first segment
+    after the domain — a custom-domain site with no locale prefix in its
+    links (e.g. UPS's jobs-ups.com -> hcmportal.wd5.myworkdayjobs.com)
+    previously captured the literal "job" itself as the portal, a 404."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.text = (
+        "<html><body>"
+        '<a href="https://hcmportal.wd5.myworkdayjobs.com/Search/job/'
+        'ES---POLINYA---BOMI-ESTRA/Healthcare-QA-Specialist_R26033142/apply">'
+        "Apply</a>"
+        "</body></html>"
+    )
+    mock_resp.headers = {}
+    mock_resp.url = "https://www.jobs-ups.com/global/en/search-results"
+    mock_get.return_value = mock_resp
+
+    result = detect_ats(
+        "https://www.jobs-ups.com/global/en/search-results", fetch_page=True
+    )
+    assert result is not None
+    source_name, config = result
+    assert source_name == "workday"
+    assert config["slug"] == "hcmportal"
+    assert config["wd"] == "wd5"
+    assert config["portal"] == "Search"
+
+
+@patch("src.job_scrapers.ats_detector.requests.get")
+def test_detect_ats_page_fallback_workday_portal_with_locale_prefix(mock_get):
+    """Same as above, but for a tenant whose links include a locale segment
+    before the portal (e.g. .../en-US/{portal}/job/...) — the locale must be
+    skipped, not captured as the portal."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.text = (
+        "<html><body>"
+        '<a href="https://example.wd3.myworkdayjobs.com/en-US/ExampleCareers/'
+        'job/Remote/Software-Engineer_R123">Apply</a>'
+        "</body></html>"
+    )
+    mock_resp.headers = {}
+    mock_resp.url = "https://careers.example.com"
+    mock_get.return_value = mock_resp
+
+    result = detect_ats("https://careers.example.com", fetch_page=True)
+    assert result is not None
+    source_name, config = result
+    assert source_name == "workday"
+    assert config["slug"] == "example"
+    assert config["wd"] == "wd3"
+    assert config["portal"] == "ExampleCareers"
+
+
+@patch("src.job_scrapers.ats_detector.requests.get")
 def test_detect_ats_smartrecruiters_blind_probe(mock_get):
     """Custom-domain SR site detected via blind API probe; no SR fingerprint in HTML."""
     # First call: page fetch — returns HTML with no SR fingerprints
