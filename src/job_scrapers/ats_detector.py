@@ -76,6 +76,32 @@ def _teamtailor_company_from_host(host: str) -> str:
     return slug.replace("-", " ").replace("_", " ").title()
 
 
+# Generic Teamtailor hosts that appear on essentially every Teamtailor-powered
+# page (recruiter dashboard link, marketing site, CDN) — never a company's
+# own career subdomain, so they must be excluded when hunting for one.
+_TEAMTAILOR_GENERIC_SUBDOMAINS = {"app", "www", "assets", "scripts", "cdn", "web"}
+
+
+def _find_teamtailor_subdomain(page_text: str) -> Optional[str]:
+    """Find an explicit {company}.teamtailor.com reference in page source.
+
+    Distinguishes a genuine custom-domain Teamtailor site — which serves
+    /jobs.json on its own domain, and (per careers.theworkshop.com) only ever
+    links to generic teamtailor.com hosts like app./www. — from a page that
+    merely *embeds* a Teamtailor jobs widget while living on an unrelated
+    domain that doesn't serve /jobs.json at all. Found live on
+    multiversecomputing.com/join-us: it embeds a teamtailor-cdn.com widget
+    script (data-teamtailor-api-key, etc.) and links to
+    multiversecomputing.teamtailor.com, but multiversecomputing.com itself
+    404s on /jobs.json — the widget's own subdomain is the real career site.
+    """
+    for match in re.finditer(r"\b([a-z0-9-]+)\.teamtailor\.com\b", page_text, re.I):
+        slug = match.group(1).lower()
+        if slug not in _TEAMTAILOR_GENERIC_SUBDOMAINS:
+            return slug
+    return None
+
+
 def _recruitee_company_from_host(host: str) -> str:
     """Derive a display company name from a Recruitee host — see
     _teamtailor_company_from_host, same logic, different native suffix."""
@@ -368,8 +394,17 @@ def _extract_config_from_page(
             return {"slug": m.group(1), "name": m.group(1)}
 
     if source_name == "teamtailor":
-        # career_url is the site origin either way; company name derivation
-        # differs for *.teamtailor.com vs. a custom domain (see helper).
+        # career_url is the site origin — except when this page only embeds
+        # a Teamtailor widget rather than being the Teamtailor-hosted site
+        # itself (see _find_teamtailor_subdomain); in that case the widget's
+        # own {company}.teamtailor.com subdomain is the real career_url.
+        embedded_slug = _find_teamtailor_subdomain(page_text)
+        if embedded_slug:
+            embedded_host = f"{embedded_slug}.teamtailor.com"
+            return {
+                "career_url": f"https://{embedded_host}",
+                "company": _teamtailor_company_from_host(embedded_host),
+            }
         return {
             "career_url": f"{parsed.scheme}://{host}",
             "company": _teamtailor_company_from_host(host),

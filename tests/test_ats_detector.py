@@ -129,6 +129,37 @@ def test_detect_ats_page_fallback_teamtailor(mock_get):
 
 
 @patch("src.job_scrapers.ats_detector.requests.get")
+def test_detect_ats_page_fallback_teamtailor_widget_embed(mock_get):
+    """A marketing page that only *embeds* a Teamtailor jobs widget (rather
+    than being the Teamtailor-hosted site itself) must resolve career_url to
+    the widget's own {company}.teamtailor.com subdomain, not the page's own
+    host — found live on multiversecomputing.com/join-us, which embeds a
+    teamtailor-cdn.com widget pointing at multiversecomputing.teamtailor.com
+    while multiversecomputing.com itself has no /jobs.json at all."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.text = (
+        "<html><head>"
+        '<script src="https://scripts.teamtailor-cdn.com/widgets/production/jobs.js">'
+        "</script></head><body>"
+        '<div class="teamtailor-jobs-widget" data-teamtailor-api-key="abc123">'
+        "</div>"
+        '<a href="https://multiversecomputing.teamtailor.com/connect">Join us</a>'
+        "</body></html>"
+    )
+    mock_resp.headers = {}
+    mock_resp.url = "https://multiversecomputing.com/join-us"
+    mock_get.return_value = mock_resp
+
+    result = detect_ats("https://multiversecomputing.com/join-us", fetch_page=True)
+    assert result is not None
+    source_name, config = result
+    assert source_name == "teamtailor"
+    assert config["career_url"] == "https://multiversecomputing.teamtailor.com"
+    assert config["company"] == "Multiversecomputing"
+
+
+@patch("src.job_scrapers.ats_detector.requests.get")
 def test_detect_ats_page_fallback_recruitee(mock_get):
     """Page-fetch fingerprinting detects Recruitee via its CDN asset host —
     discovered via meet.zoi.tech, a custom domain with no *.recruitee.com
