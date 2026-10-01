@@ -16,6 +16,7 @@ from src.job_scrapers.coinbase_scraper import CoinbaseScraper
 from src.job_scrapers.dejobs_scraper import DeJobsScraper
 from src.job_scrapers.experis_scraper import ExperisScraper
 from src.job_scrapers.fiftyskills_scraper import FiftySkillsScraper
+from src.job_scrapers.gibwork_scraper import GibWorkScraper
 from src.job_scrapers.github_scraper import GitHubJobsScraper
 from src.job_scrapers.greenhouse_scraper import GreenhouseScraper
 from src.job_scrapers.indragroup_scraper import IndraGroupScraper
@@ -27,6 +28,7 @@ from src.job_scrapers.microsoft_scraper import MicrosoftScraper
 from src.job_scrapers.recruitee_scraper import RecruiteeScraper
 from src.job_scrapers.reed_scraper import ReedScraper
 from src.job_scrapers.revolut_scraper import RevolutScraper
+from src.job_scrapers.ripplehire_scraper import RippleHireScraper
 from src.job_scrapers.smartrecruiters_scraper import SmartRecruitersScraper
 from src.job_scrapers.teamtailor_scraper import TeamtailorScraper
 from src.job_scrapers.themuse_scraper import TheMuseScraper
@@ -66,6 +68,8 @@ SCRAPER_MAP: Dict[str, Type[BaseScraper]] = {
     "themuse": TheMuseScraper,
     "reed": ReedScraper,
     "smartrecruiters": SmartRecruitersScraper,
+    "ripplehire": RippleHireScraper,
+    "gibwork": GibWorkScraper,
 }
 
 # Default sources to scrape (the ones that actually return data)
@@ -93,4 +97,6 @@ DEFAULT_SOURCES: List[str] = [
     "experis",
     "recruitee",
     "fiftyskills",
+    "ripplehire",
+    "gibwork",
 ]

@@ -50,6 +50,7 @@ Jobs are scraped once into a shared pool. Each user has their own profile, match
 | **Recruitee** | Zoi, bunq, Keolis, Trusted Shops, CM.com, and 8 more | `/api/offers/` JSON API; works on custom domains too |
 | **Workable** | Rentokil Initial, 360dialog | `apply.workable.com/api/v3` |
 | **50skills** | Carbfix | `static-jobs-api.50skills.app`; the front-end (`jobs.50skills.com`) is a bare client-rendered SPA with no server-side signal — API found by scanning the JS bundle |
+| **RippleHire** | UST (usource) | `{subdomain}.ripplehire.com/candidate`; XML API found via headless-browser network capture — capped at 500 jobs/run, descriptions only fetched for new (unseen) jobs |
 
 ### Job boards / aggregators
 
@@ -58,6 +59,7 @@ Jobs are scraped once into a shared pool. Each user has their own profile, match
 | **Adzuna** | 13+ countries | API key in SSM; countries derived from user preferences |
 | **The Muse** | Curated tech companies | No auth required |
 | **Reed** | UK job board | API key required |
+| **GibWork** | Gibraltar job board (23+ companies) | `gibwork.com/jobs.json`; re-publishes listings hosted on SmartRecruiters, Ashby, Pinpoint, and others — `country` hardcoded `"gi"` since every listing is Gibraltar-based |
 
 ### Direct company scrapers
 
