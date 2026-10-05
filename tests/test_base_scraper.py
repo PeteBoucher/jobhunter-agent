@@ -1,8 +1,13 @@
 """Tests for BaseScraper's _parse_job() output schema validation."""
 
 from datetime import datetime
+from unittest.mock import MagicMock
 
-from src.job_scrapers.base_scraper import validate_job_batch, validate_parsed_job
+from src.job_scrapers.base_scraper import (
+    BaseScraper,
+    validate_job_batch,
+    validate_parsed_job,
+)
 
 
 def _valid_job() -> dict:
@@ -187,3 +192,36 @@ def test_validate_job_batch_ignores_single_job():
 
 def test_validate_job_batch_ignores_empty_list():
     assert validate_job_batch([]) == []
+
+
+# ---------------------------------------------------------------------------
+# _create_job_object country normalisation
+# ---------------------------------------------------------------------------
+
+
+class _StubScraper(BaseScraper):
+    def _get_source_name(self):
+        return "stub"
+
+    def _fetch_jobs(self, **kwargs):
+        return []
+
+    def _parse_job(self, raw_job):
+        return raw_job
+
+
+def test_create_job_object_lowercases_country():
+    # Regression: Indra Group / Innova-IRV returned "ES". JobSearcher filters
+    # with a case-sensitive IN against lowercase codes, so those jobs vanished
+    # from country-filtered searches.
+    scraper = _StubScraper(MagicMock())
+    job = scraper._create_job_object({**_valid_job(), "country": " ES "})
+    assert job.country == "es"
+
+
+def test_create_job_object_blank_country_becomes_none():
+    scraper = _StubScraper(MagicMock())
+    job = scraper._create_job_object(
+        {**_valid_job(), "country": "  ", "description": None, "location": None}
+    )
+    assert job.country is None

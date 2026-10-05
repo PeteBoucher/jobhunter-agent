@@ -149,7 +149,7 @@ class IndraGroupScraper(BaseScraper):
         if location:
             parts = [p.strip() for p in location.split(",")]
             if parts and len(parts[-1]) == 2:
-                country = parts[-1].upper()
+                country = parts[-1].lower()
 
         return {
             "source_job_id": raw_job["source_job_id"],

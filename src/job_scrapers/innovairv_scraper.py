@@ -90,7 +90,7 @@ class InnovaIRVScraper(BaseScraper):
             "title": title,
             "company": "Innova-IRV",
             "location": "Málaga, Spain",
-            "country": "ES",
+            "country": "es",
             "remote": None,
             "description": description,
             "requirements": None,

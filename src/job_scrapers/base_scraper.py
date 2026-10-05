@@ -539,6 +539,10 @@ class BaseScraper(ABC):
         country = parsed_data.get("country") or self._infer_country(
             parsed_data.get("description"), parsed_data.get("location")
         )
+        # JobSearcher's country filter is a case-sensitive IN against
+        # lowercase codes — an uppercase "ES" silently drops out of the feed.
+        if isinstance(country, str):
+            country = country.strip().lower() or None
 
         return Job(
             source=self.source_name,
