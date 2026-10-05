@@ -3,7 +3,7 @@
 ## Systemd Service (Linux)
 
 ### Prerequisites
-- Python 3.10+
+- Python 3.11 (matches the Lambda image)
 - Virtual environment set up at `/opt/jobhunter-agent/.venv`
 - Non-root user `jobhunter` with permissions to `/opt/jobhunter-agent`
 
