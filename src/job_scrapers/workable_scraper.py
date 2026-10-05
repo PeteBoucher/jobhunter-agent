@@ -183,8 +183,13 @@ class WorkableScraper(BaseScraper):
 
 
 def _strip_html(html: str) -> str:
-    clean = re.sub(r"<[^>]+>", " ", html)
-    clean = re.sub(r"\s+", " ", clean).strip()
+    # Block-level tags become newlines so list items stay separable —
+    # job_matcher scores skill coverage per requirement phrase, and a
+    # flattened blob reads as a single requirement.
+    clean = re.sub(r"(?i)</?(?:li|ul|ol|p|br|div|h[1-6])\b[^>]*>", "\n", html)
+    clean = re.sub(r"<[^>]+>", " ", clean)
+    clean = re.sub(r"[^\S\n]+", " ", clean)
+    clean = re.sub(r"\s*\n\s*", "\n", clean).strip()
     return clean
 
 

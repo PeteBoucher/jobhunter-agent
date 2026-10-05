@@ -18,6 +18,7 @@ one they've rejected, score lower — see `_rejection_penalty()`. This is how
 `RejectedJob` rows (src/job_rejections.py) feed back into the feed.
 """
 
+import html
 import re
 from collections import Counter
 from difflib import SequenceMatcher
@@ -80,6 +81,25 @@ _SKILL_SPLIT_RE = re.compile(r"[|●\n]+|(?:\s+\.\s+)|\s{2,}")
 # requirement phrases: newlines, bullet markers, or a sentence boundary
 # (period/!/? followed by whitespace and a capital letter or digit).
 _REQUIREMENTS_SPLIT_RE = re.compile(r"[\n\r]+|[•●]|(?<=[.!?])\s+(?=[A-Z0-9])")
+
+# Block-level HTML tags mark item boundaries when a scraper stored raw markup
+# (e.g. older Lever rows hold one "<li>..</li><li>..</li>" string).
+_HTML_BLOCK_TAG_RE = re.compile(
+    r"</?(?:li|ul|ol|p|br|div|tr|h[1-6])\b[^>]*>", re.IGNORECASE
+)
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+# A chunk still this long after splitting is an unsplit blob — typically list
+# items flattened to text with no punctuation between them (Workable).
+_REQUIREMENT_BLOB_LEN = 300
+# Last-resort boundary for such blobs: a lowercase word followed by a
+# capitalised one ("...and deadlines Strong stakeholder management...").
+_BLOB_SPLIT_RE = re.compile(r"(?<=[a-z0-9)])\s+(?=[A-Z][a-z])")
+
+# Below this many requirement items, coverage is too coarse to trust: one
+# loose word overlap against a single item would otherwise read as 100%.
+_MIN_CONFIDENT_REQS = 4
+_NEUTRAL_SKILL_FRACTION = 0.4
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +173,19 @@ def _normalize_skills(user_skills: List[Skill]) -> List[str]:
     return result
 
 
+def _split_requirement_text(text: str) -> List[str]:
+    """Split one free-text (possibly HTML) requirements string into phrases."""
+    text = _HTML_BLOCK_TAG_RE.sub("\n", text)
+    text = html.unescape(_HTML_TAG_RE.sub(" ", text))
+    items: List[str] = []
+    for part in _REQUIREMENTS_SPLIT_RE.split(text):
+        if len(part) > _REQUIREMENT_BLOB_LEN:
+            items.extend(_BLOB_SPLIT_RE.split(part))
+        else:
+            items.append(part)
+    return [p.strip(" .;:") for p in items if p and len(p.strip()) > 3]
+
+
 def _requirement_items(requirements: Optional[Union[str, List[str]]]) -> List[str]:
     """Normalize a job's `requirements` field into a list of requirement phrases.
 
@@ -165,12 +198,24 @@ def _requirement_items(requirements: Optional[Union[str, List[str]]]) -> List[st
     ends up a single letter, which almost never matches a real skill token).
     This splits a string blob into sentence-like chunks so it scores the
     same way a list does.
+
+    List items that are themselves blobs (raw HTML, or very long) are split
+    the same way — a one-item list holding a whole `<li>` block is one
+    "requirement" otherwise, and any single skill hit scores it 100%.
     """
     if isinstance(requirements, list):
-        return [str(r) for r in requirements if r]
+        items: List[str] = []
+        for r in requirements:
+            if not r:
+                continue
+            text = str(r)
+            if "<" in text or len(text) > _REQUIREMENT_BLOB_LEN:
+                items.extend(_split_requirement_text(text))
+            else:
+                items.append(text)
+        return items
     if isinstance(requirements, str):
-        parts = _REQUIREMENTS_SPLIT_RE.split(requirements)
-        return [p.strip(" .;:") for p in parts if p and len(p.strip()) > 3]
+        return _split_requirement_text(requirements)
     return []
 
 
@@ -226,12 +271,12 @@ def _score_skills(
     """
     if not requirements:
         # No requirements listed — give neutral partial credit (40 % of max)
-        return _MAX_SKILLS * 0.4
+        return _MAX_SKILLS * _NEUTRAL_SKILL_FRACTION
     reqs = [r.lower() for r in _requirement_items(requirements)]
     if not reqs:
         # String requirements that didn't split into anything usable —
         # same neutral fallback as "no requirements listed".
-        return _MAX_SKILLS * 0.4
+        return _MAX_SKILLS * _NEUTRAL_SKILL_FRACTION
     if not user_skills:
         return 0.0
     skill_names = _normalize_skills(user_skills)
@@ -241,7 +286,11 @@ def _score_skills(
         1 for r in reqs if any(_skill_matches(r, sk) for sk in skill_names)
     )
     coverage = req_matches / len(reqs)
-    return min(_MAX_SKILLS, coverage * _MAX_SKILLS)
+    # With only a handful of items, cap the achievable score between the
+    # neutral "no requirements" level and full marks, scaled by item count.
+    confidence = min(1.0, len(reqs) / _MIN_CONFIDENT_REQS)
+    cap = _NEUTRAL_SKILL_FRACTION + (1 - _NEUTRAL_SKILL_FRACTION) * confidence
+    return min(coverage, cap) * _MAX_SKILLS
 
 
 def _score_experience(job: Job, user_prefs: Optional[UserPreferences]) -> float:

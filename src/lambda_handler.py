@@ -443,6 +443,10 @@ def _do_match(sns_topic_arn: str) -> Dict[str, Any]:
 
     min_score = float(os.environ.get("MIN_MATCH_SCORE_NOTIFY", "70"))
     max_match_per_run = int(os.environ.get("MAX_MATCH_PER_RUN", "5000"))
+    # The SNS topic has a single subscriber, so only that user's matches go
+    # in the email — everyone else's are scored but not reported. Unset means
+    # no match notification at all rather than leaking other users' matches.
+    notify_email = os.environ.get("NOTIFY_USER_EMAIL", "").strip().lower()
 
     total_matches = 0
     high_score_matches = []
@@ -488,7 +492,11 @@ def _do_match(sns_topic_arn: str) -> Dict[str, Any]:
             for job in jobs:
                 jm = compute_match_for_user(session, job, user)
                 total_matches += 1
-                if jm.match_score and jm.match_score >= min_score:
+                if (
+                    (user.email or "").lower() == notify_email
+                    and jm.match_score
+                    and jm.match_score >= min_score
+                ):
                     # Skip jobs outside preferred countries. Remote jobs only
                     # bypass the country filter when the user is open to
                     # remote work — an onsite-preferring user should still

@@ -306,3 +306,88 @@ def test_matching_is_scoped_per_user(
     assert matches_by_user.get(1) == 2, "User 1 should have 2 matches"
     assert matches_by_user.get(2) == 2, "User 2 should have 2 matches"
     assert result["matches_computed"] == 4
+
+
+def test_match_notification_only_includes_configured_user(
+    mock_sns_client, mock_scrapers, tmp_path, monkeypatch
+):
+    """Regression: the single-subscriber email listed every user's matches."""
+    db_path = str(tmp_path / "notify.db")
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
+    monkeypatch.setenv("MIN_MATCH_SCORE_NOTIFY", "1")
+    monkeypatch.setenv("NOTIFY_USER_EMAIL", "Alice@example.com")
+
+    from src.database import get_session, init_db
+    from src.models import Job, User, UserPreferences
+
+    init_db()
+    session = get_session()
+    for uid, email in [(1, "alice@example.com"), (2, "bob@example.com")]:
+        session.add(User(id=uid, email=email, is_approved=True, cv_text="CV"))
+        session.add(
+            UserPreferences(
+                user_id=uid,
+                target_titles=["Software Engineer"],
+                remote_preference="remote",
+            )
+        )
+    session.add(
+        Job(
+            source="greenhouse",
+            source_job_id="job-1",
+            title="Software Engineer",
+            company="Acme",
+            remote="remote",
+        )
+    )
+    session.commit()
+    session.close()
+
+    from src.lambda_handler import lambda_handler
+
+    result = lambda_handler({"action": "match"}, None)
+
+    assert result["matches_computed"] == 2
+    assert result["high_score_matches"] == 1
+    message = mock_sns_client.publish.call_args.kwargs["Message"]
+    assert message.count("Acme: Software Engineer") == 1
+
+
+def test_match_notification_skipped_when_no_user_configured(
+    mock_sns_client, mock_scrapers, tmp_path, monkeypatch
+):
+    db_path = str(tmp_path / "notify_none.db")
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
+    monkeypatch.setenv("MIN_MATCH_SCORE_NOTIFY", "1")
+    monkeypatch.delenv("NOTIFY_USER_EMAIL", raising=False)
+
+    from src.database import get_session, init_db
+    from src.models import Job, User, UserPreferences
+
+    init_db()
+    session = get_session()
+    session.add(User(id=1, email="alice@example.com", is_approved=True, cv_text="CV"))
+    session.add(
+        UserPreferences(
+            user_id=1, target_titles=["Software Engineer"], remote_preference="remote"
+        )
+    )
+    session.add(
+        Job(
+            source="greenhouse",
+            source_job_id="job-1",
+            title="Software Engineer",
+            company="Acme",
+            remote="remote",
+        )
+    )
+    session.commit()
+    session.close()
+
+    from src.lambda_handler import lambda_handler
+
+    result = lambda_handler({"action": "match"}, None)
+
+    assert result["matches_computed"] == 1
+    assert result["high_score_matches"] == 0
+    mock_sns_client.publish.assert_not_called()

@@ -85,6 +85,7 @@ Resources:
           DATABASE_URL: '{{resolve:ssm:/jobhunter/database-url}}'
           SNS_TOPIC_ARN: !Ref JobhunterNotificationTopic
           MIN_MATCH_SCORE_NOTIFY: !Ref MinMatchScoreNotify
+          NOTIFY_USER_EMAIL: !Ref NotificationEmail
           ADZUNA_APP_ID: '{{resolve:ssm:/jobhunter/adzuna-app-id}}'
           ADZUNA_APP_KEY: '{{resolve:ssm:/jobhunter/adzuna-app-key}}'
           REED_API_KEY: '{{resolve:ssm:/jobhunter/reed-api-key}}'

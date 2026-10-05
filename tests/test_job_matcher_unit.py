@@ -167,8 +167,13 @@ class TestScoreTitle:
 
 class TestScoreSkills:
     def test_full_coverage(self):
-        reqs = ["Python", "SQL", "Docker"]
-        skills = [_skill("python"), _skill("sql"), _skill("docker")]
+        reqs = ["Python", "SQL", "Docker", "Kubernetes"]
+        skills = [
+            _skill("python"),
+            _skill("sql"),
+            _skill("docker"),
+            _skill("kubernetes"),
+        ]
         assert _score_skills(reqs, skills) == pytest.approx(35.0)
 
     def test_partial_coverage(self):
@@ -186,10 +191,12 @@ class TestScoreSkills:
         assert _score_skills(None, [_skill("python")]) == pytest.approx(35.0 * 0.4)
 
     def test_more_skills_than_reqs_does_not_penalise(self):
-        reqs = ["Python", "SQL"]
+        reqs = ["Python", "SQL", "Docker", "Kubernetes"]
         skills = [_skill(f"skill{i}") for i in range(18)] + [
             _skill("python"),
             _skill("sql"),
+            _skill("docker"),
+            _skill("kubernetes"),
         ]
         assert _score_skills(reqs, skills) == pytest.approx(35.0)
 
@@ -197,7 +204,7 @@ class TestScoreSkills:
         # "aws" should match a skill "cloud computing aws"
         reqs = ["aws"]
         skills = [_skill("cloud computing aws")]
-        assert _score_skills(reqs, skills) == pytest.approx(35.0)
+        assert _score_skills(reqs, skills) > 0
 
     def test_no_false_positive_long_skill_string(self):
         # A long un-normalized skill blob should NOT match an unrelated requirement
@@ -214,7 +221,7 @@ class TestScoreSkills:
         # "Excel | Power BI | Salesforce" should split and match "salesforce crm"
         reqs = ["Salesforce CRM"]
         skills = [_skill("Excel | Power BI | Salesforce")]
-        assert _score_skills(reqs, skills) == pytest.approx(35.0)
+        assert _score_skills(reqs, skills) > 0
 
     def test_string_requirements_are_split_not_iterated_as_chars(self):
         # Regression: Recruitee/SmartRecruiters/Workable store `requirements`
@@ -230,6 +237,42 @@ class TestScoreSkills:
         reqs = "Fluency in French and German required for this legal role."
         skills = [_skill("python"), _skill("sql")]
         assert _score_skills(reqs, skills) == 0.0
+
+    def test_single_requirement_cannot_earn_full_marks(self):
+        # Regression: one requirement item matched by one skill is 1/1 = 100%
+        # coverage, which scored 35/35 on almost no evidence.
+        score = _score_skills(["Python"], [_skill("python")])
+        assert score == pytest.approx(35.0 * 0.55)
+
+    def test_few_requirements_cap_scales_with_count(self):
+        skills = [_skill("python"), _skill("sql"), _skill("docker")]
+        two = _score_skills(["Python", "SQL"], skills)
+        three = _score_skills(["Python", "SQL", "Docker"], skills)
+        assert 35.0 * 0.4 < two < three < 35.0
+
+    def test_unpunctuated_blob_is_not_one_requirement(self):
+        # Regression: Workable flattened <li> items into one string with no
+        # separators, so a single word overlap anywhere in it scored 35/35.
+        reqs = (
+            "3+ years of experience in project management within SaaS or B2B "
+            "tech environments Proven track record managing multiple concurrent "
+            "clients with competing priorities and deadlines Strong stakeholder "
+            "alignment across internal teams and external clients Solid "
+            "understanding of delivery methodologies Comfortable working with "
+            "tracking tools Excellent written and verbal communication in English"
+        )
+        assert len(reqs) > 300
+        score = _score_skills(reqs, [_skill("project management")])
+        assert 0 < score < 35.0 * 0.5
+
+    def test_html_blob_in_list_is_not_one_requirement(self):
+        # Regression: older Lever rows hold a one-item list of raw <li> markup.
+        reqs = [
+            "<li>Build Android integrations</li><li>Optimise Kotlin code</li>"
+            "<li>Partner with design</li><li>Mentor junior engineers</li>"
+        ]
+        score = _score_skills(reqs, [_skill("kotlin")])
+        assert score == pytest.approx(35.0 * 0.25)
 
 
 # ---------------------------------------------------------------------------
@@ -260,6 +303,16 @@ class TestRequirementItems:
         text = "Python required\nSQL required"
         items = _requirement_items(text)
         assert len(items) == 2
+
+    def test_list_item_with_html_is_split_on_block_tags(self):
+        items = _requirement_items(
+            ["<li>Python &amp; SQL</li><li><b>Docker</b> skills</li>"]
+        )
+        assert items == ["Python & SQL", "Docker  skills"]
+
+    def test_long_unpunctuated_string_falls_back_to_capital_boundaries(self):
+        text = " ".join(["Strong experience with distributed systems design"] * 8)
+        assert len(_requirement_items(text)) == 8
 
     def test_none_returns_empty(self):
         assert _requirement_items(None) == []
