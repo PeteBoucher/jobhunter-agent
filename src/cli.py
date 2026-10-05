@@ -638,29 +638,48 @@ def scrape(sources: tuple, keywords: tuple, max_retries: int, backoff: float) ->
         selected = [s.lower() for s in sources] if sources else list(DEFAULT_SOURCES)
         total_new = 0
 
-        for src_name in selected:
-            cls = SCRAPER_MAP.get(src_name)
-            if not cls:
-                console.print(f"[yellow]Skipping unknown source: {src_name}[/yellow]")
-                continue
-
-            scraper = cls(session)
-
-            # If scraper supports scrape_by_keywords and keywords were provided, use it.
-            try:
-                if keywords and hasattr(scraper, "scrape_by_keywords"):
-                    count = scraper.scrape_by_keywords(list(keywords))
-                else:
-                    jobs = scraper.scrape(
-                        max_retries=max_retries, backoff_factor=backoff
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Scraping...", total=len(selected))
+            for src_name in selected:
+                progress.update(task, description=f"Scraping {src_name}...")
+                cls = SCRAPER_MAP.get(src_name)
+                if not cls:
+                    progress.console.print(
+                        f"[yellow]Skipping unknown source: {src_name}[/yellow]"
                     )
-                    count = len(jobs)
+                    progress.advance(task)
+                    continue
 
-                total_new += count
-                console.print(f"[green]✓[/green] {src_name}: new jobs added: {count}")
+                scraper = cls(session)
 
-            except Exception as e:
-                console.print(f"[red]✗[/red] Error scraping {src_name}: {e}")
+                # If scraper supports scrape_by_keywords and keywords were provided,
+                # use it.
+                try:
+                    if keywords and hasattr(scraper, "scrape_by_keywords"):
+                        count = scraper.scrape_by_keywords(list(keywords))
+                    else:
+                        jobs = scraper.scrape(
+                            max_retries=max_retries, backoff_factor=backoff
+                        )
+                        count = len(jobs)
+
+                    total_new += count
+                    progress.console.print(
+                        f"[green]✓[/green] {src_name}: new jobs added: {count}"
+                    )
+
+                except Exception as e:
+                    progress.console.print(
+                        f"[red]✗[/red] Error scraping {src_name}: {e}"
+                    )
+                progress.advance(task)
 
         console.print(
             f"[green]✓[/green] Scraping completed. Total new jobs: {total_new}"
@@ -1481,6 +1500,15 @@ def scraper_list(source: Optional[str]) -> None:
 
         for fb in FS_DEFAULT:
             _hc("fiftyskills", fb.company)
+    except ImportError:
+        pass
+    try:
+        from src.job_scrapers.ripplehire_scraper import (
+            RIPPLEHIRE_INSTANCES as RH_DEFAULT,
+        )
+
+        for rh in RH_DEFAULT:
+            _hc("ripplehire", rh.company)
     except ImportError:
         pass
 

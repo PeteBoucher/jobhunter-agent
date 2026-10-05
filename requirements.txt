@@ -12,6 +12,7 @@ pandas==2.0.1
 # API & Web Scraping
 requests==2.33.0
 beautifulsoup4==4.12.2
+defusedxml==0.7.1
 playwright==1.35.0
 selenium==4.14.0
 

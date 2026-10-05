@@ -50,6 +50,7 @@ def test_scraper_list_includes_every_multi_company_scraper(runner):
     assert "recruitee" in result.output
     assert "jobboardly" in result.output
     assert "fiftyskills" in result.output
+    assert "ripplehire" in result.output
 
 
 def test_scraper_list_shows_row_after_insert(runner, tmp_path):
