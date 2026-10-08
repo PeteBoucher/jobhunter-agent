@@ -440,6 +440,29 @@ def _rejection_penalty(job: Job, signals: Dict) -> float:
 # ---------------------------------------------------------------------------
 
 
+def _total_score(
+    title_score: float,
+    skill_score: float,
+    experience_score: float,
+    location_score: float,
+    salary_score: float,
+    rejection_penalty: float,
+) -> float:
+    """Sum the five weighted dimensions, subtract the penalty, clamp to 0–100."""
+    return max(
+        0.0,
+        min(
+            100.0,
+            title_score
+            + skill_score
+            + experience_score
+            + location_score
+            + salary_score
+            - rejection_penalty,
+        ),
+    )
+
+
 def compute_match_for_user(session: Session, job: Job, user: User) -> JobMatch:
     """Compute match score for a single user and job and persist a JobMatch."""
     prefs = user.preferences
@@ -457,17 +480,13 @@ def compute_match_for_user(session: Session, job: Job, user: User) -> JobMatch:
         user._rejection_signals = _load_rejection_signals(session, user.id)
     rejection_penalty = _rejection_penalty(job, user._rejection_signals)
 
-    total = max(
-        0.0,
-        min(
-            100.0,
-            title_score
-            + skill_score
-            + experience_score
-            + location_score
-            + salary_score
-            - rejection_penalty,
-        ),
+    total = _total_score(
+        title_score,
+        skill_score,
+        experience_score,
+        location_score,
+        salary_score,
+        rejection_penalty,
     )
 
     jm = (

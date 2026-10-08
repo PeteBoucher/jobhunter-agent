@@ -110,9 +110,13 @@ class LeverScraper(BaseScraper):
         categories = raw_job.get("categories", {})
         location = categories.get("location")
         department = categories.get("department") or categories.get("team")
-        # Determine remote status
+        # Determine remote status. Lever's own workplaceType is authoritative;
+        # fall back to the location text when it's missing or "unspecified".
         remote = None
-        if location:
+        workplace_type = (raw_job.get("workplaceType") or "").lower().replace("-", "")
+        if workplace_type in ("remote", "hybrid", "onsite"):
+            remote = workplace_type
+        elif location:
             loc_lower = location.lower()
             if "remote" in loc_lower:
                 remote = "remote"

@@ -130,6 +130,49 @@ class TestLeverScraper:
         assert parsed["remote"] == "remote"
         assert parsed["location"] == "Remote"
 
+    @pytest.mark.parametrize(
+        "workplace_type, expected",
+        [
+            ("remote", "remote"),
+            ("hybrid", "hybrid"),
+            ("onsite", "onsite"),
+            ("on-site", "onsite"),
+            ("Remote", "remote"),
+        ],
+    )
+    def test_parse_job_remote_from_workplace_type(
+        self, scraper, workplace_type, expected
+    ):
+        """workplaceType sets remote even when the location text says nothing."""
+        raw_job = SAMPLE_LEVER_RESPONSE[0].copy()
+        raw_job["_company_slug"] = "testco"
+        raw_job["workplaceType"] = workplace_type
+
+        assert scraper._parse_job(raw_job)["remote"] == expected
+
+    def test_parse_job_workplace_type_beats_location_text(self, scraper):
+        """workplaceType wins over a conflicting location string."""
+        raw_job = SAMPLE_LEVER_RESPONSE[1].copy()  # location == "Remote"
+        raw_job["_company_slug"] = "testco"
+        raw_job["workplaceType"] = "hybrid"
+
+        assert scraper._parse_job(raw_job)["remote"] == "hybrid"
+
+    @pytest.mark.parametrize("workplace_type", ["unspecified", None, ""])
+    def test_parse_job_unspecified_workplace_type_falls_back(
+        self, scraper, workplace_type
+    ):
+        """Missing/unspecified workplaceType falls back to the location text."""
+        remote_job = SAMPLE_LEVER_RESPONSE[1].copy()
+        remote_job["_company_slug"] = "testco"
+        remote_job["workplaceType"] = workplace_type
+        assert scraper._parse_job(remote_job)["remote"] == "remote"
+
+        plain_job = SAMPLE_LEVER_RESPONSE[0].copy()
+        plain_job["_company_slug"] = "testco"
+        plain_job["workplaceType"] = workplace_type
+        assert scraper._parse_job(plain_job)["remote"] is None
+
     def test_parse_job_posted_date(self, scraper):
         """Test that posted date is parsed from epoch milliseconds."""
         raw_job = SAMPLE_LEVER_RESPONSE[0].copy()
