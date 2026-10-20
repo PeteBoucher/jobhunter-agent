@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     String,
@@ -130,6 +131,11 @@ class JobMatch(Base):
     """Job match scoring against user profile."""
 
     __tablename__ = "job_matches"
+    # Every matcher lookup filters on (user_id, job_id); without this each one
+    # was a seq scan of ~3.3M rows (~280ms) and the match phase timed out (#44).
+    # create_all() won't add it to an existing table — prod got it via
+    # CREATE INDEX CONCURRENTLY.
+    __table_args__ = (Index("ix_job_matches_user_job", "user_id", "job_id"),)
 
     id = Column(Integer, primary_key=True)
     job_id = Column(Integer, ForeignKey("jobs.id"))

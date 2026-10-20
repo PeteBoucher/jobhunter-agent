@@ -242,6 +242,10 @@ def _infer_country(location: Optional[str]) -> Optional[str]:
 
 
 _EXPIRY_DAYS = 7  # Jobs not re-seen within this window are marked inactive
+# Stop starting new users in the match phase once less than this remains.
+# A user takes well under a second with ix_job_matches_user_job; 30s leaves
+# room for the in-flight user, the SNS email and auto-apply.
+_MATCH_DEADLINE_MARGIN_MS = 30_000
 
 # Lazy-initialised clients (cached for Lambda warm starts)
 _sns_client = None
@@ -456,9 +460,14 @@ def _refresh_rejection_scores(session: Any) -> None:
         logger.warning("rejection penalty refresh failed", exc_info=True)
 
 
-def _do_match(sns_topic_arn: str) -> Dict[str, Any]:
-    """Compute per-user match scores and notify on high-score matches."""
-    from sqlalchemy import exists
+def _do_match(sns_topic_arn: str, context: Any = None) -> Dict[str, Any]:
+    """Compute per-user match scores and notify on high-score matches.
+
+    Users matched longest ago go first, and no new user is started once less
+    than `_MATCH_DEADLINE_MARGIN_MS` of the Lambda budget remains, so a run
+    that can't finish stops cleanly and the next run picks up the rest.
+    """
+    from sqlalchemy import exists, func
 
     from src.database import get_session, init_db
     from src.job_matcher import compute_match_for_user
@@ -497,10 +506,31 @@ def _do_match(sns_topic_arn: str) -> Dict[str, Any]:
             )
             .all()
         )
+        # Oldest-matched first (never-matched before everyone), so a run cut
+        # short by the deadline doesn't starve the same users every time.
+        last_matched = dict(
+            session.query(JobMatch.user_id, func.max(JobMatch.calculated_at))
+            .group_by(JobMatch.user_id)
+            .all()
+        )
+        users.sort(key=lambda u: (last_matched.get(u.id) or datetime.min, u.id))
         per_user_limit = (
             max(1, max_match_per_run // len(users)) if users else max_match_per_run
         )
+        users_done = 0
         for user in users:
+            if (
+                context is not None
+                and context.get_remaining_time_in_millis() < _MATCH_DEADLINE_MARGIN_MS
+            ):
+                logger.warning(
+                    "Match deadline approaching — stopping after %d of %d users; "
+                    "the rest are first in line next run",
+                    users_done,
+                    len(users),
+                )
+                break
+            users_done += 1
             matched_job_ids = session.query(JobMatch.job_id).filter(
                 JobMatch.user_id == user.id
             )
@@ -517,7 +547,7 @@ def _do_match(sns_topic_arn: str) -> Dict[str, Any]:
             if not jobs:
                 continue
             for job in jobs:
-                jm = compute_match_for_user(session, job, user)
+                jm = compute_match_for_user(session, job, user, commit=False)
                 total_matches += 1
                 if (
                     (user.email or "").lower() == notify_email
@@ -548,6 +578,7 @@ def _do_match(sns_topic_arn: str) -> Dict[str, Any]:
                         f"  - {job.company}: {job.title}"
                         f" ({jm.match_score:.0f}%) [{loc}]"
                     )
+            session.commit()
             logger.info("Computed %d matches for user %d", len(jobs), user.id)
             if len(jobs) == per_user_limit:
                 logger.warning(
@@ -631,5 +662,5 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     action = event.get("action", "scrape")
     if action == "match":
-        return _do_match(sns_topic_arn)
+        return _do_match(sns_topic_arn, context)
     return _do_scrape(sns_topic_arn, function_name)

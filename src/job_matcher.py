@@ -500,8 +500,15 @@ def _total_score(
     )
 
 
-def compute_match_for_user(session: Session, job: Job, user: User) -> JobMatch:
-    """Compute match score for a single user and job and persist a JobMatch."""
+def compute_match_for_user(
+    session: Session, job: Job, user: User, commit: bool = True
+) -> JobMatch:
+    """Compute match score for a single user and job and persist a JobMatch.
+
+    Pass `commit=False` when scoring many jobs in a loop and commit once at
+    the end — the row is still added to the session (and autoflushed by the
+    next query), just not committed per job.
+    """
     prefs = user.preferences
     skills = user.skills or []
 
@@ -542,7 +549,8 @@ def compute_match_for_user(session: Session, job: Job, user: User) -> JobMatch:
     jm.location_or_remote_score = location_score
     jm.salary_score = salary_score
     jm.rejection_penalty = rejection_penalty
-    session.commit()
+    if commit:
+        session.commit()
     return jm
 
 

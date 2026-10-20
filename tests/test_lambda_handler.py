@@ -391,3 +391,94 @@ def test_match_notification_skipped_when_no_user_configured(
     assert result["matches_computed"] == 1
     assert result["high_score_matches"] == 0
     mock_sns_client.publish.assert_not_called()
+
+
+def _seed_match_users(session, user_ids):
+    from src.models import User, UserPreferences
+
+    for uid in user_ids:
+        session.add(
+            User(id=uid, email=f"u{uid}@example.com", is_approved=True, cv_text="CV")
+        )
+        session.add(UserPreferences(user_id=uid, target_titles=["Engineer"]))
+
+
+def _lambda_context(remaining_ms):
+    """Fake Lambda context; `remaining_ms` is a list consumed one call at a time."""
+    ctx = MagicMock()
+    ctx.get_remaining_time_in_millis.side_effect = remaining_ms
+    return ctx
+
+
+def test_match_stops_before_deadline(
+    mock_sns_client, mock_scrapers, tmp_path, monkeypatch
+):
+    """#44: no new user is started once the Lambda budget is nearly spent."""
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'deadline.db'}")
+
+    from src.database import get_session, init_db
+    from src.models import Job
+
+    init_db()
+    session = get_session()
+    _seed_match_users(session, [1, 2])
+    session.add(Job(source="greenhouse", source_job_id="j", title="Engineer"))
+    session.commit()
+    session.close()
+
+    from src.lambda_handler import _MATCH_DEADLINE_MARGIN_MS, lambda_handler
+
+    ctx = _lambda_context([_MATCH_DEADLINE_MARGIN_MS - 1] * 2)
+    result = lambda_handler({"action": "match"}, ctx)
+
+    assert result["matches_computed"] == 0
+
+
+def test_match_processes_least_recently_matched_users_first(
+    mock_sns_client, mock_scrapers, tmp_path, monkeypatch
+):
+    """#44: a run cut short must not starve the same users every time.
+
+    User 2 was never matched and user 3 was matched long ago, so with budget
+    for only two users they go first and user 1 (matched just now) waits.
+    """
+    from datetime import datetime, timedelta
+
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'order.db'}")
+
+    from src.database import get_session, init_db
+    from src.models import Job, JobMatch
+
+    init_db()
+    session = get_session()
+    _seed_match_users(session, [1, 2, 3])
+    old_job = Job(source="greenhouse", source_job_id="old", title="Engineer")
+    new_job = Job(source="greenhouse", source_job_id="new", title="Engineer")
+    session.add_all([old_job, new_job])
+    session.flush()
+    old_job.is_active = False
+    now = datetime.utcnow()
+    session.add(JobMatch(job_id=old_job.id, user_id=1, calculated_at=now))
+    session.add(
+        JobMatch(job_id=old_job.id, user_id=3, calculated_at=now - timedelta(days=9))
+    )
+    session.commit()
+    new_job_id = new_job.id
+    session.close()
+
+    from src.lambda_handler import _MATCH_DEADLINE_MARGIN_MS, lambda_handler
+
+    plenty = _MATCH_DEADLINE_MARGIN_MS * 10
+    ctx = _lambda_context([plenty, plenty, 0])
+    result = lambda_handler({"action": "match"}, ctx)
+
+    session = get_session()
+    scored = {
+        uid
+        for (uid,) in session.query(JobMatch.user_id).filter(
+            JobMatch.job_id == new_job_id
+        )
+    }
+    session.close()
+    assert result["matches_computed"] == 2
+    assert scored == {2, 3}
