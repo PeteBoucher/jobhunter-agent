@@ -236,3 +236,18 @@ def test_create_job(temp_db):
     assert retrieved.company == "Test Corp"
 
     session.close()
+
+
+def test_init_db_does_not_print_password(capsys, monkeypatch):
+    """#47: init_db() runs on every Lambda invocation — never log credentials."""
+    monkeypatch.setenv(
+        "DATABASE_URL", "postgresql://owner:s3cret-pw@db.example.com/neondb"
+    )
+    with patch("src.database.create_engine"), patch(
+        "src.database.Base.metadata.create_all"
+    ):
+        init_db()
+
+    out = capsys.readouterr().out
+    assert "s3cret-pw" not in out
+    assert "db.example.com/neondb" in out

@@ -3,6 +3,7 @@
 import os
 
 from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from src.models import Base
@@ -17,7 +18,10 @@ def init_db() -> None:
     """Initialize database schema."""
     engine = create_engine(get_database_url(), echo=False)
     Base.metadata.create_all(engine)
-    print(f"✓ Database initialized at {get_database_url()}")
+    # Never print the raw URL — in prod it carries the DB password, and this
+    # runs on every Lambda invocation (#47).
+    safe_url = make_url(get_database_url()).render_as_string(hide_password=True)
+    print(f"✓ Database initialized at {safe_url}")
 
 
 def get_session() -> Session:
