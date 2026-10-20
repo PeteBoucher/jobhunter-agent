@@ -12,7 +12,7 @@ from src.job_rejections import (
     reject_job,
     unreject_job,
 )
-from src.models import Base, Job, User
+from src.models import Base, Job, RejectedJob, User
 
 
 @pytest.fixture
@@ -119,12 +119,40 @@ def test_get_rejected_jobs_newest_first(session):
     assert [j.id for j in rejected] == [job2.id, job1.id]
 
 
-def test_legacy_single_user_mode_ignores_user_scoping(session):
-    """user_id=None mirrors ApplicationTracker's legacy CLI mode: unscoped."""
+def test_user_id_is_required(session):
+    """There is no unscoped mode — None would match any user's rejection."""
     job = _job(session)
 
-    reject_job(session, None, job.id, reason="cli reject")
-    assert unreject_job(session, None, job.id) is True
+    with pytest.raises(ValueError):
+        reject_job(session, None, job.id, reason="cli reject")
+    with pytest.raises(ValueError):
+        unreject_job(session, None, job.id)
+    with pytest.raises(ValueError):
+        get_rejected_jobs(session, None)
+
+
+def test_reject_does_not_touch_another_users_rejection(session):
+    """Same job rejected by two users: each row keeps its own reason."""
+    user_a = _user(session, "Alice")
+    user_b = _user(session, "Bob")
+    job = _job(session)
+
+    reject_job(session, user_a.id, job.id, reason="alice's reason")
+    row_b = reject_job(session, user_b.id, job.id, reason="bob's reason")
+
+    rows = {r.user_id: r.reason for r in session.query(RejectedJob).all()}
+    assert rows == {user_a.id: "alice's reason", user_b.id: "bob's reason"}
+    assert row_b.user_id == user_b.id
+
+
+def test_unreject_does_not_touch_another_users_rejection(session):
+    user_a = _user(session, "Alice")
+    user_b = _user(session, "Bob")
+    job = _job(session)
+    reject_job(session, user_a.id, job.id)
+
+    assert unreject_job(session, user_b.id, job.id) is False
+    assert get_rejected_job_ids(session, user_a.id) == {job.id}
 
 
 # ---------------------------------------------------------------------------
@@ -156,20 +184,60 @@ def test_cli_reject_and_unreject(tmp_path, monkeypatch):
     init_db()
     session = get_session()
     job = _job(session)
+    alice, bob = _user(session, "Alice"), _user(session, "Bob")
     job_id, job_title = job.id, job.title
+    alice_id, bob_id = str(alice.id), str(bob.id)
     session.close()
 
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["jobs", "reject", str(job_id), "--reason", "not remote"]
+        cli,
+        ["jobs", "reject", str(job_id), "--user-id", alice_id, "--reason", "no"],
     )
     assert result.exit_code == 0, result.output
     assert "Rejected" in result.output
 
-    result = runner.invoke(cli, ["jobs", "list-rejected"])
+    result = runner.invoke(cli, ["jobs", "list-rejected", "--user-id", alice_id])
     assert result.exit_code == 0, result.output
     assert job_title in result.output
 
-    result = runner.invoke(cli, ["jobs", "unreject", str(job_id)])
+    # Bob sees none of Alice's rejections and can't undo them
+    result = runner.invoke(cli, ["jobs", "list-rejected", "--user-id", bob_id])
+    assert result.exit_code == 0, result.output
+    assert "No rejected jobs" in result.output
+    result = runner.invoke(cli, ["jobs", "unreject", str(job_id), "--user-id", bob_id])
+    assert "was not rejected" in result.output
+
+    result = runner.invoke(
+        cli, ["jobs", "unreject", str(job_id), "--user-id", alice_id]
+    )
     assert result.exit_code == 0, result.output
     assert "Un-rejected" in result.output
+
+
+@pytest.mark.parametrize(
+    "args",
+    [["reject", "1"], ["unreject", "1"], ["list-rejected"]],
+)
+def test_cli_rejection_commands_require_user_id(args):
+    from click.testing import CliRunner
+
+    from src.cli import cli
+
+    result = CliRunner().invoke(cli, ["jobs", *args])
+    assert result.exit_code != 0
+    assert "--user-id" in result.output
+
+
+def test_cli_rejection_unknown_user(tmp_path, monkeypatch):
+    from click.testing import CliRunner
+
+    from src.cli import cli
+    from src.database import init_db
+
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'test.db'}")
+    init_db()
+
+    result = CliRunner().invoke(cli, ["jobs", "list-rejected", "--user-id", "999"])
+    assert result.exit_code == 1
+    assert "User 999 not found" in result.output

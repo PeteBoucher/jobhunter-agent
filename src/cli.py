@@ -1898,22 +1898,26 @@ def scraper_generate(url: str, output: Optional[str], insecure: bool) -> None:
 
 @jobs.command("reject")
 @click.argument("job_id", type=int)
+@click.option("--user-id", type=int, required=True, help="User whose rejections to use")
 @click.option("--reason", help="Optional short reason (e.g. 'wrong location')")
-def jobs_reject(job_id: int, reason: Optional[str]) -> None:
-    """Mark a job as not of interest.
+def jobs_reject(job_id: int, user_id: int, reason: Optional[str]) -> None:
+    """Mark a job as not of interest for one user.
 
     Example:
-        job-agent jobs reject 2296 --reason "not remote"
+        job-agent jobs reject 2296 --user-id 1 --reason "not remote"
     """
     from src.job_rejections import reject_job
 
     session = get_session()
     try:
+        if not session.query(User).filter(User.id == user_id).first():
+            console.print(f"[red]✗[/red] User {user_id} not found")
+            raise SystemExit(1)
         job = session.query(Job).filter(Job.id == job_id).first()
         if not job:
             console.print(f"[red]✗[/red] Job {job_id} not found")
             return
-        reject_job(session, user_id=None, job_id=job_id, reason=reason)
+        reject_job(session, user_id=user_id, job_id=job_id, reason=reason)
         console.print(f"[green]✓[/green] Rejected {job.title} at {job.company}")
     finally:
         session.close()
@@ -1921,17 +1925,21 @@ def jobs_reject(job_id: int, reason: Optional[str]) -> None:
 
 @jobs.command("unreject")
 @click.argument("job_id", type=int)
-def jobs_unreject(job_id: int) -> None:
-    """Undo a rejection.
+@click.option("--user-id", type=int, required=True, help="User whose rejections to use")
+def jobs_unreject(job_id: int, user_id: int) -> None:
+    """Undo one user's rejection.
 
     Example:
-        job-agent jobs unreject 2296
+        job-agent jobs unreject 2296 --user-id 1
     """
     from src.job_rejections import unreject_job
 
     session = get_session()
     try:
-        if unreject_job(session, user_id=None, job_id=job_id):
+        if not session.query(User).filter(User.id == user_id).first():
+            console.print(f"[red]✗[/red] User {user_id} not found")
+            raise SystemExit(1)
+        if unreject_job(session, user_id=user_id, job_id=job_id):
             console.print(f"[green]✓[/green] Un-rejected job {job_id}")
         else:
             console.print(f"[yellow]Job {job_id} was not rejected[/yellow]")
@@ -1940,14 +1948,18 @@ def jobs_unreject(job_id: int) -> None:
 
 
 @jobs.command("list-rejected")
+@click.option("--user-id", type=int, required=True, help="User whose rejections to use")
 @click.option("--limit", type=int, default=20, help="Maximum results")
-def jobs_list_rejected(limit: int) -> None:
-    """List rejected jobs."""
+def jobs_list_rejected(user_id: int, limit: int) -> None:
+    """List one user's rejected jobs."""
     from src.job_rejections import get_rejected_jobs
 
     session = get_session()
     try:
-        rejected = get_rejected_jobs(session, user_id=None, limit=limit)
+        if not session.query(User).filter(User.id == user_id).first():
+            console.print(f"[red]✗[/red] User {user_id} not found")
+            raise SystemExit(1)
+        rejected = get_rejected_jobs(session, user_id=user_id, limit=limit)
         if not rejected:
             console.print("[yellow]No rejected jobs[/yellow]")
             return

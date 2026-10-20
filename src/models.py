@@ -208,7 +208,7 @@ class RejectedJob(Base):
     __tablename__ = "rejected_jobs"
 
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("user.id"), index=True)
+    user_id = Column(Integer, ForeignKey("user.id"), index=True, nullable=False)
     job_id = Column(Integer, ForeignKey("jobs.id"), index=True)
     reason = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
