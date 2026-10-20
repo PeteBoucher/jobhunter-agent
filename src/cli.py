@@ -564,6 +564,17 @@ def match(user_id: Optional[int], min_score: float) -> None:
     session = get_session()
 
     try:
+        from src.rejection_semantics import ensure_embeddings
+
+        try:
+            ensure_embeddings(session)
+        except Exception as e:
+            session.rollback()
+            console.print(
+                f"[yellow]Embeddings not updated ({e}); rejection reasons fall "
+                "back to title word overlap[/yellow]"
+            )
+
         # Load users and optionally filter
         if user_id:
             users = session.query(User).filter(User.id == user_id).all()

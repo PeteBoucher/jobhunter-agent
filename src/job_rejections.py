@@ -11,17 +11,25 @@ another user's rows (the CLI used to pass ``user_id=None`` here, which matched
 any user's rejection of the same job).
 """
 
+from datetime import datetime
 from typing import List, Optional, Set
 
 from sqlalchemy.orm import Query, Session
 
-from src.models import Job, RejectedJob
+from src.models import Job, RejectedJob, User
 
 
 def _user_filter(query: Query, user_id: int) -> Query:
     if user_id is None:
         raise ValueError("user_id is required — rejections are per-user")
     return query.filter(RejectedJob.user_id == user_id)
+
+
+def _mark_rejections_changed(session: Session, user_id: int) -> None:
+    """Flag this user's existing match scores for a rejection-penalty refresh."""
+    session.query(User).filter(User.id == user_id).update(
+        {"rejections_updated_at": datetime.utcnow()}, synchronize_session=False
+    )
 
 
 def reject_job(
@@ -35,13 +43,16 @@ def reject_job(
         session.query(RejectedJob).filter(RejectedJob.job_id == job_id), user_id
     ).first()
     if row:
-        if reason is not None:
+        if reason is not None and reason != row.reason:
             row.reason = reason
+            row.reason_vec = None  # re-embedded by the next match phase
+            _mark_rejections_changed(session, user_id)
         session.commit()
         return row
 
     row = RejectedJob(user_id=user_id, job_id=job_id, reason=reason)
     session.add(row)
+    _mark_rejections_changed(session, user_id)
     session.commit()
     return row
 
@@ -54,6 +65,7 @@ def unreject_job(session: Session, user_id: int, job_id: int) -> bool:
     if not row:
         return False
     session.delete(row)
+    _mark_rejections_changed(session, user_id)
     session.commit()
     return True
 

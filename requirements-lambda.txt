@@ -9,3 +9,4 @@ fuzzywuzzy==0.18.0
 python-Levenshtein==0.21.0
 boto3>=1.28.0
 psycopg2-binary>=2.9
+numpy==1.24.2

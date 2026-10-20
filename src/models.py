@@ -12,8 +12,10 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -34,6 +36,12 @@ class User(Base):
     cv_text = Column(String)  # Raw CV text
     cv_parsed_json = Column(JSON)  # Parsed structured data
     is_approved = Column(Boolean, nullable=False, default=False)  # access gate
+    # Set whenever this user's rejections (or their reasons) change; the
+    # Lambda match phase re-scores this user's existing matches when it is
+    # newer than rejection_penalty_refreshed_at (or that is still NULL).
+    # See src/rejection_semantics.py.
+    rejections_updated_at = Column(DateTime, nullable=True)
+    rejection_penalty_refreshed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -60,6 +68,11 @@ class UserPreferences(Base):
     experience_level = Column(String(50))  # Junior, Mid, Senior, Lead
     remote_preference = Column(String(20))  # onsite, hybrid, remote
     contract_types = Column(JSON)  # Full-time, Part-time, Contract
+    # Embeddings of target_titles, stored on this user's own row (never in a
+    # cache shared across users). target_titles_vec_source is the list they
+    # were computed from, so a changed list is detected and re-embedded.
+    target_titles_vec = Column(LargeBinary, nullable=True)
+    target_titles_vec_source = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -127,8 +140,9 @@ class JobMatch(Base):
     experience_score = Column(Float)
     location_or_remote_score = Column(Float)
     salary_score = Column(Float)
-    # Post-sum penalty for similarity to jobs this user has rejected (company
-    # repetition + title similarity) — see job_matcher._rejection_penalty().
+    # Post-sum penalty for resemblance to jobs this user has rejected (company
+    # repetition + matching a rejection reason, or title word overlap for
+    # reasonless rejections) — see job_matcher._rejection_penalty().
     # Not one of the five weighted dimensions above; stored so the UI can show
     # why match_score is lower than the five dimension bars would sum to.
     rejection_penalty = Column(Float, nullable=False, default=0.0)
@@ -202,7 +216,7 @@ class RejectedJob(Base):
     *employer* rejected the candidate's application. A rejection here can be
     recorded for any job, applied to or not, and feeds back into
     ``job_matcher._rejection_penalty`` to lower the score of similar future
-    jobs (same company, near-identical title).
+    jobs (same company, or matching the rejection reason).
     """
 
     __tablename__ = "rejected_jobs"
@@ -211,9 +225,32 @@ class RejectedJob(Base):
     user_id = Column(Integer, ForeignKey("user.id"), index=True, nullable=False)
     job_id = Column(Integer, ForeignKey("jobs.id"), index=True)
     reason = Column(String(255), nullable=True)
+    # Embedding of `reason`, on this row only — reasons are never cached across
+    # users. Cleared whenever the reason changes; filled by the match phase.
+    reason_vec = Column(LargeBinary, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     job = relationship("Job")
+
+
+class TextEmbedding(Base):
+    """Embedding cache for job text (titles and locations) only.
+
+    Keyed by (model, sha1 of the text), so identical titles across jobs share
+    one row. Never holds user-entered text: rejection reasons live on
+    ``RejectedJob.reason_vec`` and target titles on
+    ``UserPreferences.target_titles_vec``.
+    """
+
+    __tablename__ = "text_embeddings"
+    __table_args__ = (UniqueConstraint("model", "text_hash"),)
+
+    id = Column(Integer, primary_key=True)
+    model = Column(String(64), nullable=False)
+    text_hash = Column(String(40), nullable=False)
+    text = Column(Text, nullable=False)
+    vector = Column(LargeBinary, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class ScraperConfig(Base):

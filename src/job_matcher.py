@@ -13,20 +13,26 @@ Scoring weights (max pts per dimension, must sum to 100):
 
 After the five dimensions are summed, a capped **rejection penalty** is
 subtracted (not one of the weighted dimensions, doesn't change their maxima):
-jobs at a company the user has repeatedly rejected, or with a title similar to
-one they've rejected, score lower — see `_rejection_penalty()`. This is how
-`RejectedJob` rows (src/job_rejections.py) feed back into the feed.
+jobs at a company the user has repeatedly rejected, or matching one of the
+user's rejection reasons (src/rejection_semantics.py), score lower — see
+`_rejection_penalty()`. Rejections without a reason fall back to title word
+overlap. This is how `RejectedJob` rows (src/job_rejections.py) feed back into
+the feed.
 """
 
 import html
+import logging
 import re
 from collections import Counter
+from datetime import datetime
 from difflib import SequenceMatcher
 from typing import Dict, List, Optional, Union
 
 from sqlalchemy.orm import Session
 
 from src.models import Job, JobMatch, RejectedJob, Skill, User, UserPreferences
+
+logger = logging.getLogger("jobhunter.job_matcher")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -45,6 +51,7 @@ _REJECTION_COMPANY_THRESHOLD = 2  # rejections at same company before penalizing
 _COMPANY_REJECTION_PENALTY = 15.0
 _TITLE_SIM_THRESHOLD = 0.5  # Jaccard similarity to a rejected title
 _MAX_TITLE_SIM_PENALTY = 10.0
+_SEMANTIC_REJECTION_PENALTY = 15.0  # job matches one of the user's reasons
 _MAX_REJECTION_PENALTY = 20.0
 
 
@@ -390,23 +397,47 @@ def _score_salary(job: Job, user_prefs: Optional[UserPreferences]) -> float:
 
 
 def _load_rejection_signals(session: Session, user_id: int) -> Dict:
-    """One query gathering everything needed to penalize similar future jobs.
+    """Everything needed to penalize jobs resembling this user's rejections.
 
-    Meant to be cached per-user by the caller (see `compute_match_for_user`) —
-    every call site loops per-user-then-per-job, so this is one extra query
-    per user per run, not one per job.
+    Only this user's rejections are read. Meant to be cached per-user by the
+    caller (see `compute_match_for_user`) — every call site loops
+    per-user-then-per-job, so this runs once per user per run, not per job.
     """
     rows = (
-        session.query(Job.title, Job.company)
-        .join(RejectedJob, RejectedJob.job_id == Job.id)
+        session.query(RejectedJob.id, RejectedJob.reason, Job.title, Job.company)
+        .join(Job, Job.id == RejectedJob.job_id)
         .filter(RejectedJob.user_id == user_id)
         .all()
     )
     companies = Counter(r.company.lower() for r in rows if r.company)
-    title_word_sets = [_title_words(r.title) for r in rows if r.title]
+
+    hits: Dict[int, List[str]] = {}
+    fallback: set = set()
+    degraded = False
+    if any((r.reason or "").strip() for r in rows):
+        from src.rejection_semantics import get_index, semantic_hits
+
+        try:
+            hits, fallback, degraded = semantic_hits(
+                session, user_id, get_index(session)
+            )
+        except Exception:
+            logger.exception("semantic_rejection_signals_failed user_id=%s", user_id)
+            fallback = {r.id for r in rows}
+            degraded = True
+
+    # Title word overlap only for rejections without a usable reason: a reason
+    # says *why* (e.g. "India based"), so the rejected job's title is no signal.
+    title_word_sets = [
+        _title_words(r.title)
+        for r in rows
+        if r.title and (not (r.reason or "").strip() or r.id in fallback)
+    ]
     return {
         "companies": companies,
         "title_word_sets": [s for s in title_word_sets if s],
+        "semantic_hits": hits,
+        "degraded": degraded,
     }
 
 
@@ -421,16 +452,22 @@ def _rejection_penalty(job: Job, signals: Dict) -> float:
     if company and signals["companies"].get(company, 0) >= _REJECTION_COMPANY_THRESHOLD:
         penalty += _COMPANY_REJECTION_PENALTY
 
-    title_word_sets = signals["title_word_sets"]
-    if job.title and title_word_sets:
-        job_words = _title_words(job.title)
-        if job_words:
-            best_sim = max(
-                (len(job_words & tw) / len(job_words | tw) for tw in title_word_sets),
-                default=0.0,
-            )
-            if best_sim >= _TITLE_SIM_THRESHOLD:
-                penalty += best_sim * _MAX_TITLE_SIM_PENALTY
+    if job.id in signals.get("semantic_hits", {}):
+        penalty += _SEMANTIC_REJECTION_PENALTY
+    else:
+        title_word_sets = signals["title_word_sets"]
+        if job.title and title_word_sets:
+            job_words = _title_words(job.title)
+            if job_words:
+                best_sim = max(
+                    (
+                        len(job_words & tw) / len(job_words | tw)
+                        for tw in title_word_sets
+                    ),
+                    default=0.0,
+                )
+                if best_sim >= _TITLE_SIM_THRESHOLD:
+                    penalty += best_sim * _MAX_TITLE_SIM_PENALTY
 
     return min(penalty, _MAX_REJECTION_PENALTY)
 
@@ -509,4 +546,75 @@ def compute_match_for_user(session: Session, job: Job, user: User) -> JobMatch:
     return jm
 
 
-__all__ = ["compute_match_for_user"]
+def refresh_rejection_penalties(session: Session) -> Dict[int, int]:
+    """Re-score existing matches for users whose rejections changed.
+
+    `JobMatch` rows are otherwise never recomputed, so without this a new
+    rejection (or reason) only affects jobs scored after it. Picks users whose
+    `rejections_updated_at` is newer than `rejection_penalty_refreshed_at`, or
+    who have rejections but were never refreshed. Only the penalty changes —
+    the five stored dimensions are reused — and only that user's rows are
+    touched. Returns {user_id: rows changed}.
+    """
+    from sqlalchemy import exists, or_
+
+    users = (
+        session.query(User)
+        .filter(
+            or_(
+                User.rejections_updated_at > User.rejection_penalty_refreshed_at,
+                (User.rejection_penalty_refreshed_at.is_(None))
+                & (
+                    User.rejections_updated_at.isnot(None)
+                    | exists().where(RejectedJob.user_id == User.id)
+                ),
+            )
+        )
+        .all()
+    )
+    changed: Dict[int, int] = {}
+    for user in users:
+        changed[user.id] = _refresh_user_penalties(session, user)
+    return changed
+
+
+def _refresh_user_penalties(session: Session, user: User) -> int:
+    started = datetime.utcnow()
+    signals = _load_rejection_signals(session, user.id)
+    user._rejection_signals = signals
+    rows = (
+        session.query(JobMatch, Job)
+        .join(Job, Job.id == JobMatch.job_id)
+        .filter(JobMatch.user_id == user.id, Job.is_active.is_(True))
+        .all()
+    )
+    changed = 0
+    for jm, job in rows:
+        penalty = _rejection_penalty(job, signals)
+        if abs(penalty - (jm.rejection_penalty or 0.0)) < 1e-9:
+            continue
+        jm.rejection_penalty = penalty
+        jm.match_score = _total_score(
+            jm.title_score or 0.0,
+            jm.skill_score or 0.0,
+            jm.experience_score or 0.0,
+            jm.location_or_remote_score or 0.0,
+            jm.salary_score or 0.0,
+            penalty,
+        )
+        changed += 1
+    # A degraded run (vectors missing) stays flagged so the next run retries.
+    if not signals["degraded"]:
+        user.rejection_penalty_refreshed_at = started
+    session.commit()
+    logger.info(
+        "rejection_penalty_refresh user_id=%d rows=%d changed=%d degraded=%s",
+        user.id,
+        len(rows),
+        changed,
+        signals["degraded"],
+    )
+    return changed
+
+
+__all__ = ["compute_match_for_user", "refresh_rejection_penalties"]

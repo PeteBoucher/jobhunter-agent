@@ -431,6 +431,31 @@ def _do_scrape(sns_topic_arn: str, function_name: str) -> Dict[str, Any]:
     return summary
 
 
+def _refresh_rejection_scores(session: Any) -> None:
+    """Embed new job text / reasons, then re-score users whose rejections changed.
+
+    Runs before new matches are computed so they use the same fresh vectors.
+    Either step failing (e.g. the embeddings API is down) is logged and
+    skipped: scoring falls back to title word overlap for anything without
+    vectors, and affected users stay flagged so the next run retries.
+    """
+    from src.job_matcher import refresh_rejection_penalties
+    from src.rejection_semantics import ensure_embeddings
+
+    try:
+        ensure_embeddings(session)
+    except Exception:
+        session.rollback()
+        logger.warning("ensure_embeddings failed; scoring falls back", exc_info=True)
+    try:
+        refreshed = refresh_rejection_penalties(session)
+        if refreshed:
+            logger.info("Refreshed rejection penalties: %s", refreshed)
+    except Exception:
+        session.rollback()
+        logger.warning("rejection penalty refresh failed", exc_info=True)
+
+
 def _do_match(sns_topic_arn: str) -> Dict[str, Any]:
     """Compute per-user match scores and notify on high-score matches."""
     from sqlalchemy import exists
@@ -453,6 +478,8 @@ def _do_match(sns_topic_arn: str) -> Dict[str, Any]:
 
     session = get_session()
     try:
+        _refresh_rejection_scores(session)
+
         # Only match users who have set up their profile in some meaningful way
         # — CV text, at least one skill, or target titles configured. Without
         # any of these, scores are zero and matches are meaningless. This also
