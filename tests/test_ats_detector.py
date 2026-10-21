@@ -408,3 +408,50 @@ def test_probe_greenhouse_returns_none_on_404():
         mock_get.return_value = mock_resp
 
         assert _probe_greenhouse("www.unknown-site.com") is None
+
+
+def _page_resp(text):
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.text = text
+    resp.headers = {}
+    return resp
+
+
+@patch("src.job_scrapers.ats_detector._probe_greenhouse", return_value=None)
+@patch("src.job_scrapers.ats_detector._probe_smartrecruiters", return_value=None)
+@patch("src.job_scrapers.ats_detector.requests.get")
+def test_detect_ats_ignores_json_placeholder_example_url(mock_get, _sr, _gh):
+    """An aggregator's "import a job by link" form placeholder must not be
+    read as the page's own ATS. Found live on app.nodi.global: an escaped
+    i18n JSON blob held "placeholder":"https://jobs.lever.co/company/role",
+    which matched the Lever fingerprint and produced {"company": "company"}."""
+    mock_get.return_value = _page_resp(
+        '<script>self.__next_f.push([1,"{\\"title\\":\\"Import an offer\\",'
+        '\\"placeholder\\":\\"https://jobs.lever.co/company/role\\",'
+        '\\"submit\\":\\"Import\\"}"])</script>'
+    )
+    assert detect_ats("https://app.nodi.global/company/Acme", fetch_page=True) is None
+
+
+@patch("src.job_scrapers.ats_detector._probe_greenhouse", return_value=None)
+@patch("src.job_scrapers.ats_detector._probe_smartrecruiters", return_value=None)
+@patch("src.job_scrapers.ats_detector.requests.get")
+def test_detect_ats_ignores_html_placeholder_attribute(mock_get, _sr, _gh):
+    mock_get.return_value = _page_resp(
+        '<input type="url" placeholder="https://boards.greenhouse.io/yourcompany">'
+    )
+    assert detect_ats("https://example-aggregator.com/import", fetch_page=True) is None
+
+
+@patch("src.job_scrapers.ats_detector.requests.get")
+def test_detect_ats_skips_placeholder_slug_but_finds_real_one(mock_get):
+    """A placeholder slug in help text doesn't hide a real board link."""
+    mock_get.return_value = _page_resp(
+        "<p>e.g. https://jobs.lever.co/company/123</p>"
+        '<a href="https://jobs.lever.co/spotify/abc">Open role</a>'
+    )
+    assert detect_ats("https://careers.spotify.com", fetch_page=True) == (
+        "lever",
+        {"company": "spotify"},
+    )

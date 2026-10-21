@@ -59,6 +59,42 @@ _PAGE_FINGERPRINTS: list = [
 ]
 
 
+# Example/template words that show up as the slug in illustrative ATS URLs
+# (form placeholders, help text) rather than a real company's board. Found
+# live on app.nodi.global, a job aggregator whose "import a job by link" form
+# placeholder is "https://jobs.lever.co/company/role" — that alone matched the
+# Lever fingerprint and produced {"company": "company"}.
+_PLACEHOLDER_SLUGS = {
+    "company",
+    "companyname",
+    "company-name",
+    "your-company",
+    "yourcompany",
+    "example",
+    "slug",
+}
+
+# Input placeholder values, as an HTML attribute (placeholder="...") or a JSON
+# key in an embedded i18n/props blob ("placeholder":"..." — possibly with
+# escaped quotes inside a JS string). Their content is example text, never a
+# real reference to the ATS the page runs on.
+_PLACEHOLDER_VALUE_RE = re.compile(
+    r"""placeholder\\?["']?\s*[:=]\s*\\?(["']).*?\\?\1""", re.I
+)
+
+
+def _strip_placeholders(text: str) -> str:
+    return _PLACEHOLDER_VALUE_RE.sub('placeholder=""', text)
+
+
+def _first_real_slug(pattern: str, text: str, flags: int = 0) -> Optional[str]:
+    """First group-1 match of pattern whose slug isn't a placeholder word."""
+    for m in re.finditer(pattern, text, flags):
+        if m.group(1).lower() not in _PLACEHOLDER_SLUGS:
+            return m.group(1)
+    return None
+
+
 def _teamtailor_company_from_host(host: str) -> str:
     """Derive a display company name from a Teamtailor host.
 
@@ -228,7 +264,9 @@ def detect_ats(
                 )
             },
         )
-        page_text = resp.text
+        # Placeholder/example text ("https://jobs.lever.co/company/role" in an
+        # aggregator's import form) mentions an ATS the page doesn't run on.
+        page_text = _strip_placeholders(resp.text)
         # Also check CSP header — often reveals backend CDN/API URLs
         csp = resp.headers.get("content-security-policy", "")
         combined = page_text + csp
@@ -336,28 +374,25 @@ def _extract_config_from_page(
 
     if source_name == "greenhouse":
         # Look for board token in page source
-        m = re.search(
+        token = _first_real_slug(
             r"greenhouse\.io/embed/job_board\?for=([a-z0-9_-]+)", page_text, re.I
-        )
-        if m:
-            return {"token": m.group(1)}
-        m = re.search(r"boards\.greenhouse\.io/([a-z0-9_-]+)", page_text, re.I)
-        if m:
-            return {"token": m.group(1)}
+        ) or _first_real_slug(r"boards\.greenhouse\.io/([a-z0-9_-]+)", page_text, re.I)
+        if token:
+            return {"token": token}
 
     if source_name == "lever":
-        m = re.search(r"jobs\.lever\.co/([a-z0-9_-]+)", page_text, re.I)
-        if m:
-            return {"company": m.group(1)}
+        company = _first_real_slug(r"jobs\.lever\.co/([a-z0-9_-]+)", page_text, re.I)
+        if company:
+            return {"company": company}
 
     if source_name == "ashby":
         # Ashby lets a company use its full domain (incl. TLD) as its job
         # board slug, e.g. jobs.ashbyhq.com/happyrobot.ai — the character
         # class must include "." or the slug silently truncates at the dot
         # (captures "happyrobot" instead of "happyrobot.ai", a 404).
-        m = re.search(r"ashbyhq\.com/([a-z0-9_.-]+)", page_text, re.I)
-        if m:
-            return {"subdomain": m.group(1)}
+        subdomain = _first_real_slug(r"ashbyhq\.com/([a-z0-9_.-]+)", page_text, re.I)
+        if subdomain:
+            return {"subdomain": subdomain}
 
     if source_name == "workday":
         # Job-detail links look like {slug}.{wd}.myworkdayjobs.com/{portal}/job/...
@@ -383,15 +418,14 @@ def _extract_config_from_page(
             }
 
     if source_name == "smartrecruiters":
-        m = re.search(r"smartrecruiters\.com/([A-Za-z0-9_-]+)", page_text)
-        if m:
-            cid = m.group(1)
+        cid = _first_real_slug(r"smartrecruiters\.com/([A-Za-z0-9_-]+)", page_text)
+        if cid:
             return {"company_id": cid, "display_name": cid}
 
     if source_name == "workable":
-        m = re.search(r"apply\.workable\.com/([a-z0-9_-]+)", page_text, re.I)
-        if m:
-            return {"slug": m.group(1), "name": m.group(1)}
+        slug = _first_real_slug(r"apply\.workable\.com/([a-z0-9_-]+)", page_text, re.I)
+        if slug:
+            return {"slug": slug, "name": slug}
 
     if source_name == "teamtailor":
         # career_url is the site origin — except when this page only embeds
