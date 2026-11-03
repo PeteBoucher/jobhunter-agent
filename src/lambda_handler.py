@@ -28,6 +28,9 @@ import boto3
 
 logger = logging.getLogger("jobhunter.lambda")
 logger.setLevel(logging.INFO)
+# The matcher logs one INFO line per refreshed user (rows, timings); Lambda's
+# root logger is WARNING, which would drop it.
+logging.getLogger("jobhunter.job_matcher").setLevel(logging.INFO)
 
 # Location text → ISO2 country code.
 # Ordered most-specific first (multi-word before single-word).

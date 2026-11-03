@@ -23,6 +23,7 @@ the feed.
 import html
 import logging
 import re
+import time
 from collections import Counter
 from datetime import datetime
 from difflib import SequenceMatcher
@@ -779,8 +780,15 @@ def _rescore_user_profile(
     # Stamp the start, not the end: an edit made mid-rescore stays newer than
     # profile_rescored_at, so the next run picks it up.
     started = datetime.utcnow()
+    t0 = time.monotonic()
     signals = _load_rejection_signals(session, user.id)
     user._rejection_signals = signals
+    timings = {
+        "signals": time.monotonic() - t0,
+        "query": 0.0,
+        "score": 0.0,
+        "write": 0.0,
+    }
     rows_seen = changed = 0
     last_id = 0
     while True:
@@ -792,6 +800,7 @@ def _rescore_user_profile(
                 rows_seen,
             )
             return None
+        t0 = time.monotonic()
         batch = (
             session.query(JobMatch, Job)
             .join(Job, Job.id == JobMatch.job_id)
@@ -804,10 +813,12 @@ def _rescore_user_profile(
             .limit(_PROFILE_RESCORE_BATCH)
             .all()
         )
+        timings["query"] += time.monotonic() - t0
         if not batch:
             break
         last_id = batch[-1][0].id
         rows_seen += len(batch)
+        t0 = time.monotonic()
         updates = []
         for jm, job in batch:
             dims = _score_dimensions(job, user)
@@ -823,19 +834,23 @@ def _rescore_user_profile(
             }
             if any(abs(v - (getattr(jm, k) or 0.0)) > 1e-9 for k, v in new.items()):
                 updates.append({"id": jm.id, **new})
+        timings["score"] += time.monotonic() - t0
+        t0 = time.monotonic()
         if updates:
             _bulk_update_matches(session, updates)
         changed += len(updates)
         session.commit()
         session.expire_all()  # free the batch; the user's prefs reload lazily
+        timings["write"] += time.monotonic() - t0
 
     user.profile_rescored_at = started
     session.commit()
     logger.info(
-        "profile_rescore user_id=%d rows=%d changed=%d",
+        "profile_rescore user_id=%d rows=%d changed=%d %s",
         user.id,
         rows_seen,
         changed,
+        " ".join(f"{k}={v:.1f}s" for k, v in timings.items()),
     )
     return changed
 
