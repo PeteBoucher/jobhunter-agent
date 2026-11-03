@@ -703,11 +703,34 @@ def refresh_profile_scores(
     return changed
 
 
+def _bulk_update_matches(session: Session, updates: List[Dict]) -> None:
+    """Write rescored rows by primary key in one statement per batch.
+
+    psycopg2's default executemany sends one round trip per row for UPDATE,
+    which made a ~16k-row user take minutes in Lambda; on Postgres this is a
+    single UPDATE ... FROM (VALUES ...). SQLite (tests) can't alias VALUES
+    columns, so it keeps the ORM bulk update.
+    """
+    from sqlalchemy import Float, Integer, column, update, values
+
+    if session.get_bind().dialect.name != "postgresql":
+        session.execute(update(JobMatch), updates)
+        return
+    cols = [k for k in updates[0] if k != "id"]
+    v = values(column("id", Integer), *(column(c, Float) for c in cols), name="v").data(
+        [(u["id"], *(u[c] for c in cols)) for u in updates]
+    )
+    table = JobMatch.__table__
+    session.execute(
+        update(table)
+        .where(table.c.id == v.c.id)
+        .values({c: getattr(v.c, c) for c in cols})
+    )
+
+
 def _rescore_user_profile(
     session: Session, user: User, should_stop: Optional[Callable[[], bool]]
 ) -> Optional[int]:
-    from sqlalchemy import update
-
     # Stamp the start, not the end: an edit made mid-rescore stays newer than
     # profile_rescored_at, so the next run picks it up.
     started = datetime.utcnow()
@@ -755,10 +778,8 @@ def _rescore_user_profile(
             }
             if any(abs(v - (getattr(jm, k) or 0.0)) > 1e-9 for k, v in new.items()):
                 updates.append({"id": jm.id, **new})
-        # ORM bulk UPDATE by primary key — batched executemany, not one
-        # round trip per row.
         if updates:
-            session.execute(update(JobMatch), updates)
+            _bulk_update_matches(session, updates)
         changed += len(updates)
         session.commit()
         session.expire_all()  # free the batch; the user's prefs reload lazily

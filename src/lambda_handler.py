@@ -18,6 +18,7 @@ until the scrape execution exits, giving a clean hand-off with no overlap.
 import json
 import logging
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait as futures_wait
 from datetime import datetime, timedelta
@@ -246,6 +247,9 @@ _EXPIRY_DAYS = 7  # Jobs not re-seen within this window are marked inactive
 # A user takes well under a second with ix_job_matches_user_job; 30s leaves
 # room for the in-flight user, the SNS email and auto-apply.
 _MATCH_DEADLINE_MARGIN_MS = 30_000
+# Profile rescoring stops this much earlier, so a backlog of changed profiles
+# can't use the whole run and starve new-job matching for everyone.
+_PROFILE_RESCORE_RESERVE_MS = 240_000
 
 # Lazy-initialised clients (cached for Lambda warm starts)
 _sns_client = None
@@ -464,21 +468,29 @@ def _refresh_profile_scores(session: Any, context: Any = None) -> None:
     """Re-score every existing match of users whose profile changed.
 
     Runs after the rejection refresh (so it sees fresh vectors) and before new
-    matches. Stops at the same deadline margin as new matching; an unfinished
-    user stays flagged for the next run. A failure is logged and skipped.
+    matches. Stops `_PROFILE_RESCORE_RESERVE_MS` before the match deadline so
+    new matching always gets time; an unfinished user stays flagged, and its
+    already-rescored rows are skipped cheaply next run (unchanged rows aren't
+    rewritten). A failure is logged and skipped.
     """
     from src.job_matcher import refresh_profile_scores
 
     def should_stop() -> bool:
         return (
             context is not None
-            and context.get_remaining_time_in_millis() < _MATCH_DEADLINE_MARGIN_MS
+            and context.get_remaining_time_in_millis()
+            < _MATCH_DEADLINE_MARGIN_MS + _PROFILE_RESCORE_RESERVE_MS
         )
 
+    started = time.monotonic()
     try:
         rescored = refresh_profile_scores(session, should_stop)
         if rescored:
-            logger.info("Rescored changed profiles: %s", rescored)
+            logger.info(
+                "Rescored changed profiles in %.1fs: %s",
+                time.monotonic() - started,
+                rescored,
+            )
     except Exception:
         session.rollback()
         logger.warning("profile rescore failed", exc_info=True)
