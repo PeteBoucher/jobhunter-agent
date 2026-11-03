@@ -26,7 +26,8 @@ import re
 from collections import Counter
 from datetime import datetime
 from difflib import SequenceMatcher
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from functools import lru_cache
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 from sqlalchemy.orm import Session
 
@@ -162,12 +163,16 @@ def _normalize_skills(user_skills: List[Skill]) -> List[str]:
     This function splits on common delimiters, strips section headers (anything
     containing ':'), and deduplicates case-insensitively.
     """
+    return _normalize_skill_names([s.skill_name for s in user_skills])
+
+
+def _normalize_skill_names(names: Sequence[Optional[str]]) -> List[str]:
     seen: set = set()
     result: List[str] = []
-    for s in user_skills:
-        if not s.skill_name:
+    for name in names:
+        if not name:
             continue
-        parts = _SKILL_SPLIT_RE.split(s.skill_name)
+        parts = _SKILL_SPLIT_RE.split(name)
         for part in parts:
             part = part.strip(" .:•-●")
             # Skip empty, single-char, or section-header fragments
@@ -245,6 +250,37 @@ def _skill_matches(req: str, skill: str) -> bool:
     return bool(req_words & skill_words) if (req_words and skill_words) else False
 
 
+def _words(text_l: str) -> set:
+    return set(re.sub(r"[^a-z0-9]", " ", text_l).split()) - _STOPWORDS
+
+
+@lru_cache(maxsize=256)
+def _skill_tokens(
+    skill_names: Tuple[Optional[str], ...]
+) -> Tuple[Tuple[str, frozenset], ...]:
+    """(lowercased skill, its words) per normalized skill — computed once per
+    skill set instead of once per (requirement, skill) pair."""
+    return tuple(
+        (sk.lower(), frozenset(_words(sk.lower())))
+        for sk in _normalize_skill_names(skill_names)
+    )
+
+
+def _requirement_covered(
+    req_l: str, skill_tokens: Tuple[Tuple[str, frozenset], ...]
+) -> bool:
+    """`any(_skill_matches(req, skill))` over pre-tokenized skills."""
+    req_words: Optional[set] = None
+    for skill_l, skill_words in skill_tokens:
+        if skill_l in req_l:
+            return True
+        if req_words is None:
+            req_words = _words(req_l)
+        if req_words and skill_words and req_words & skill_words:
+            return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Dimension scorers
 # ---------------------------------------------------------------------------
@@ -254,6 +290,13 @@ def _score_title(job_title: Optional[str], target_titles: Optional[List[str]]) -
     """Word-level Jaccard similarity, max over all target titles. Up to 25 pts."""
     if not job_title or not target_titles:
         return 0.0
+    # Job titles repeat heavily across a user's matches and SequenceMatcher is
+    # the matcher's most expensive call, so memoise per (title, targets).
+    return _score_title_cached(job_title, tuple(target_titles))
+
+
+@lru_cache(maxsize=65536)
+def _score_title_cached(job_title: str, target_titles: Tuple[str, ...]) -> float:
     job_words = _title_words(job_title)
     best = 0.0
     for t in target_titles:
@@ -261,9 +304,13 @@ def _score_title(job_title: Optional[str], target_titles: Optional[List[str]]) -
         if not t_words or not job_words:
             continue
         jaccard = len(job_words & t_words) / len(job_words | t_words)
-        # Also include character-level similarity for partial-word matches
-        char_sim = _similarity(job_title, t)
-        best = max(best, jaccard, char_sim)
+        best = max(best, jaccard)
+        # Also include character-level similarity for partial-word matches.
+        # quick_ratio() is a cheap upper bound on ratio(), so skip the full
+        # comparison when it can't beat the best score so far.
+        sm = SequenceMatcher(None, job_title.lower(), t.lower())
+        if sm.real_quick_ratio() > best and sm.quick_ratio() > best:
+            best = max(best, sm.ratio())
     return best * _MAX_TITLE
 
 
@@ -286,12 +333,10 @@ def _score_skills(
         return _MAX_SKILLS * _NEUTRAL_SKILL_FRACTION
     if not user_skills:
         return 0.0
-    skill_names = _normalize_skills(user_skills)
-    if not skill_names:
+    skill_tokens = _skill_tokens(tuple(s.skill_name for s in user_skills))
+    if not skill_tokens:
         return 0.0
-    req_matches = sum(
-        1 for r in reqs if any(_skill_matches(r, sk) for sk in skill_names)
-    )
+    req_matches = sum(1 for r in reqs if _requirement_covered(r, skill_tokens))
     coverage = req_matches / len(reqs)
     # With only a handful of items, cap the achievable score between the
     # neutral "no requirements" level and full marks, scaled by item count.
