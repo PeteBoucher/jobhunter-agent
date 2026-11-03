@@ -460,6 +460,30 @@ def _refresh_rejection_scores(session: Any) -> None:
         logger.warning("rejection penalty refresh failed", exc_info=True)
 
 
+def _refresh_profile_scores(session: Any, context: Any = None) -> None:
+    """Re-score every existing match of users whose profile changed.
+
+    Runs after the rejection refresh (so it sees fresh vectors) and before new
+    matches. Stops at the same deadline margin as new matching; an unfinished
+    user stays flagged for the next run. A failure is logged and skipped.
+    """
+    from src.job_matcher import refresh_profile_scores
+
+    def should_stop() -> bool:
+        return (
+            context is not None
+            and context.get_remaining_time_in_millis() < _MATCH_DEADLINE_MARGIN_MS
+        )
+
+    try:
+        rescored = refresh_profile_scores(session, should_stop)
+        if rescored:
+            logger.info("Rescored changed profiles: %s", rescored)
+    except Exception:
+        session.rollback()
+        logger.warning("profile rescore failed", exc_info=True)
+
+
 def _do_match(sns_topic_arn: str, context: Any = None) -> Dict[str, Any]:
     """Compute per-user match scores and notify on high-score matches.
 
@@ -488,6 +512,7 @@ def _do_match(sns_topic_arn: str, context: Any = None) -> Dict[str, Any]:
     session = get_session()
     try:
         _refresh_rejection_scores(session)
+        _refresh_profile_scores(session, context)
 
         # Only match users who have set up their profile in some meaningful way
         # — CV text, at least one skill, or target titles configured. Without

@@ -255,7 +255,7 @@ export default function ProfilePage() {
               </p>
               <p className="mt-0.5 flex items-center gap-1.5 text-xs text-green-700">
                 <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
-                Rescoring your job matches in the background
+                Your job matches will be rescored within 2 hours
               </p>
             </div>
           </div>

@@ -482,3 +482,38 @@ def test_match_processes_least_recently_matched_users_first(
     session.close()
     assert result["matches_computed"] == 2
     assert scored == {2, 3}
+
+
+def test_match_rescores_users_whose_profile_changed(
+    mock_sns_client, mock_scrapers, tmp_path, monkeypatch
+):
+    """A changed profile rescores the user's existing matches, not just new ones."""
+    from datetime import datetime
+
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'profile.db'}")
+
+    from src.database import get_session, init_db
+    from src.models import Job, JobMatch, User
+
+    init_db()
+    session = get_session()
+    _seed_match_users(session, [1])
+    job = Job(source="greenhouse", source_job_id="r", title="Engineer", remote="remote")
+    session.add(job)
+    session.flush()
+    session.add(JobMatch(job_id=job.id, user_id=1, location_or_remote_score=0.0))
+    user = session.get(User, 1)
+    user.preferences.remote_preference = "remote"
+    user.profile_updated_at = datetime.utcnow()
+    session.commit()
+    session.close()
+
+    from src.lambda_handler import lambda_handler
+
+    lambda_handler({"action": "match"}, None)
+
+    session = get_session()
+    match = session.query(JobMatch).filter(JobMatch.user_id == 1).one()
+    assert match.location_or_remote_score == 15.0
+    assert session.get(User, 1).profile_rescored_at is not None
+    session.close()

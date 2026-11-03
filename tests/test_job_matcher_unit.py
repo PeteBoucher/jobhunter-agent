@@ -450,6 +450,25 @@ class TestScoreLocationRemote:
         prefs = _prefs(remote_preference="remote")
         assert _score_location_remote(job, prefs) == pytest.approx(0.0)
 
+    def test_onsite_pref_without_locations_credits_onsite_job(self):
+        job = _job(remote="onsite", location="New York, NY")
+        prefs = _prefs(remote_preference="onsite")
+        assert _score_location_remote(job, prefs) == pytest.approx(15.0)
+
+    def test_onsite_pref_with_locations_requires_location_match(self):
+        prefs = _prefs(remote_preference="onsite", preferred_locations=["Malaga"])
+        far = _job(remote="onsite", location="New York, NY")
+        unknown = _job(remote="", location="New York, NY")
+        near = _job(remote="onsite", location="Malaga, Spain")
+        assert _score_location_remote(far, prefs) == pytest.approx(0.0)
+        assert _score_location_remote(unknown, prefs) == pytest.approx(0.0)
+        assert _score_location_remote(near, prefs) == pytest.approx(15.0)
+
+    def test_onsite_pref_remote_job(self):
+        job = _job(remote="remote", location="Remote")
+        prefs = _prefs(remote_preference="onsite", preferred_locations=["Malaga"])
+        assert _score_location_remote(job, prefs) == pytest.approx(0.0)
+
     def test_hybrid_pref_remote_job(self):
         job = _job(remote="remote")
         prefs = _prefs(remote_preference="hybrid")

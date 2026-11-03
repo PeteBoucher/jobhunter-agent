@@ -152,6 +152,12 @@ class TestDeleteSkill:
 
         assert db_session.query(Skill).filter_by(id=skill.id).first() is None
 
+    def test_flags_profile_rescore(self, client, db_session, test_user):
+        skill = self._add_skill(db_session, test_user)
+        client.delete(f"/profile/skills/{skill.id}")
+        db_session.expire_all()
+        assert db_session.get(type(test_user), test_user.id).profile_updated_at
+
     def test_returns_204_no_body(self, client, db_session, test_user):
         skill = self._add_skill(db_session, test_user)
         resp = client.delete(f"/profile/skills/{skill.id}")

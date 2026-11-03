@@ -144,6 +144,10 @@ export default function PreferencesPage() {
   const [form, setForm] = useState<Partial<Preferences>>({});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  // Server state from before the last save that scheduled a rescore — what
+  // "Undo" restores. Null when there is nothing to undo.
+  const [undoTo, setUndoTo] = useState<Partial<Preferences> | null>(null);
+  const [undone, setUndone] = useState(false);
 
   useEffect(() => {
     if (!prefs) return;
@@ -162,11 +166,31 @@ export default function PreferencesPage() {
   async function save() {
     if (!token) return;
     setSaving(true);
+    setUndone(false);
     try {
-      await updatePreferences(token, form);
+      const before = prefs ? withoutResponseFlags(prefs) : null;
+      const updated = await updatePreferences(token, withoutResponseFlags(form));
       await mutate();
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      if (updated.rescore_scheduled && before) {
+        setUndoTo(before);
+      } else {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function undo() {
+    if (!token || !undoTo) return;
+    setSaving(true);
+    try {
+      await updatePreferences(token, undoTo);
+      await mutate();
+      setUndoTo(null);
+      setUndone(true);
+      setTimeout(() => setUndone(false), 4000);
     } finally {
       setSaving(false);
     }
@@ -261,9 +285,51 @@ export default function PreferencesPage() {
           {saving ? "Saving…" : "Save preferences"}
         </button>
         {saved && <span className="text-sm text-green-600">Saved!</span>}
+        {undone && (
+          <span className="text-sm text-gray-600">
+            Change undone — your matches stay as they were.
+          </span>
+        )}
       </div>
+
+      {undoTo && (
+        <div
+          role="status"
+          className="mt-4 flex items-start justify-between gap-4 rounded-lg bg-blue-50 p-4"
+        >
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-blue-900">Preferences saved</p>
+            <p className="mt-0.5 text-sm text-blue-800">
+              Your job matches will be rescored within 2 hours to reflect this
+              change.
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-3">
+            <button
+              onClick={undo}
+              disabled={saving}
+              className="rounded-lg border border-blue-300 bg-white px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+            >
+              Undo
+            </button>
+            <button
+              onClick={() => setUndoTo(null)}
+              aria-label="Dismiss"
+              className="text-blue-400 hover:text-blue-700"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+/** Strip response-only fields so a Preferences object can be PUT back. */
+function withoutResponseFlags(p: Partial<Preferences>): Partial<Preferences> {
+  const { rescore_scheduled: _, ...rest } = p;
+  return rest;
 }
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {

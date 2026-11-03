@@ -15,6 +15,9 @@ export interface Preferences {
   experience_level: string | null;
   remote_preference: string | null;
   contract_types: string[] | null;
+  /** PUT response only: the save changed a scoring input, so existing
+   *  matches will be rescored by the next match run (within ~2h). */
+  rescore_scheduled?: boolean;
 }
 
 export interface User {

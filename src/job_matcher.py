@@ -26,7 +26,7 @@ import re
 from collections import Counter
 from datetime import datetime
 from difflib import SequenceMatcher
-from typing import Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 from sqlalchemy.orm import Session
 
@@ -340,7 +340,14 @@ def _score_location_remote(job: Job, user_prefs: Optional[UserPreferences]) -> f
             return _MAX_LOCATION
         if pref == "hybrid" and job_remote in ("hybrid", "remote"):
             return _MAX_LOCATION * 0.7
-        if pref == "onsite" and job_remote in ("", "onsite"):
+        # Onsite means "onsite somewhere I'd go" — with locations set, fall
+        # through to the location match below rather than crediting every
+        # non-remote job worldwide.
+        if (
+            pref == "onsite"
+            and job_remote in ("", "onsite")
+            and not user_prefs.preferred_locations
+        ):
             return _MAX_LOCATION
 
     # Location substring match — gated by country when job.country is known
@@ -500,6 +507,18 @@ def _total_score(
     )
 
 
+def _score_dimensions(job: Job, user: User) -> Tuple[float, float, float, float, float]:
+    """(title, skill, experience, location, salary) scores for one job."""
+    prefs = user.preferences
+    return (
+        _score_title(job.title, prefs.target_titles if prefs else None),
+        _score_skills(job.requirements, user.skills or []),
+        _score_experience(job, prefs),
+        _score_location_remote(job, prefs),
+        _score_salary(job, prefs),
+    )
+
+
 def compute_match_for_user(
     session: Session, job: Job, user: User, commit: bool = True
 ) -> JobMatch:
@@ -509,14 +528,13 @@ def compute_match_for_user(
     the end — the row is still added to the session (and autoflushed by the
     next query), just not committed per job.
     """
-    prefs = user.preferences
-    skills = user.skills or []
-
-    title_score = _score_title(job.title, prefs.target_titles if prefs else None)
-    skill_score = _score_skills(job.requirements, skills)
-    experience_score = _score_experience(job, prefs)
-    location_score = _score_location_remote(job, prefs)
-    salary_score = _score_salary(job, prefs)
+    (
+        title_score,
+        skill_score,
+        experience_score,
+        location_score,
+        salary_score,
+    ) = _score_dimensions(job, user)
 
     # Cached on the user instance — the same `user` object is reused across the
     # inner per-job loop at every call site, so this is O(1) queries per user.
@@ -625,4 +643,141 @@ def _refresh_user_penalties(session: Session, user: User) -> int:
     return changed
 
 
-__all__ = ["compute_match_for_user", "refresh_rejection_penalties"]
+# UserPreferences fields the scorers above read. Changing any of them (or the
+# user's skills) invalidates every stored score for that user.
+SCORING_PREFERENCE_FIELDS = frozenset(
+    {
+        "target_titles",
+        "preferred_locations",
+        "preferred_countries",
+        "remote_preference",
+        "salary_min",
+        "salary_max",
+        "experience_level",
+    }
+)
+
+_PROFILE_RESCORE_BATCH = 1000
+
+
+def mark_profile_changed(session: Session, user_id: int) -> None:
+    """Flag this user's existing match scores for a full rescore."""
+    session.query(User).filter(User.id == user_id).update(
+        {"profile_updated_at": datetime.utcnow()}, synchronize_session=False
+    )
+
+
+def refresh_profile_scores(
+    session: Session, should_stop: Optional[Callable[[], bool]] = None
+) -> Dict[int, int]:
+    """Re-score existing matches for users whose profile changed.
+
+    `JobMatch` rows are otherwise never recomputed, so without this a changed
+    preference (e.g. onsite → remote) or skill set only affects jobs scored
+    after it. Picks users whose `profile_updated_at` is newer than
+    `profile_rescored_at`, recomputes all five dimensions and the rejection
+    penalty on their active matches, and commits per batch. `should_stop` is
+    checked between batches; a user cut short stays flagged and is redone
+    whole next run. Returns {user_id: rows changed} for completed users.
+    """
+    from sqlalchemy import or_
+
+    users = (
+        session.query(User)
+        .filter(
+            or_(
+                User.profile_updated_at > User.profile_rescored_at,
+                User.profile_rescored_at.is_(None)
+                & User.profile_updated_at.isnot(None),
+            )
+        )
+        .order_by(User.profile_updated_at)
+        .all()
+    )
+    changed: Dict[int, int] = {}
+    for user in users:
+        n = _rescore_user_profile(session, user, should_stop)
+        if n is None:
+            break
+        changed[user.id] = n
+    return changed
+
+
+def _rescore_user_profile(
+    session: Session, user: User, should_stop: Optional[Callable[[], bool]]
+) -> Optional[int]:
+    from sqlalchemy import update
+
+    # Stamp the start, not the end: an edit made mid-rescore stays newer than
+    # profile_rescored_at, so the next run picks it up.
+    started = datetime.utcnow()
+    signals = _load_rejection_signals(session, user.id)
+    user._rejection_signals = signals
+    rows_seen = changed = 0
+    last_id = 0
+    while True:
+        if should_stop and should_stop():
+            session.rollback()
+            logger.warning(
+                "profile_rescore_stopped user_id=%d rows=%d — retried next run",
+                user.id,
+                rows_seen,
+            )
+            return None
+        batch = (
+            session.query(JobMatch, Job)
+            .join(Job, Job.id == JobMatch.job_id)
+            .filter(
+                JobMatch.user_id == user.id,
+                JobMatch.id > last_id,
+                Job.is_active.is_(True),
+            )
+            .order_by(JobMatch.id)
+            .limit(_PROFILE_RESCORE_BATCH)
+            .all()
+        )
+        if not batch:
+            break
+        last_id = batch[-1][0].id
+        rows_seen += len(batch)
+        updates = []
+        for jm, job in batch:
+            dims = _score_dimensions(job, user)
+            penalty = _rejection_penalty(job, signals)
+            new = {
+                "title_score": dims[0],
+                "skill_score": dims[1],
+                "experience_score": dims[2],
+                "location_or_remote_score": dims[3],
+                "salary_score": dims[4],
+                "rejection_penalty": penalty,
+                "match_score": _total_score(*dims, penalty),
+            }
+            if any(abs(v - (getattr(jm, k) or 0.0)) > 1e-9 for k, v in new.items()):
+                updates.append({"id": jm.id, **new})
+        # ORM bulk UPDATE by primary key — batched executemany, not one
+        # round trip per row.
+        if updates:
+            session.execute(update(JobMatch), updates)
+        changed += len(updates)
+        session.commit()
+        session.expire_all()  # free the batch; the user's prefs reload lazily
+
+    user.profile_rescored_at = started
+    session.commit()
+    logger.info(
+        "profile_rescore user_id=%d rows=%d changed=%d",
+        user.id,
+        rows_seen,
+        changed,
+    )
+    return changed
+
+
+__all__ = [
+    "SCORING_PREFERENCE_FIELDS",
+    "compute_match_for_user",
+    "mark_profile_changed",
+    "refresh_profile_scores",
+    "refresh_rejection_penalties",
+]

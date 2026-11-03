@@ -154,3 +154,17 @@ describe("error handling", () => {
     await expect(getJob(TOKEN, 999)).rejects.toThrow("API 404");
   });
 });
+
+describe("updatePreferences", () => {
+  it("sends explicit nulls so undo can clear a field", async () => {
+    const spy = mockFetch({ rescore_scheduled: true });
+    const { updatePreferences } = await import("../lib/api");
+    const res = await updatePreferences(TOKEN, { salary_min: null, remote_preference: "onsite" });
+    expect(spy.mock.calls[0][1]?.method).toBe("PUT");
+    expect(JSON.parse(spy.mock.calls[0][1]?.body as string)).toEqual({
+      salary_min: null,
+      remote_preference: "onsite",
+    });
+    expect(res.rescore_scheduled).toBe(true);
+  });
+});

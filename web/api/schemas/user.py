@@ -23,6 +23,9 @@ class PreferencesOut(BaseModel):
     experience_level: Optional[str] = None
     remote_preference: Optional[str] = None
     contract_types: Optional[List[str]] = None
+    # PUT only: this save changed a scoring input, so existing matches will be
+    # rescored by the next match phase.
+    rescore_scheduled: bool = False
 
     model_config = {"from_attributes": True}
 

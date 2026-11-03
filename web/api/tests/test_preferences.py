@@ -122,3 +122,39 @@ class TestUpdatePreferences:
         resp = client.put("/preferences", json={"preferred_countries": ["GB", "DK"]})
         assert resp.status_code == 200
         assert resp.json()["preferred_countries"] == ["GB", "DK"]
+
+
+class TestRescoreFlag:
+    def _flagged_at(self, db_session, test_user):
+        db_session.expire_all()
+        return db_session.get(type(test_user), test_user.id).profile_updated_at
+
+    def test_scoring_change_flags_rescore(self, client, db_session, test_user):
+        resp = client.put("/preferences", json={"remote_preference": "remote"})
+        assert resp.json()["rescore_scheduled"] is True
+        assert self._flagged_at(db_session, test_user) is not None
+
+    def test_unchanged_value_does_not_flag(self, client, db_session, test_user):
+        client.put("/preferences", json={"remote_preference": "remote"})
+        first = self._flagged_at(db_session, test_user)
+
+        resp = client.put("/preferences", json={"remote_preference": "remote"})
+        assert resp.json()["rescore_scheduled"] is False
+        assert self._flagged_at(db_session, test_user) == first
+
+    def test_non_scoring_field_does_not_flag(self, client, db_session, test_user):
+        resp = client.put("/preferences", json={"target_industries": ["Tech"]})
+        assert resp.json()["rescore_scheduled"] is False
+        assert self._flagged_at(db_session, test_user) is None
+
+    def test_explicit_null_clears_field(self, client):
+        # Undo restores a previously-unset field by sending null.
+        client.put("/preferences", json={"salary_min": 70000, "salary_max": 90000})
+        resp = client.put("/preferences", json={"salary_min": None})
+        assert resp.json()["salary_min"] is None
+        assert resp.json()["salary_max"] == 90000.0
+        assert resp.json()["rescore_scheduled"] is True
+
+    def test_get_does_not_report_rescore_scheduled(self, client):
+        client.put("/preferences", json={"remote_preference": "remote"})
+        assert client.get("/preferences").json()["rescore_scheduled"] is False

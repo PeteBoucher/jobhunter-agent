@@ -5,11 +5,12 @@ import os
 import sys
 
 from dependencies import get_current_user, get_db
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from schemas.user import UserOut, UserUpdate
 from sqlalchemy.orm import Session
 
-from src.models import Job, User, UserPreferences
+from src.job_matcher import mark_profile_changed
+from src.models import User, UserPreferences
 
 # Ensure project root on path for src.* imports
 _ROOT = os.path.dirname(
@@ -44,43 +45,6 @@ def update_profile(
     db.commit()
     db.refresh(current_user)
     return UserOut.model_validate(current_user)
-
-
-def _recompute_matches(user_id: int, db_url: str) -> None:
-    """Background task: recompute match scores for all jobs for a user."""
-    from sqlalchemy.orm import sessionmaker
-
-    from src.database import create_engine_instance
-    from src.job_matcher import compute_match_for_user
-
-    engine = create_engine_instance()
-    SessionLocal = sessionmaker(bind=engine)
-    session = SessionLocal()
-    BATCH = 200
-    try:
-        user = session.query(User).filter(User.id == user_id).first()
-        if not user:
-            return
-        total = session.query(Job).count()
-        matched = 0
-        offset = 0
-        while offset < total:
-            jobs = session.query(Job).order_by(Job.id).offset(offset).limit(BATCH).all()
-            if not jobs:
-                break
-            for job in jobs:
-                compute_match_for_user(session, job, user)
-                matched += 1
-            session.commit()
-            session.expire_all()  # free memory from this batch
-            offset += BATCH
-        logger.info("cv_rematch user_id=%d jobs_matched=%d", user_id, matched)
-    except Exception as exc:
-        logger.error(
-            "cv_rematch_error user_id=%d error=%r", user_id, exc, exc_info=True
-        )
-    finally:
-        session.close()
 
 
 @router.delete("", status_code=204)
@@ -118,6 +82,7 @@ def delete_skill(
     if not skill:
         raise HTTPException(status_code=404, detail="Skill not found")
     db.delete(skill)
+    mark_profile_changed(db, current_user.id)
     db.commit()
 
 
@@ -165,11 +130,10 @@ def _extract_cv_text(content: bytes, filename: str) -> str:
 @router.post("/cv", response_model=UserOut)
 async def upload_cv(
     file: UploadFile,
-    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Upload a CV (PDF, DOCX, TXT or Markdown), extract skills, trigger re-matching."""
+    """Upload a CV (PDF, DOCX, TXT or Markdown), extract skills, flag a rescore."""
     filename = file.filename or ""
     ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     if ext not in _ALLOWED_EXTENSIONS:
@@ -247,6 +211,9 @@ async def upload_cv(
         profile_manager = UserProfile(db)
         profile_manager._sync_skills_from_cv(current_user, parsed.get("skills", {}))
         profile_manager._auto_populate_preferences(prefs, parsed)
+        # Skills (and possibly preferences) changed — the next Lambda match
+        # phase rescores this user's existing matches.
+        mark_profile_changed(db, current_user.id)
         db.commit()
 
         skill_count = sum(len(v) for v in parsed.get("skills", {}).values())
@@ -262,10 +229,6 @@ async def upload_cv(
             "cv_parse_error user=%s error=%r", current_user.email, exc, exc_info=True
         )
         raise HTTPException(status_code=500, detail="CV processing failed")
-
-    # Trigger background re-matching
-    db_url = os.environ.get("DATABASE_URL", "sqlite:///./data/jobs.db")
-    background_tasks.add_task(_recompute_matches, current_user.id, db_url)
 
     db.refresh(current_user)
     return UserOut.model_validate(current_user)

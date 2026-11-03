@@ -43,6 +43,12 @@ class User(Base):
     # See src/rejection_semantics.py.
     rejections_updated_at = Column(DateTime, nullable=True)
     rejection_penalty_refreshed_at = Column(DateTime, nullable=True)
+    # Set whenever a profile input the matcher reads changes (preferences,
+    # skills, CV); the Lambda match phase re-scores all of this user's existing
+    # matches when it is newer than profile_rescored_at. See
+    # src/job_matcher.py:refresh_profile_scores.
+    profile_updated_at = Column(DateTime, nullable=True)
+    profile_rescored_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
