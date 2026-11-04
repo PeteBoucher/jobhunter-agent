@@ -27,7 +27,7 @@ Location and remote have an OR relationship — a job qualifies if either the lo
 Every change should follow this cycle:
 
 ```
-Problem → Plan → Approve → Execute → Test → Document → Commit → Deploy
+Problem → Plan → Approve → Execute → Test → Document → Commit → PR → Merge (deploys)
 ```
 
 ### Steps
@@ -48,9 +48,11 @@ Problem → Plan → Approve → Execute → Test → Document → Commit → De
 
 6. **Document** — Update `CLAUDE.md` if new patterns, gotchas, or architectural decisions were introduced. Update `README.md` if user-facing behaviour changed.
 
-7. **Commit** — Stage only the relevant files and commit with a clear message. Pre-commit hooks run black, isort, flake8, mypy — re-stage if black reformats files.
+7. **Commit** — Work on a feature branch (`git switch -c <type>/<slug>`), never on master. Stage only the relevant files and commit with a clear message. Pre-commit hooks run black, isort, flake8, mypy — re-stage if black reformats files.
 
-8. **Deploy** — Any code change that affects Lambda behaviour must be built and deployed to prod:
+8. **PR** — Push the branch and open a PR with `gh pr create`. `master` is protected (admins included): changes land only through a PR, the `Test & lint` CI job must pass, no approvals are required (solo repo), and force-push/deletion are blocked. Merged branches are auto-deleted.
+
+9. **Merge = deploy** — Merging to master triggers CI's deploy jobs: Render (API), Vercel (frontend) and Lambda (`sam build` + `sam deploy --config-env prod` in `deploy-lambda`). Check the Actions run after merging. A manual Lambda deploy is still possible if CI's is broken:
    ```bash
    DOCKER_HOST=unix:///Users/pete/.docker/run/docker.sock sam build
    sam deploy --config-env prod --no-confirm-changeset
