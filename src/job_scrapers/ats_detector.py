@@ -8,8 +8,8 @@ headers, script src tags, and page content for known ATS fingerprints. As a
 last resort, custom-domain sites that proxy an ATS server-side (so nothing
 ATS-specific ever reaches client-visible HTML/JS) are caught by a blind
 probe: guess a company slug from the hostname, hit that ATS's public API
-directly, and see if it responds with real data. See _probe_smartrecruiters
-and _probe_greenhouse.
+directly, and see if it responds with real data. See _probe_smartrecruiters,
+_probe_greenhouse and _probe_workable.
 
 Supported ATS platforms (i.e. platforms we already have scrapers for):
 
@@ -21,7 +21,7 @@ Supported ATS platforms (i.e. platforms we already have scrapers for):
   workday         *.wd{N}.myworkdayjobs.com
   smartrecruiters jobs.smartrecruiters.com / smartrecruiters.com/…, or a
                   custom-domain site (blind probe)
-  workable        apply.workable.com
+  workable        apply.workable.com, or a custom-domain site (blind probe)
   teamtailor      *.teamtailor.com or pages with teamtailor-cdn.com assets
   dejobs          *.dejobs.org
   jobboardly      *.jobboardly.com or pages with assets.jobboardly.com
@@ -296,6 +296,14 @@ def detect_ats(
     if gh_token:
         return "greenhouse", {"token": gh_token}
 
+    # Workable blind probe — also the only route when the careers page itself
+    # is behind a bot challenge we can't (and shouldn't) get past, e.g.
+    # raspberrypi.com/jobs (Cloudflare 403) → Workable account "raspberrypi".
+    workable = _probe_workable(host, timeout=timeout)
+    if workable:
+        slug, name = workable
+        return "workable", {"slug": slug, "name": name}
+
     return None
 
 
@@ -360,6 +368,32 @@ def _probe_greenhouse(hostname: str, timeout: int = 8) -> Optional[str]:
             )
             if resp.status_code == 200 and resp.json().get("jobs"):
                 return candidate
+        except Exception:
+            pass
+    return None
+
+
+def _probe_workable(hostname: str, timeout: int = 8) -> Optional[Tuple[str, str]]:
+    """Try Workable's public widget API with a slug derived from the hostname.
+
+    Returns (account_slug, display_name) or None. The widget response carries
+    the company's real name ("Raspberry Pi"), which the URL-pattern rule can't
+    know, so the probe uses it instead of the slug.
+    """
+    slug = _slug_from_hostname(hostname)
+    if not slug:
+        return None
+
+    for candidate in [slug, slug.replace("-", "")]:
+        try:
+            resp = requests.get(
+                f"https://apply.workable.com/api/v1/widget/accounts/{candidate}",
+                timeout=timeout,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("jobs"):
+                    return candidate, data.get("name") or candidate
         except Exception:
             pass
     return None

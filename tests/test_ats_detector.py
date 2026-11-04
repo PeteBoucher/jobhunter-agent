@@ -7,6 +7,7 @@ import pytest
 from src.job_scrapers.ats_detector import (
     _probe_greenhouse,
     _probe_smartrecruiters,
+    _probe_workable,
     detect_ats,
 )
 
@@ -410,6 +411,71 @@ def test_probe_greenhouse_returns_none_on_404():
         assert _probe_greenhouse("www.unknown-site.com") is None
 
 
+@patch("src.job_scrapers.ats_detector.requests.get")
+@patch("src.job_scrapers.ats_detector._probe_greenhouse", return_value=None)
+@patch("src.job_scrapers.ats_detector._probe_smartrecruiters", return_value=None)
+def test_detect_ats_workable_blind_probe_on_blocked_page(_sr, _gh, mock_get):
+    """A careers page behind a bot challenge (raspberrypi.com/jobs returns a
+    Cloudflare 403) has no fingerprint to read, but the hostname-derived slug
+    still resolves on Workable — and the config takes Workable's real company
+    name, not the slug."""
+    blocked = MagicMock()
+    blocked.status_code = 403
+    blocked.text = "<html><title>Just a moment...</title></html>"
+    blocked.headers = {"cf-mitigated": "challenge"}
+
+    wk_resp = MagicMock()
+    wk_resp.status_code = 200
+    wk_resp.json.return_value = {"name": "Raspberry Pi", "jobs": [{"title": "DFT"}]}
+
+    mock_get.side_effect = [blocked, wk_resp]
+
+    assert detect_ats("https://www.raspberrypi.com/jobs/", fetch_page=True) == (
+        "workable",
+        {"slug": "raspberrypi", "name": "Raspberry Pi"},
+    )
+
+
+def test_probe_workable_slug_derivation():
+    with patch("src.job_scrapers.ats_detector.requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"name": "Acme Ltd", "jobs": [{"title": "Job"}]}
+        mock_get.return_value = mock_resp
+
+        assert _probe_workable("careers.acme.com") == ("acme", "Acme Ltd")
+        assert "/accounts/acme" in mock_get.call_args_list[0][0][0]
+
+
+def test_probe_workable_falls_back_to_slug_when_name_missing():
+    with patch("src.job_scrapers.ats_detector.requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"jobs": [{"title": "Job"}]}
+        mock_get.return_value = mock_resp
+
+        assert _probe_workable("jobs.acme.com") == ("acme", "acme")
+
+
+def test_probe_workable_returns_none_on_empty_jobs():
+    with patch("src.job_scrapers.ats_detector.requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"name": "Acme", "jobs": []}
+        mock_get.return_value = mock_resp
+
+        assert _probe_workable("www.unknown-site.com") is None
+
+
+def test_probe_workable_returns_none_on_404():
+    with patch("src.job_scrapers.ats_detector.requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 404
+        mock_get.return_value = mock_resp
+
+        assert _probe_workable("www.unknown-site.com") is None
+
+
 def _page_resp(text):
     resp = MagicMock()
     resp.status_code = 200
@@ -418,10 +484,11 @@ def _page_resp(text):
     return resp
 
 
+@patch("src.job_scrapers.ats_detector._probe_workable", return_value=None)
 @patch("src.job_scrapers.ats_detector._probe_greenhouse", return_value=None)
 @patch("src.job_scrapers.ats_detector._probe_smartrecruiters", return_value=None)
 @patch("src.job_scrapers.ats_detector.requests.get")
-def test_detect_ats_ignores_json_placeholder_example_url(mock_get, _sr, _gh):
+def test_detect_ats_ignores_json_placeholder_example_url(mock_get, _sr, _gh, _wk):
     """An aggregator's "import a job by link" form placeholder must not be
     read as the page's own ATS. Found live on app.nodi.global: an escaped
     i18n JSON blob held "placeholder":"https://jobs.lever.co/company/role",
@@ -434,10 +501,11 @@ def test_detect_ats_ignores_json_placeholder_example_url(mock_get, _sr, _gh):
     assert detect_ats("https://app.nodi.global/company/Acme", fetch_page=True) is None
 
 
+@patch("src.job_scrapers.ats_detector._probe_workable", return_value=None)
 @patch("src.job_scrapers.ats_detector._probe_greenhouse", return_value=None)
 @patch("src.job_scrapers.ats_detector._probe_smartrecruiters", return_value=None)
 @patch("src.job_scrapers.ats_detector.requests.get")
-def test_detect_ats_ignores_html_placeholder_attribute(mock_get, _sr, _gh):
+def test_detect_ats_ignores_html_placeholder_attribute(mock_get, _sr, _gh, _wk):
     mock_get.return_value = _page_resp(
         '<input type="url" placeholder="https://boards.greenhouse.io/yourcompany">'
     )
