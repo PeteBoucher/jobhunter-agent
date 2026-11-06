@@ -97,3 +97,137 @@ class TestFetchJobs:
 
         scraper._http = FakeHttp()
         assert scraper._fetch_jobs() == []
+
+
+ASHBY_URL = "https://jobs.ashbyhq.com/patrianna/fd279991-b500-4d83-b466-8b32dba338a5"
+
+
+def _ashby_posting(**overrides):
+    posting = {
+        "id": "fd279991-b500-4d83-b466-8b32dba338a5",
+        "title": "AI IT and Integrations Lead",
+        "department": "BI",
+        "location": "Gibraltar",
+        "isListed": True,
+        "isRemote": True,
+        "workplaceType": "Hybrid",
+        "publishedAt": "2026-10-16T13:23:30.857+00:00",
+        "descriptionPlain": "About Patrianna\n\nWe build things.",
+    }
+    posting.update(overrides)
+    return posting
+
+
+class _FakeResponse:
+    def __init__(self, payload, status=200):
+        self._payload = payload
+        self._status = status
+
+    def raise_for_status(self):
+        import requests
+
+        if self._status != 200:
+            raise requests.HTTPError(f"HTTP {self._status}")
+
+    def json(self):
+        return self._payload
+
+
+class _FakeHttp:
+    """Serves the GibWork feed and Ashby boards; records requested URLs."""
+
+    def __init__(self, feed, boards, failing=()):
+        self.feed = feed
+        self.boards = boards
+        self.failing = set(failing)
+        self.calls = []
+
+    def get(self, url, **kwargs):
+        self.calls.append(url)
+        if url.endswith("/jobs.json"):
+            return _FakeResponse(self.feed)
+        slug = url.rsplit("/", 1)[-1]
+        if slug in self.failing:
+            return _FakeResponse({}, status=500)
+        return _FakeResponse({"jobs": self.boards.get(slug, [])})
+
+
+def _gibwork_job(url=ASHBY_URL, **overrides):
+    job = {
+        "t": "AI IT and Integrations Lead",
+        "u": url,
+        "s": "Patrianna",
+        "st": "pri",
+        "c": "",
+        "loc": "Gibraltar",
+        "ats": "ashby",
+    }
+    job.update(overrides)
+    return job
+
+
+def _scraper_with(http):
+    scraper = GibWorkScraper.__new__(GibWorkScraper)
+    scraper._http = http
+    return scraper
+
+
+class TestAshbyEnrichment:
+    def test_ashby_job_gets_remote_description_and_posted_date(self):
+        from datetime import datetime, timezone
+
+        http = _FakeHttp([_gibwork_job()], {"patrianna": [_ashby_posting()]})
+        scraper = _scraper_with(http)
+        p = scraper._parse_job(scraper._fetch_jobs()[0])
+        assert p["remote"] == "hybrid"
+        assert p["description"].startswith("About Patrianna")
+        assert p["posted_date"] == datetime(
+            2026, 10, 16, 13, 23, 30, 857000, tzinfo=timezone.utc
+        )
+        # GibWork's own fields are kept
+        assert p["company"] == "Patrianna"
+        assert p["country"] == "gi"
+        assert p["source_type"] == "aggregator"
+        assert p["source_job_id"] == "fd279991-b500-4d83-b466-8b32dba338a5"
+        assert p["apply_url"] == ASHBY_URL
+
+    def test_department_falls_back_to_ashby_only_when_gibwork_has_none(self):
+        http = _FakeHttp([_gibwork_job(c="IT")], {"patrianna": [_ashby_posting()]})
+        scraper = _scraper_with(http)
+        assert scraper._parse_job(scraper._fetch_jobs()[0])["department"] == "IT"
+
+        http = _FakeHttp([_gibwork_job(c="")], {"patrianna": [_ashby_posting()]})
+        scraper = _scraper_with(http)
+        assert scraper._parse_job(scraper._fetch_jobs()[0])["department"] == "BI"
+
+    def test_each_board_fetched_once(self):
+        other = ASHBY_URL.replace("fd279991", "aaaaaaaa")
+        http = _FakeHttp(
+            [_gibwork_job(), _gibwork_job(url=other)],
+            {"patrianna": [_ashby_posting()]},
+        )
+        _scraper_with(http)._fetch_jobs()
+        assert sum("ashbyhq.com" in c for c in http.calls) == 1
+
+    def test_job_missing_from_board_is_left_unenriched(self):
+        http = _FakeHttp([_gibwork_job()], {"patrianna": []})
+        scraper = _scraper_with(http)
+        p = scraper._parse_job(scraper._fetch_jobs()[0])
+        assert p["remote"] is None
+        assert p["description"] is None
+        assert p["posted_date"] is None
+
+    def test_board_fetch_failure_keeps_gibwork_jobs(self):
+        http = _FakeHttp([_gibwork_job()], {}, failing={"patrianna"})
+        scraper = _scraper_with(http)
+        jobs = scraper._fetch_jobs()
+        assert len(jobs) == 1
+        assert scraper._parse_job(jobs[0])["remote"] is None
+
+    def test_non_ashby_jobs_trigger_no_ashby_requests(self):
+        url = "https://jobs.smartrecruiters.com/Playtech/744000143296883"
+        http = _FakeHttp([_gibwork_job(url=url, ats="smartrecruiters")], {})
+        scraper = _scraper_with(http)
+        p = scraper._parse_job(scraper._fetch_jobs()[0])
+        assert http.calls == ["https://www.gibwork.com/jobs.json"]
+        assert p["description"] is None

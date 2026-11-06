@@ -8,6 +8,7 @@ No authentication required.
 """
 
 import logging
+import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -129,38 +130,11 @@ class AshbyScraper(BaseScraper):
         board_slug = raw_job.get("_board_slug", "unknown")
 
         location = raw_job.get("location")
-
-        # Determine remote status; workplaceType is authoritative over isRemote
-        # because Ashby can set isRemote=true on hybrid jobs.
-        remote = None
-        workplace_type = (raw_job.get("workplaceType") or "").lower()
-        if "hybrid" in workplace_type:
-            remote = "hybrid"
-        elif "remote" in workplace_type or raw_job.get("isRemote"):
-            remote = "remote"
-        elif location and "hybrid" in location.lower():
-            remote = "hybrid"
-        elif location and "remote" in location.lower():
-            remote = "remote"
-
+        details = parse_ashby_details(raw_job)
         department = raw_job.get("department") or raw_job.get("team")
-
-        # Prefer plain text description, fall back to stripping HTML
-        description = raw_job.get("descriptionPlain", "") or ""
-        if not description:
-            html = raw_job.get("descriptionHtml", "") or ""
-            description = self._strip_html(html)
-
-        # Parse published date
-        posted_date = datetime.utcnow()
-        published_at = raw_job.get("publishedAt")
-        if published_at:
-            try:
-                posted_date = datetime.fromisoformat(
-                    published_at.replace("Z", "+00:00")
-                )
-            except (ValueError, TypeError):
-                pass
+        description = details["description"]
+        remote = details["remote"]
+        posted_date = details["posted_date"] or datetime.utcnow()
 
         apply_url = raw_job.get("applyUrl") or raw_job.get("jobUrl", "")
         company = board_slug.replace("-", " ").title()
@@ -174,7 +148,7 @@ class AshbyScraper(BaseScraper):
             "remote": remote,
             "salary_min": None,
             "salary_max": None,
-            "description": description[:5000] if description else None,
+            "description": description,
             "requirements": None,
             "nice_to_haves": None,
             "apply_url": apply_url,
@@ -187,10 +161,66 @@ class AshbyScraper(BaseScraper):
     @staticmethod
     def _strip_html(html: str) -> str:
         """Strip HTML tags from a string."""
-        import re
+        return _strip_html(html)
 
-        if not html:
-            return ""
-        clean = re.sub(r"<[^>]+>", " ", html)
-        clean = re.sub(r"\s+", " ", clean).strip()
-        return clean
+
+def _strip_html(html: Optional[str]) -> str:
+    if not html:
+        return ""
+    clean = re.sub(r"<[^>]+>", " ", html)
+    clean = re.sub(r"\s+", " ", clean).strip()
+    return clean
+
+
+def fetch_ashby_board(slug: str, http: Any = requests) -> List[Dict[str, Any]]:
+    """Return the listed jobs on one Ashby board (raises on HTTP errors).
+
+    `http` is anything with a requests-style `.get()` (module or Session).
+    """
+    resp = http.get(f"{ASHBY_API_BASE}/{slug}", timeout=15)
+    resp.raise_for_status()
+    jobs = resp.json().get("jobs", [])
+    return [j for j in jobs if j.get("isListed", True)]
+
+
+def parse_ashby_details(raw_job: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract remote status, description and posted date from an Ashby job.
+
+    Shared by `AshbyScraper` and aggregators that link to Ashby postings
+    (GibWork), so both read Ashby data the same way. `posted_date` is None
+    when `publishedAt` is missing or unparseable; `description` is None when
+    empty.
+    """
+    location = raw_job.get("location")
+
+    # workplaceType is authoritative over isRemote because Ashby can set
+    # isRemote=true on hybrid jobs.
+    remote = None
+    workplace_type = (raw_job.get("workplaceType") or "").lower()
+    if "hybrid" in workplace_type:
+        remote = "hybrid"
+    elif "remote" in workplace_type or raw_job.get("isRemote"):
+        remote = "remote"
+    elif location and "hybrid" in location.lower():
+        remote = "hybrid"
+    elif location and "remote" in location.lower():
+        remote = "remote"
+
+    # Prefer plain text description, fall back to stripping HTML
+    description = raw_job.get("descriptionPlain") or _strip_html(
+        raw_job.get("descriptionHtml")
+    )
+
+    posted_date: Optional[datetime] = None
+    published_at = raw_job.get("publishedAt")
+    if published_at:
+        try:
+            posted_date = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
+        except (ValueError, TypeError, AttributeError):
+            pass
+
+    return {
+        "remote": remote,
+        "description": description[:5000] if description else None,
+        "posted_date": posted_date,
+    }

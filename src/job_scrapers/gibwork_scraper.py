@@ -18,11 +18,13 @@ No authentication is required.
 """
 
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 import requests
 from sqlalchemy.orm import Session
 
+from src.job_scrapers.ashby_scraper import fetch_ashby_board, parse_ashby_details
 from src.job_scrapers.base_scraper import BaseScraper
 
 logger = logging.getLogger("jobhunter.scrapers.gibwork")
@@ -65,7 +67,38 @@ class GibWorkScraper(BaseScraper):
             return []
 
         logger.info("Fetched %d jobs from GibWork", len(raw_jobs))
+        self._attach_ashby_postings(raw_jobs)
         return raw_jobs
+
+    def _attach_ashby_postings(self, raw_jobs: List[Dict[str, Any]]) -> None:
+        """Attach the full Ashby posting to each GibWork job hosted on Ashby.
+
+        GibWork's feed has no description, workplace type or posted date, but
+        many of its jobs link to a public Ashby board that has all three. Each
+        board is fetched once; a failed fetch or an unlisted job leaves that
+        GibWork job as it was.
+        """
+        by_slug: Dict[str, List[Tuple[str, Dict[str, Any]]]] = {}
+        for raw_job in raw_jobs:
+            ref = _ashby_ref(raw_job.get("u") or "")
+            if ref:
+                by_slug.setdefault(ref[0], []).append((ref[1], raw_job))
+
+        for slug, refs in by_slug.items():
+            try:
+                postings = {j.get("id"): j for j in fetch_ashby_board(slug, self._http)}
+            except (requests.RequestException, ValueError) as e:
+                logger.warning("GibWork: Ashby board %s fetch failed: %s", slug, e)
+                continue
+            found = 0
+            for job_id, raw_job in refs:
+                posting = postings.get(job_id)
+                if posting:
+                    raw_job["_ashby"] = posting
+                    found += 1
+            logger.info(
+                "GibWork: matched %d/%d jobs on Ashby board %s", found, len(refs), slug
+            )
 
     def _parse_job(self, raw_job: Dict[str, Any]) -> Dict[str, Any]:
         """Parse GibWork job data into standardized format.
@@ -110,8 +143,19 @@ class GibWorkScraper(BaseScraper):
         # Matches adzuna_scraper.py/themuse_scraper.py, which hardcode this too.
         source_type = "aggregator"
 
-        # Remote status not available in API, leave as None
+        # GibWork's own feed has no remote status, description or posted
+        # date; Ashby-hosted jobs get them from the attached Ashby posting.
         remote = None
+        description = None
+        posted_date = None
+        ashby = raw_job.get("_ashby")
+        if ashby:
+            details = parse_ashby_details(ashby)
+            remote = details["remote"]
+            description = details["description"]
+            posted_date = details["posted_date"]
+            if not department:
+                department = ashby.get("department") or ashby.get("team") or ""
 
         parsed = {
             "source_job_id": source_job_id,
@@ -122,7 +166,20 @@ class GibWorkScraper(BaseScraper):
             "department": department if department else None,
             "country": country,
             "remote": remote,
+            "description": description,
+            "posted_date": posted_date,
             "source_type": source_type,
         }
 
         return parsed
+
+
+def _ashby_ref(url: str) -> Optional[Tuple[str, str]]:
+    """(board slug, job id) for a jobs.ashbyhq.com posting URL, else None."""
+    parsed = urlparse(url)
+    if parsed.netloc.lower() != "jobs.ashbyhq.com":
+        return None
+    parts = [p for p in parsed.path.split("/") if p]
+    if len(parts) < 2:
+        return None
+    return parts[0], parts[1]
