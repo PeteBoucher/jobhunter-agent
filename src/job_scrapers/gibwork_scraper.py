@@ -18,13 +18,17 @@ No authentication is required.
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 
 import requests
 from sqlalchemy.orm import Session
 
-from src.job_scrapers.ashby_scraper import fetch_ashby_board, parse_ashby_details
+from src.job_scrapers.ashby_scraper import (
+    DEFAULT_BOARD_SLUGS,
+    fetch_ashby_board,
+    parse_ashby_details,
+)
 from src.job_scrapers.base_scraper import BaseScraper
 
 logger = logging.getLogger("jobhunter.scrapers.gibwork")
@@ -67,8 +71,51 @@ class GibWorkScraper(BaseScraper):
             return []
 
         logger.info("Fetched %d jobs from GibWork", len(raw_jobs))
-        self._attach_ashby_postings(raw_jobs)
-        return raw_jobs
+        covered = self._covered_boards()
+        kept = [j for j in raw_jobs if not is_covered(j.get("u") or "", covered)]
+        if len(kept) < len(raw_jobs):
+            logger.info(
+                "GibWork: skipped %d jobs already scraped directly",
+                len(raw_jobs) - len(kept),
+            )
+        self._attach_ashby_postings(kept)
+        return kept
+
+    def _covered_boards(self) -> Dict[str, Set[str]]:
+        """Boards our own ATS scrapers already fetch, by ATS (lowercased).
+
+        GibWork re-lists jobs from companies that our SmartRecruiters/Ashby
+        scrapers also cover (e.g. Playtech). With no cross-source dedup those
+        jobs would be stored twice, the GibWork copy without its details, so
+        GibWork skips them. Mirrors each scraper's defaults + scraper_config
+        merge.
+        """
+        from src.job_scrapers.smartrecruiters_scraper import DEFAULT_COMPANIES
+
+        covered = {
+            "smartrecruiters": {c.lower() for c in DEFAULT_COMPANIES},
+            "ashby": {s.lower() for s in DEFAULT_BOARD_SLUGS},
+        }
+        try:
+            from src.models import ScraperConfig
+
+            rows = (
+                self.session.query(ScraperConfig)
+                .filter(
+                    ScraperConfig.source_name.in_(["smartrecruiters", "ashby"]),
+                    ScraperConfig.is_active.is_(True),
+                )
+                .all()
+            )
+        except Exception as e:
+            logger.warning("GibWork: failed to load scraper_config: %s", e)
+            rows = []
+        for row in rows:
+            config = row.config or {}
+            key = "company_id" if row.source_name == "smartrecruiters" else "subdomain"
+            if config.get(key):
+                covered[row.source_name].add(str(config[key]).lower())
+        return covered
 
     def _attach_ashby_postings(self, raw_jobs: List[Dict[str, Any]]) -> None:
         """Attach the full Ashby posting to each GibWork job hosted on Ashby.
@@ -80,9 +127,9 @@ class GibWorkScraper(BaseScraper):
         """
         by_slug: Dict[str, List[Tuple[str, Dict[str, Any]]]] = {}
         for raw_job in raw_jobs:
-            ref = _ashby_ref(raw_job.get("u") or "")
-            if ref:
-                by_slug.setdefault(ref[0], []).append((ref[1], raw_job))
+            ref = board_ref(raw_job.get("u") or "")
+            if ref and ref[0] == "ashby":
+                by_slug.setdefault(ref[1], []).append((ref[2], raw_job))
 
         for slug, refs in by_slug.items():
             try:
@@ -174,12 +221,29 @@ class GibWorkScraper(BaseScraper):
         return parsed
 
 
-def _ashby_ref(url: str) -> Optional[Tuple[str, str]]:
-    """(board slug, job id) for a jobs.ashbyhq.com posting URL, else None."""
+_ATS_HOSTS = {
+    "jobs.ashbyhq.com": "ashby",
+    "jobs.smartrecruiters.com": "smartrecruiters",
+}
+
+
+def board_ref(url: str) -> Optional[Tuple[str, str, str]]:
+    """(ats, board, job id) for an Ashby/SmartRecruiters posting URL, else None.
+
+    Both use `https://{host}/{board}/{job id}`; the board is returned as-is
+    (SmartRecruiters company IDs are case-sensitive in its API).
+    """
     parsed = urlparse(url)
-    if parsed.netloc.lower() != "jobs.ashbyhq.com":
+    ats = _ATS_HOSTS.get(parsed.netloc.lower())
+    if not ats:
         return None
     parts = [p for p in parsed.path.split("/") if p]
     if len(parts) < 2:
         return None
-    return parts[0], parts[1]
+    return ats, parts[0], parts[1]
+
+
+def is_covered(url: str, covered: Dict[str, Set[str]]) -> bool:
+    """True if the posting's board is one our own ATS scrapers fetch."""
+    ref = board_ref(url)
+    return ref is not None and ref[1].lower() in covered.get(ref[0], set())

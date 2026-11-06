@@ -12,7 +12,16 @@ regardless of the API's `st` field, since that field describes the
 GibWork itself is a direct company portal or a secondary aggregator.
 """
 
-from src.job_scrapers.gibwork_scraper import GibWorkScraper
+import os
+import tempfile
+from unittest.mock import MagicMock
+
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from src.job_scrapers.gibwork_scraper import GibWorkScraper, board_ref
+from src.models import Base, ScraperConfig
 
 
 class TestParseJob:
@@ -166,9 +175,14 @@ def _gibwork_job(url=ASHBY_URL, **overrides):
     return job
 
 
-def _scraper_with(http):
+def _scraper_with(http, session=None):
+    """GibWork scraper on a fake HTTP client; no scraper_config rows by default."""
+    if session is None:
+        session = MagicMock()
+        session.query.return_value.filter.return_value.all.return_value = []
     scraper = GibWorkScraper.__new__(GibWorkScraper)
     scraper._http = http
+    scraper.session = session
     return scraper
 
 
@@ -225,9 +239,110 @@ class TestAshbyEnrichment:
         assert scraper._parse_job(jobs[0])["remote"] is None
 
     def test_non_ashby_jobs_trigger_no_ashby_requests(self):
-        url = "https://jobs.smartrecruiters.com/Playtech/744000143296883"
+        url = "https://jobs.smartrecruiters.com/Gibtelecom/744000143296883"
         http = _FakeHttp([_gibwork_job(url=url, ats="smartrecruiters")], {})
         scraper = _scraper_with(http)
         p = scraper._parse_job(scraper._fetch_jobs()[0])
         assert http.calls == ["https://www.gibwork.com/jobs.json"]
         assert p["description"] is None
+
+
+PLAYTECH_URL = "https://jobs.smartrecruiters.com/Playtech/744000157139999"
+
+
+@pytest.fixture
+def db_session():
+    db_fd, db_path = tempfile.mkstemp()
+    engine = create_engine(f"sqlite:///{db_path}")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    yield session
+    session.close()
+    os.close(db_fd)
+    os.unlink(db_path)
+
+
+class TestBoardRef:
+    def test_ashby_and_smartrecruiters_urls(self):
+        assert board_ref(ASHBY_URL) == (
+            "ashby",
+            "patrianna",
+            "fd279991-b500-4d83-b466-8b32dba338a5",
+        )
+        assert board_ref(PLAYTECH_URL) == (
+            "smartrecruiters",
+            "Playtech",
+            "744000157139999",
+        )
+
+    def test_other_hosts_and_bare_boards_are_none(self):
+        assert board_ref("https://peninsula360.pinpointhq.com/en/postings/x") is None
+        assert board_ref("https://jobs.ashbyhq.com/patrianna") is None
+        assert board_ref("") is None
+
+
+class TestSkipsJobsScrapedDirectly:
+    """GibWork re-lists jobs our own ATS scrapers already store in full; with
+    no cross-source dedup they'd appear twice, the GibWork copy empty."""
+
+    def _titles(self, scraper):
+        return [j["t"] for j in scraper._fetch_jobs()]
+
+    def test_skips_default_smartrecruiters_company(self):
+        http = _FakeHttp(
+            [
+                _gibwork_job(url=PLAYTECH_URL, t="Bingo", ats="smartrecruiters"),
+                _gibwork_job(url="https://jobs.smartrecruiters.com/Other/1", t="Keep"),
+            ],
+            {},
+        )
+        assert self._titles(_scraper_with(http)) == ["Keep"]
+
+    def test_skips_default_ashby_board_and_does_not_fetch_it(self):
+        url = "https://jobs.ashbyhq.com/OpenAI/abc"  # case-insensitive match
+        http = _FakeHttp([_gibwork_job(url=url, t="Skip")], {})
+        assert self._titles(_scraper_with(http)) == []
+        assert not any("ashbyhq.com" in c for c in http.calls)
+
+    def test_skips_companies_from_active_scraper_config(self, db_session):
+        db_session.add_all(
+            [
+                ScraperConfig(
+                    source_name="smartrecruiters",
+                    config={"company_id": "sixt"},
+                    is_active=True,
+                ),
+                ScraperConfig(
+                    source_name="ashby",
+                    config={"subdomain": "patrianna"},
+                    is_active=True,
+                ),
+                ScraperConfig(
+                    source_name="ashby",
+                    config={"subdomain": "b2spin"},
+                    is_active=False,
+                ),
+            ]
+        )
+        db_session.commit()
+        http = _FakeHttp(
+            [
+                _gibwork_job(url="https://jobs.smartrecruiters.com/Sixt/1", t="Sixt"),
+                _gibwork_job(url=ASHBY_URL, t="Patrianna"),
+                _gibwork_job(url="https://jobs.ashbyhq.com/b2spin/2", t="B2Spin"),
+            ],
+            {},
+        )
+        assert self._titles(_scraper_with(http, db_session)) == ["B2Spin"]
+
+    def test_config_load_failure_still_applies_defaults(self):
+        session = MagicMock()
+        session.query.side_effect = RuntimeError("db down")
+        http = _FakeHttp(
+            [
+                _gibwork_job(url=PLAYTECH_URL, t="Bingo"),
+                _gibwork_job(url=ASHBY_URL, t="Patrianna"),
+            ],
+            {"patrianna": [_ashby_posting()]},
+        )
+        assert self._titles(_scraper_with(http, session)) == ["Patrianna"]
