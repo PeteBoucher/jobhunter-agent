@@ -17,7 +17,6 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from src import s3_sync
 from src.application_tracker import ApplicationTracker
 from src.data_exporter import DataExporter
 from src.database import get_session, init_db
@@ -40,20 +39,6 @@ load_dotenv()
 console = Console()
 
 
-def _sync_pull() -> None:
-    """Pull DB from S3 before a mutation (no-op when S3_BUCKET is not set)."""
-    if s3_sync.is_configured():
-        console.print("[dim]↓ Syncing from S3...[/dim]")
-        s3_sync.pull()
-
-
-def _sync_push() -> None:
-    """Push DB to S3 after a successful mutation (no-op when S3_BUCKET is not set)."""
-    if s3_sync.is_configured():
-        console.print("[dim]↑ Syncing to S3...[/dim]")
-        s3_sync.push()
-
-
 @click.group()
 def cli() -> None:
     """Job Hunting Agent - Automated job search and application tracker."""
@@ -69,38 +54,6 @@ def init() -> None:
     except Exception as e:
         console.print(f"[red]✗[/red] Error initializing database: {e}")
         raise
-
-
-@cli.group()
-def db() -> None:
-    """Sync local DB with S3 (requires S3_BUCKET env var)."""
-    pass
-
-
-@db.command("pull")
-def db_pull() -> None:
-    """Download the DB from S3, replacing the local copy."""
-    if not s3_sync.is_configured():
-        console.print("[yellow]S3_BUCKET not set — nothing to pull[/yellow]")
-        return
-    pulled = s3_sync.pull()
-    if pulled:
-        console.print("[green]✓[/green] Pulled DB from S3")
-    else:
-        console.print("[yellow]No DB found in S3 — local copy unchanged[/yellow]")
-
-
-@db.command("push")
-def db_push() -> None:
-    """Upload the local DB to S3, replacing the remote copy."""
-    if not s3_sync.is_configured():
-        console.print("[yellow]S3_BUCKET not set — nothing to push[/yellow]")
-        return
-    pushed = s3_sync.push()
-    if pushed:
-        console.print("[green]✓[/green] Pushed DB to S3")
-    else:
-        console.print("[red]✗[/red] Push failed — local DB not found")
 
 
 @cli.group()
@@ -182,7 +135,6 @@ def upload(
     Example:
         job-agent profile upload data/cv.md --titles "Software Engineer"
     """
-    _sync_pull()
     session = get_session()
     profile_manager = UserProfile(session)
 
@@ -241,8 +193,6 @@ def upload(
             console.print(f"  Experience Level: {experience}")
         if remote:
             console.print(f"  Remote: {remote}")
-
-        _sync_push()
 
     except FileNotFoundError as e:
         console.print(f"[red]✗[/red] File not found: {e}")
@@ -418,7 +368,6 @@ def refresh(user_id: Optional[int]) -> None:
     Useful after parser improvements to update skills and preferences
     without re-uploading the CV file.
     """
-    _sync_pull()
     session = get_session()
     profile_manager = UserProfile(session)
 
@@ -446,8 +395,6 @@ def refresh(user_id: Optional[int]) -> None:
                 console.print(f"  Experience: {prefs.experience_level}")
             if prefs.remote_preference:
                 console.print(f"  Remote: {prefs.remote_preference}")
-
-        _sync_push()
 
     except Exception as e:
         console.print(f"[red]✗[/red] Error refreshing profile: {e}")
@@ -558,7 +505,6 @@ def _parse_list_input(items: tuple) -> List[str]:
 )
 def match(user_id: Optional[int], min_score: float) -> None:
     """Compute job match scores for users against available jobs."""
-    _sync_pull()
     session = get_session()
 
     try:
@@ -612,7 +558,6 @@ def match(user_id: Optional[int], min_score: float) -> None:
                         accepted += 1
                     progress.advance(task)
 
-        _sync_push()
         console.print(
             f"[green]✓[/green] Matches processed: {processed}; accepted: {accepted}"
         )
@@ -640,7 +585,6 @@ def match(user_id: Optional[int], min_score: float) -> None:
 @click.option("--backoff", type=float, default=1.0, help="Backoff factor seconds")
 def scrape(sources: tuple, keywords: tuple, max_retries: int, backoff: float) -> None:
     """Run scrapers for configured sources and persist new jobs."""
-    _sync_pull()
     session = get_session()
 
     try:
@@ -693,7 +637,6 @@ def scrape(sources: tuple, keywords: tuple, max_retries: int, backoff: float) ->
         console.print(
             f"[green]✓[/green] Scraping completed. Total new jobs: {total_new}"
         )
-        _sync_push()
 
     finally:
         session.close()
@@ -998,7 +941,6 @@ def apply_command(job_id: int, notes: Optional[str]) -> None:
     Example:
         job-agent applications apply 42 --notes "Applied via LinkedIn"
     """
-    _sync_pull()
     session = get_session()
     try:
         job = session.query(Job).filter(Job.id == job_id).first()
@@ -1013,7 +955,6 @@ def apply_command(job_id: int, notes: Optional[str]) -> None:
             f"[green]✓[/green] Recorded application to {job.title} at {job.company}"
         )
         console.print(f"  Status: {app.status}")
-        _sync_push()
 
     finally:
         session.close()
@@ -1096,7 +1037,6 @@ def update_application(job_id: int, status: str, notes: Optional[str]) -> None:
         job-agent applications update 2296 --status rejected
         job-agent applications update 42 --status offer --notes "£80k base"
     """
-    _sync_pull()
     session = get_session()
     try:
         job = session.query(Job).filter(Job.id == job_id).first()
@@ -1135,7 +1075,6 @@ def update_application(job_id: int, status: str, notes: Optional[str]) -> None:
         console.print(
             f"[green]✓[/green] Updated {job.title} at {job.company} → {app.status}"
         )
-        _sync_push()
 
     finally:
         session.close()
@@ -1277,7 +1216,6 @@ def apply_ai(
         )
         raise SystemExit(1)
 
-    _sync_pull()
     session = get_session()
     try:
         automation = apply_to_job(
@@ -1296,7 +1234,6 @@ def apply_ai(
             console.print("[green]✓ Submitted![/green]")
             if screenshot:
                 console.print(f"  Screenshot: {screenshot}")
-            _sync_push()
         elif status == "filled":
             console.print("[yellow]Form filled — not yet submitted.[/yellow]")
             if screenshot:
