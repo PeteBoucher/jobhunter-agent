@@ -124,6 +124,20 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      # ubuntu-26.04 runners ship Docker 29 with the containerd image store on
+      # by default. With it, SAM's legacy-builder cross-arch build (arm64 base
+      # image on an amd64 runner) fails at the first layer:
+      # "failed to export image: NotFound: content digest ... not found".
+      # Switch back to the classic overlay2 store before QEMU is set up.
+      - name: Disable containerd image store
+        run: |
+          f=/etc/docker/daemon.json
+          [ -s "$f" ] || echo '{}' | sudo tee "$f" >/dev/null
+          sudo jq '.features["containerd-snapshotter"] = false' "$f" | sudo tee "$f.new" >/dev/null
+          sudo mv "$f.new" "$f"
+          sudo systemctl restart docker
+          docker info --format '{{.Driver}}'
+
       - name: Set up QEMU (arm64 emulation for sam build)
         uses: docker/setup-qemu-action@v3
         with:
