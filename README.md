@@ -263,7 +263,6 @@ Match score email notifications fire when a new job scores ≥ 70% against a use
 
 - [CLAUDE.md](CLAUDE.md) — development conventions, architecture decisions, gotchas
 - [WORKFLOW.md](WORKFLOW.md) — development workflow and deploy checklist
-- [DEPLOYMENT.md](DEPLOYMENT.md) — local deployment options (systemd, Docker)
 - [PROJECT_PLAN.md](PROJECT_PLAN.md) — current state, roadmap, and future features
 
 ## License

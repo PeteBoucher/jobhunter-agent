@@ -172,7 +172,7 @@ class BaseScraper(ABC):
         """Get the name of the job source.
 
         Returns:
-            Name of the source (e.g., 'github', 'microsoft')
+            Name of the source (e.g., 'greenhouse', 'lever')
         """
         pass
 

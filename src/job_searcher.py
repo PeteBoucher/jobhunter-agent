@@ -44,7 +44,7 @@ class JobSearcher:
                 matches one of these ISO2 codes (lowercase).
             min_match_score: Minimum match score (0-100) - filters via
                 JobMatch relationship
-            source: Filter by job source (github, microsoft, etc.)
+            source: Filter by job source (greenhouse, lever, etc.)
             posted_after: Only show jobs posted after this date
             sort_by: Sort order - "date" (default) or "score"
             limit: Maximum number of results

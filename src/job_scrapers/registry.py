@@ -12,29 +12,24 @@ from src.job_scrapers.bamboohr_scraper import BambooHRScraper
 from src.job_scrapers.base_scraper import BaseScraper
 from src.job_scrapers.bcg_scraper import BCGScraper
 from src.job_scrapers.coderland_scraper import CodelandScraper
-from src.job_scrapers.coinbase_scraper import CoinbaseScraper
 from src.job_scrapers.dejobs_scraper import DeJobsScraper
 from src.job_scrapers.experis_scraper import ExperisScraper
 from src.job_scrapers.fiftyskills_scraper import FiftySkillsScraper
 from src.job_scrapers.gibwork_scraper import GibWorkScraper
-from src.job_scrapers.github_scraper import GitHubJobsScraper
 from src.job_scrapers.greenhouse_scraper import GreenhouseScraper
 from src.job_scrapers.indragroup_scraper import IndraGroupScraper
 from src.job_scrapers.innovairv_scraper import InnovaIRVScraper
 from src.job_scrapers.jobboardly_scraper import JobboardlyScraper
 from src.job_scrapers.lever_scraper import LeverScraper
 from src.job_scrapers.linkedin_scraper import LinkedInScraper
-from src.job_scrapers.microsoft_scraper import MicrosoftScraper
 from src.job_scrapers.recruitee_scraper import RecruiteeScraper
 from src.job_scrapers.reed_scraper import ReedScraper
-from src.job_scrapers.revolut_scraper import RevolutScraper
 from src.job_scrapers.ripplehire_scraper import RippleHireScraper
 from src.job_scrapers.smartrecruiters_scraper import SmartRecruitersScraper
 from src.job_scrapers.teamtailor_scraper import TeamtailorScraper
 from src.job_scrapers.themuse_scraper import TheMuseScraper
 from src.job_scrapers.thoughtworks_scraper import ThoughtworksScraper
 from src.job_scrapers.tkhsecurity_scraper import TKHSecurityScraper
-from src.job_scrapers.uber_scraper import UberScraper
 from src.job_scrapers.workable_scraper import WorkableScraper
 from src.job_scrapers.workday_scraper import WorkdayScraper
 
@@ -50,20 +45,15 @@ SCRAPER_MAP: Dict[str, Type[BaseScraper]] = {
     "greenhouse": GreenhouseScraper,
     "lever": LeverScraper,
     "linkedin": LinkedInScraper,
-    "microsoft": MicrosoftScraper,
-    "github": GitHubJobsScraper,
-    "coinbase": CoinbaseScraper,
     "indragroup": IndraGroupScraper,
     "jobboardly": JobboardlyScraper,
     "innovairv": InnovaIRVScraper,
     "workable": WorkableScraper,
     "workday": WorkdayScraper,
-    "revolut": RevolutScraper,
     "teamtailor": TeamtailorScraper,
     "recruitee": RecruiteeScraper,
     "thoughtworks": ThoughtworksScraper,
     "tkhsecurity": TKHSecurityScraper,
-    "uber": UberScraper,
     "adzuna": AdzunaScraper,
     "themuse": TheMuseScraper,
     "reed": ReedScraper,
