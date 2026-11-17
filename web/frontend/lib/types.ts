@@ -73,6 +73,15 @@ export interface Job {
   // excluded from the normal feed rather than flagged).
   is_rejected?: boolean | null;
   rejection_reason?: string | null;
+  // Set only by GET /jobs: other postings of the same role (same company,
+  // title and remote type) collapsed into this card.
+  other_locations?: OtherLocation[];
+}
+
+export interface OtherLocation {
+  id: number;
+  location: string | null;
+  country: string | null;
 }
 
 export interface Application {
