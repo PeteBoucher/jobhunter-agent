@@ -1,10 +1,11 @@
 """Job browsing routes."""
 
-from typing import Any, List, Optional
+import re
+from typing import Any, Dict, List, Optional, Tuple
 
 from dependencies import get_current_user, get_db
 from fastapi import APIRouter, Depends, HTTPException, Query
-from schemas.job import JobOut, MatchScoreOut
+from schemas.job import JobOut, MatchScoreOut, OtherLocationOut
 from schemas.rejection import RejectionCreate, RejectionOut
 from sqlalchemy.orm import Session
 
@@ -18,6 +19,43 @@ from src.job_searcher import JobSearcher
 from src.models import Application, Job, JobMatch, RejectedJob, User
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
+
+# GET /jobs over-fetches this many times page_size * page before grouping, so
+# that collapsing multi-location postings still leaves enough cards to fill
+# the requested page. Groups beyond the over-fetch window are simply cut off.
+_GROUP_OVERFETCH = 3
+
+_DASHES = re.compile(r"[\u2010-\u2015\u2212-]")
+_SPACES = re.compile(r"\s+")
+
+GroupKey = Tuple[str, str, str]
+
+
+def _group_key(job: Job) -> GroupKey:
+    """Key identifying one role posted in several locations.
+
+    Employers often post the same role once per city/country (separate ATS
+    postings, same title, identical scores) — these flood the feed. Jobs with
+    the same company, normalised title and remote type are shown as one card.
+    `remote` is part of the key so a remote and an onsite role stay separate.
+    """
+    title = _DASHES.sub("-", (job.title or "").lower())
+    title = _SPACES.sub(" ", title).strip()
+    company = _SPACES.sub(" ", (job.company or "").lower()).strip()
+    return (company, title, (job.remote or "").lower())
+
+
+def _group_jobs(jobs: List[Job]) -> List[Tuple[Job, List[Job]]]:
+    """Group ordered jobs by _group_key, keeping the first of each group (best
+    by the current sort order) as the representative."""
+    groups: Dict[GroupKey, Tuple[Job, List[Job]]] = {}
+    for job in jobs:
+        key = _group_key(job)
+        if key in groups:
+            groups[key][1].append(job)
+        else:
+            groups[key] = (job, [])
+    return list(groups.values())
 
 
 def _attach_match(job: Job, user_id: int, db: Session) -> JobOut:
@@ -81,7 +119,8 @@ def list_jobs(
         eligible_countries=eligible_countries,
         min_match_score=min_score,
         sort_by=sort,
-        limit=page_size * page,  # over-fetch then slice
+        # over-fetch then group and slice — see _GROUP_OVERFETCH
+        limit=page_size * page * _GROUP_OVERFETCH,
         user_id=current_user.id,
     )
 
@@ -101,13 +140,34 @@ def list_jobs(
     # (like inactive jobs) — not gated by exclude_statuses, distinct from
     # employer-side Application.status == "rejected" above. See GET /jobs/rejected
     # to view/undo them.
+    #
+    # Rejecting any posting of a multi-location role hides the whole group, so
+    # "Not interested" on a card writes one RejectedJob row, not one per
+    # sibling — several rows would trip the company-repetition rejection
+    # penalty (job_matcher._load_rejection_signals) for that company's other
+    # jobs.
     rejected_ids = get_rejected_job_ids(db, current_user.id)
     if rejected_ids:
-        jobs = [j for j in jobs if j.id not in rejected_ids]
+        rejected_keys = {
+            _group_key(j) for j in db.query(Job).filter(Job.id.in_(rejected_ids))
+        }
+        jobs = [
+            j
+            for j in jobs
+            if j.id not in rejected_ids and _group_key(j) not in rejected_keys
+        ]
 
     start = (page - 1) * page_size
-    page_jobs = jobs[start : start + page_size]
-    return [_attach_match(j, current_user.id, db) for j in page_jobs]
+    page_groups = _group_jobs(jobs)[start : start + page_size]
+    out: List[JobOut] = []
+    for rep, others in page_groups:
+        job_out = _attach_match(rep, current_user.id, db)
+        job_out.other_locations = [
+            OtherLocationOut(id=o.id, location=o.location, country=o.country)
+            for o in others
+        ]
+        out.append(job_out)
+    return out
 
 
 @router.get("/rejected", response_model=List[JobOut])

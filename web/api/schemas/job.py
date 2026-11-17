@@ -36,6 +36,14 @@ def _coerce_to_list(v: Any) -> Any:
     return v
 
 
+class OtherLocationOut(BaseModel):
+    """A sibling posting collapsed into a feed card (see GET /jobs grouping)."""
+
+    id: int
+    location: Optional[str] = None
+    country: Optional[str] = None
+
+
 class JobOut(BaseModel):
     id: int
     source: Optional[str] = None
@@ -59,6 +67,10 @@ class JobOut(BaseModel):
     # which excludes rejected jobs entirely rather than flagging them.
     is_rejected: Optional[bool] = None
     rejection_reason: Optional[str] = None
+    # Set only by GET /jobs: other postings of the same role (same company,
+    # normalised title and remote type) collapsed into this card, e.g. one
+    # role posted once per country. Empty elsewhere.
+    other_locations: List[OtherLocationOut] = []
 
     @field_validator("requirements", "nice_to_haves", mode="before")
     @classmethod

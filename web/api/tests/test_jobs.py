@@ -305,6 +305,135 @@ class TestListJobs:
         assert "Berlin Job" not in titles
 
 
+class TestMultiLocationGrouping:
+    """GET /jobs collapses one role posted per location into a single card."""
+
+    def _scored(self, db_session, user, score, **kw):
+        job = Job(source="test", **kw)
+        db_session.add(job)
+        db_session.commit()
+        db_session.add(JobMatch(job_id=job.id, user_id=user.id, match_score=score))
+        db_session.commit()
+        return job
+
+    def test_copies_collapse_into_best_scored_representative(
+        self, client, db_session, test_user
+    ):
+        lima = self._scored(
+            db_session,
+            test_user,
+            70.0,
+            title="Senior Dev – Copilot",
+            company="Talan",
+            location="Lima",
+            country="pe",
+            remote="remote",
+        )
+        malaga = self._scored(
+            db_session,
+            test_user,
+            80.0,
+            title="Senior Dev - Copilot",
+            company="talan ",
+            location="Málaga",
+            country="es",
+            remote="remote",
+        )
+        other = self._scored(
+            db_session, test_user, 60.0, title="Other", company="Talan"
+        )
+
+        data = client.get("/jobs").json()
+        assert [j["id"] for j in data] == [malaga.id, other.id]
+        assert data[0]["other_locations"] == [
+            {"id": lima.id, "location": "Lima", "country": "pe"}
+        ]
+        assert data[1]["other_locations"] == []
+
+    def test_representative_follows_date_sort(self, client, db_session):
+        from datetime import datetime
+
+        old = Job(
+            title="Dev",
+            company="A",
+            source="test",
+            location="Old",
+            posted_date=datetime(2026, 1, 1),
+        )
+        new = Job(
+            title="Dev",
+            company="A",
+            source="test",
+            location="New",
+            posted_date=datetime(2026, 2, 1),
+        )
+        db_session.add_all([old, new])
+        db_session.commit()
+
+        data = client.get("/jobs?sort=date").json()
+        assert [j["id"] for j in data] == [new.id]
+        assert [o["id"] for o in data[0]["other_locations"]] == [old.id]
+
+    def test_different_remote_or_company_not_grouped(self, client, db_session):
+        db_session.add_all(
+            [
+                Job(title="Dev", company="A", source="test", remote="remote"),
+                Job(title="Dev", company="A", source="test", remote="onsite"),
+                Job(title="Dev", company="B", source="test", remote="remote"),
+            ]
+        )
+        db_session.commit()
+
+        data = client.get("/jobs?sort=date").json()
+        assert len(data) == 3
+        assert all(j["other_locations"] == [] for j in data)
+
+    def test_rejecting_one_copy_hides_whole_group(self, client, db_session):
+        a = Job(title="Dev", company="A", source="test", location="Lima")
+        b = Job(title="Dev", company="A", source="test", location="Bogotá")
+        c = Job(title="Other", company="A", source="test")
+        db_session.add_all([a, b, c])
+        db_session.commit()
+
+        client.post(f"/jobs/{a.id}/reject")
+
+        data = client.get("/jobs?sort=date").json()
+        assert [j["id"] for j in data] == [c.id]
+        # Only the one rejection row — siblings aren't rejected individually.
+        assert db_session.query(RejectedJob).count() == 1
+
+    def test_pagination_slices_groups_not_jobs(self, client, db_session):
+        from datetime import datetime
+
+        # Role 0 has 3 postings (newest); roles 1 and 2 have one each.
+        jobs = [
+            Job(
+                title="Role 0",
+                company="A",
+                source="test",
+                location=f"L{i}",
+                posted_date=datetime(2026, 3, 1, i),
+            )
+            for i in range(3)
+        ] + [
+            Job(
+                title=f"Role {n}",
+                company="A",
+                source="test",
+                posted_date=datetime(2026, 2, 1 + n),
+            )
+            for n in (1, 2)
+        ]
+        db_session.add_all(jobs)
+        db_session.commit()
+
+        page1 = client.get("/jobs?sort=date&page=1&page_size=2").json()
+        page2 = client.get("/jobs?sort=date&page=2&page_size=2").json()
+        assert [j["title"] for j in page1] == ["Role 0", "Role 2"]
+        assert len(page1[0]["other_locations"]) == 2
+        assert [j["title"] for j in page2] == ["Role 1"]
+
+
 class TestGetJob:
     def test_returns_job_detail(self, client, db_session):
         job = Job(
