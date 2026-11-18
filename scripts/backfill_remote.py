@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Backfill `jobs.remote` for existing Lever rows from Lever's workplaceType.
+"""Backfill `jobs.remote` for one source's existing rows after a parser fix.
 
-`BaseScraper.scrape()` skips already-seen jobs, so rows scraped before the
-Lever scraper read `workplaceType` (issue #38) keep `remote = NULL` forever.
-This re-fetches the Lever boards, corrects `remote` on existing rows, and
-re-scores the location/remote dimension of their existing `JobMatch` rows
-(the only dimension `remote` feeds). Jobs no longer listed by Lever are left
-alone.
+`BaseScraper.scrape()` skips already-seen jobs, so rows scraped before a
+scraper's `_parse_job()` learned to read its workplace field keep the old
+`remote` value forever (Lever in issue #38; Ashby, SmartRecruiters and
+Workable in issue #57). This re-fetches the source, re-parses each live
+posting with the current `_parse_job()`, corrects `remote` on existing rows,
+and re-scores the location/remote dimension of their existing `JobMatch` rows
+(the only dimension `remote` feeds). Jobs no longer listed are left alone.
 
-    DATABASE_URL=<neon-url> python scripts/backfill_lever_remote.py --dry-run
-    DATABASE_URL=<neon-url> python scripts/backfill_lever_remote.py
+    DATABASE_URL=<neon-url> python scripts/backfill_remote.py --source ashby --dry-run
+    DATABASE_URL=<neon-url> python scripts/backfill_remote.py --source ashby
 """
 
 import argparse
@@ -32,33 +33,35 @@ logging.basicConfig(
 logger = logging.getLogger("backfill")
 
 
-def backfill(session: Session, dry_run: bool = False) -> Dict[str, int]:
-    """Correct `remote` on Lever jobs and re-score affected matches.
+def backfill(session: Session, source: str, dry_run: bool = False) -> Dict[str, int]:
+    """Correct `remote` on `source` jobs and re-score affected matches.
 
     Returns counts: `jobs_updated`, `matches_updated`.
     """
     from src.job_matcher import _score_location_remote, _total_score
-    from src.job_scrapers.lever_scraper import LeverScraper
+    from src.job_scrapers.registry import SCRAPER_MAP
     from src.models import Job, JobMatch, User
 
-    scraper = LeverScraper(session)
+    scraper = SCRAPER_MAP[source](session)
     live_remote: Dict[str, Optional[str]] = {}
     for raw_job in scraper._fetch_jobs():
         parsed = scraper._parse_job(raw_job)
         if parsed.get("source_job_id"):
             live_remote[parsed["source_job_id"]] = parsed.get("remote")
-    logger.info("Fetched %d live Lever postings", len(live_remote))
+    logger.info("Fetched %d live %s postings", len(live_remote), source)
 
     jobs = (
         session.query(Job)
-        .filter(Job.source == "lever", Job.source_job_id.in_(live_remote))
+        .filter(Job.source == source, Job.source_job_id.in_(live_remote))
         .all()
     )
     changed = [j for j in jobs if j.remote != live_remote[j.source_job_id]]
     transitions = Counter(
         f"{j.remote!r} -> {live_remote[j.source_job_id]!r}" for j in changed
     )
-    logger.info("%d of %d matching Lever rows need updating", len(changed), len(jobs))
+    logger.info(
+        "%d of %d matching %s rows need updating", len(changed), len(jobs), source
+    )
     for transition, count in transitions.most_common():
         logger.info("  %s: %d", transition, count)
 
@@ -66,8 +69,8 @@ def backfill(session: Session, dry_run: bool = False) -> Dict[str, int]:
         job.remote = live_remote[job.source_job_id]
     jobs_by_id = {j.id: j for j in changed}
 
-    # One pass over job_matches for all users — the table has no index on
-    # job_id/user_id, so a per-(job, user) lookup would be a seq scan each.
+    # One pass over job_matches for all users rather than a per-(job, user)
+    # lookup per changed job.
     matches = (
         session.query(JobMatch).filter(JobMatch.job_id.in_(jobs_by_id)).all()
         if jobs_by_id
@@ -119,18 +122,19 @@ def backfill(session: Session, dry_run: bool = False) -> Dict[str, int]:
     return {"jobs_updated": len(changed), "matches_updated": matches_updated}
 
 
-def main(dry_run: bool = False) -> None:
+def main(source: str, dry_run: bool = False) -> None:
     from src.database import get_session
 
     session = get_session()
     try:
-        backfill(session, dry_run=dry_run)
+        backfill(session, source, dry_run=dry_run)
     finally:
         session.close()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--source", required=True, help="registry source name")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    main(dry_run=args.dry_run)
+    main(args.source, dry_run=args.dry_run)

@@ -101,6 +101,12 @@ def test_parse_job_remote_and_hybrid_flags():
     assert both["remote"] == "remote"
 
 
+def test_parse_job_both_flags_false_is_onsite():
+    # SmartRecruiters always sends both flags; both false means on-site.
+    location = {"city": "Tallinn", "remote": False, "hybrid": False}
+    assert _scraper()._parse_job(_raw(location=location))["remote"] == "onsite"
+
+
 def test_parse_job_without_detail_falls_back_to_ref():
     # Already-known jobs skip the detail fetch (`_detail` is {}).
     parsed = _scraper()._parse_job(_raw(_detail={}))

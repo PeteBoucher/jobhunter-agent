@@ -174,6 +174,9 @@ class SmartRecruitersScraper(BaseScraper):
             remote = "remote"
         elif loc.get("hybrid"):
             remote = "hybrid"
+        elif loc.get("remote") is False and loc.get("hybrid") is False:
+            # Both flags are always present; both false is a real on-site answer.
+            remote = "onsite"
 
         dept_obj = raw_job.get("department") or {}
         department = dept_obj.get("label")

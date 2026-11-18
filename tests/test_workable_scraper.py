@@ -9,6 +9,7 @@ overlap scored 35/35 on skills (found via a 360dialog job notifying at 85%).
 from datetime import datetime
 from unittest.mock import MagicMock
 
+import pytest
 import requests
 
 from src.job_matcher import _requirement_items
@@ -110,6 +111,20 @@ def test_parse_job_non_remote_and_missing_optional_fields():
     assert parsed["department"] is None
     assert parsed["description"] is None
     assert parsed["requirements"] is None
+
+
+@pytest.mark.parametrize(
+    "workplace, remote_flag, expected",
+    [
+        ("remote", True, "remote"),
+        ("hybrid", False, "hybrid"),
+        ("on_site", False, "onsite"),
+        (None, True, "remote"),  # older payloads without `workplace`
+    ],
+)
+def test_parse_job_remote_from_workplace(workplace, remote_flag, expected):
+    parsed = _scraper({})._parse_job(_raw(remote=remote_flag, workplace=workplace))
+    assert parsed["remote"] == expected
 
 
 def test_parse_job_survives_detail_fetch_failure():

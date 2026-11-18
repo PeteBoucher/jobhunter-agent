@@ -31,6 +31,9 @@ LIST_URL = "https://apply.workable.com/api/v3/accounts/{slug}/jobs"
 DETAIL_URL = "https://apply.workable.com/api/v2/accounts/{slug}/jobs/{shortcode}"
 APPLY_URL = "https://apply.workable.com/{slug}/j/{shortcode}/"
 
+# The `remote` bool has no hybrid state; `workplace` has all three.
+_WORKPLACE_TO_REMOTE = {"remote": "remote", "hybrid": "hybrid", "on_site": "onsite"}
+
 
 @dataclass
 class WorkableCompany:
@@ -128,8 +131,9 @@ class WorkableScraper(BaseScraper):
         country_code = (location_data.get("countryCode") or "").lower() or None
         city = location_data.get("city") or None
 
-        remote_flag = raw_job.get("remote")
-        remote = "remote" if remote_flag else None
+        remote = _WORKPLACE_TO_REMOTE.get(raw_job.get("workplace") or "")
+        if remote is None and raw_job.get("remote"):
+            remote = "remote"
 
         departments = raw_job.get("department") or []
         department = departments[0] if departments else None
