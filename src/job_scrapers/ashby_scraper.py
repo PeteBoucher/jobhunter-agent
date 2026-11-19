@@ -194,12 +194,17 @@ def parse_ashby_details(raw_job: Dict[str, Any]) -> Dict[str, Any]:
     location = raw_job.get("location")
 
     # workplaceType is authoritative over isRemote because Ashby can set
-    # isRemote=true on hybrid jobs.
+    # isRemote=true on hybrid jobs. isRemote is only a fallback when
+    # workplaceType is missing.
     remote = None
     workplace_type = (raw_job.get("workplaceType") or "").lower()
     if "hybrid" in workplace_type:
         remote = "hybrid"
-    elif "remote" in workplace_type or raw_job.get("isRemote"):
+    elif "remote" in workplace_type:
+        remote = "remote"
+    elif workplace_type == "onsite":
+        remote = "onsite"
+    elif raw_job.get("isRemote"):
         remote = "remote"
     elif location and "hybrid" in location.lower():
         remote = "hybrid"

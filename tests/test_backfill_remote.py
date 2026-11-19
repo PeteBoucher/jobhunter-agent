@@ -1,4 +1,4 @@
-"""Tests for scripts/backfill_lever_remote.py."""
+"""Tests for scripts/backfill_remote.py."""
 
 import importlib.util
 import os
@@ -12,11 +12,11 @@ from src.database import get_session, init_db
 from src.job_scrapers.lever_scraper import LeverScraper
 from src.models import Job, JobMatch, User, UserPreferences
 
-_SCRIPT = Path(__file__).resolve().parent.parent / "scripts/backfill_lever_remote.py"
-_spec = importlib.util.spec_from_file_location("backfill_lever_remote", _SCRIPT)
+_SCRIPT = Path(__file__).resolve().parent.parent / "scripts/backfill_remote.py"
+_spec = importlib.util.spec_from_file_location("backfill_remote", _SCRIPT)
 assert _spec and _spec.loader
-backfill_lever_remote = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(backfill_lever_remote)
+backfill_remote = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(backfill_remote)
 
 
 @pytest.fixture
@@ -70,7 +70,7 @@ def _seed(session):
 def _run(session, dry_run):
     live = [_raw("remote-1", "remote"), _raw("hybrid-1", "hybrid")]
     with patch.object(LeverScraper, "_fetch_jobs", return_value=live):
-        return backfill_lever_remote.backfill(session, dry_run=dry_run)
+        return backfill_remote.backfill(session, "lever", dry_run=dry_run)
 
 
 def _state(session):

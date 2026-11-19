@@ -231,6 +231,16 @@ def test_parse_job_workplace_type_takes_precedence_over_is_remote(scraper):
     assert parsed["remote"] == "hybrid"
 
 
+def test_parse_job_onsite_from_workplace_type(scraper):
+    parsed = scraper._parse_job(_raw({"workplaceType": "OnSite", "isRemote": False}))
+    assert parsed["remote"] == "onsite"
+
+
+def test_parse_job_onsite_workplace_type_overrides_is_remote(scraper):
+    parsed = scraper._parse_job(_raw({"workplaceType": "OnSite", "isRemote": True}))
+    assert parsed["remote"] == "onsite"
+
+
 def test_parse_job_uses_html_description_fallback(scraper):
     raw = _raw({"descriptionPlain": "", "descriptionHtml": "<p>Hello <b>world</b></p>"})
     parsed = scraper._parse_job(raw)
