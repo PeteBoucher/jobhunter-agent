@@ -259,3 +259,25 @@ def test_location_filter_accepts_list_and_ors_them(session):
     assert "Malaga Job" in titles
     assert "Gibraltar Job" in titles
     assert "Berlin Job" not in titles
+
+
+def test_light_search_skips_relations_and_description(session):
+    """The API feed's light mode loads neither every user's matches nor the
+    description (they OOM-killed the 512MB Render instance), while the
+    default (CLI) mode still eager-loads relations."""
+    from sqlalchemy import inspect
+
+    session.add(
+        Job(source="test", source_job_id="1", title="Dev", description="Big text")
+    )
+    session.commit()
+    session.expunge_all()
+
+    light = JobSearcher(session).search(load_relations=False, load_description=False)
+    unloaded = inspect(light[0]).unloaded
+    assert {"job_matches", "applications", "description"} <= unloaded
+    session.expunge_all()
+
+    full = JobSearcher(session).search()
+    unloaded = inspect(full[0]).unloaded
+    assert not {"job_matches", "applications", "description"} & unloaded

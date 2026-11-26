@@ -61,7 +61,9 @@ export interface Job {
   remote: string | null;
   salary_min: number | null;
   salary_max: number | null;
-  description: string | null;
+  // Only GET /jobs/{id} returns it; list endpoints (the feed and "Not
+  // interested") omit it to keep responses small.
+  description?: string | null;
   requirements: string[] | null;
   nice_to_haves: string[] | null;
   apply_url: string | null;

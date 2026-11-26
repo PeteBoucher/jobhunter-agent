@@ -44,7 +44,15 @@ class OtherLocationOut(BaseModel):
     country: Optional[str] = None
 
 
-class JobOut(BaseModel):
+class JobSummaryOut(BaseModel):
+    """A job as listed on a feed card — everything except ``description``.
+
+    List endpoints (GET /jobs, GET /jobs/rejected) return this: the cards never
+    show the description, and it is by far the largest column, so shipping it
+    for every card wasted memory on the 512MB Render instance. GET /jobs/{id}
+    returns the full ``JobOut``.
+    """
+
     id: int
     source: Optional[str] = None
     title: Optional[str] = None
@@ -54,7 +62,6 @@ class JobOut(BaseModel):
     remote: Optional[str] = None
     salary_min: Optional[float] = None
     salary_max: Optional[float] = None
-    description: Optional[str] = None
     requirements: Optional[List[str]] = None
     nice_to_haves: Optional[List[str]] = None
     apply_url: Optional[str] = None
@@ -78,3 +85,9 @@ class JobOut(BaseModel):
         return _coerce_to_list(v)
 
     model_config = {"from_attributes": True}
+
+
+class JobOut(JobSummaryOut):
+    """A single job with its full description (GET /jobs/{id})."""
+
+    description: Optional[str] = None
