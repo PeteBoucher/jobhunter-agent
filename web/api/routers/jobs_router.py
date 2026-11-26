@@ -1,11 +1,11 @@
 """Job browsing routes."""
 
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 from dependencies import get_current_user, get_db
 from fastapi import APIRouter, Depends, HTTPException, Query
-from schemas.job import JobOut, MatchScoreOut, OtherLocationOut
+from schemas.job import JobOut, JobSummaryOut, MatchScoreOut, OtherLocationOut
 from schemas.rejection import RejectionCreate, RejectionOut
 from sqlalchemy.orm import Session
 
@@ -58,9 +58,11 @@ def _group_jobs(jobs: List[Job]) -> List[Tuple[Job, List[Job]]]:
     return list(groups.values())
 
 
-def _attach_match(job: Job, user_id: int, db: Session) -> JobOut:
-    """Build a JobOut, attaching this user's match scores."""
-    out = JobOut.model_validate(job)
+def _attach_match(
+    job: Job, user_id: int, db: Session, model: Type[JobSummaryOut] = JobOut
+) -> JobSummaryOut:
+    """Build ``model`` (JobOut, or JobSummaryOut for lists) with this user's match."""
+    out = model.model_validate(job)
     match = (
         db.query(JobMatch)
         .filter(JobMatch.job_id == job.id, JobMatch.user_id == user_id)
@@ -71,7 +73,7 @@ def _attach_match(job: Job, user_id: int, db: Session) -> JobOut:
     return out
 
 
-@router.get("", response_model=List[JobOut])
+@router.get("", response_model=List[JobSummaryOut])
 def list_jobs(
     keywords: Optional[str] = Query(None),
     location: Optional[str] = Query(None),
@@ -122,6 +124,11 @@ def list_jobs(
         # over-fetch then group and slice — see _GROUP_OVERFETCH
         limit=page_size * page * _GROUP_OVERFETCH,
         user_id=current_user.id,
+        # Every user's JobMatch/Application rows and the description are
+        # unused here; loading them OOM-killed the 512MB Render instance
+        # under concurrent searches (see JobSearcher.search docstring).
+        load_relations=False,
+        load_description=False,
     )
 
     if exclude_statuses:
@@ -159,9 +166,9 @@ def list_jobs(
 
     start = (page - 1) * page_size
     page_groups = _group_jobs(jobs)[start : start + page_size]
-    out: List[JobOut] = []
+    out: List[JobSummaryOut] = []
     for rep, others in page_groups:
-        job_out = _attach_match(rep, current_user.id, db)
+        job_out = _attach_match(rep, current_user.id, db, JobSummaryOut)
         job_out.other_locations = [
             OtherLocationOut(id=o.id, location=o.location, country=o.country)
             for o in others
@@ -170,7 +177,7 @@ def list_jobs(
     return out
 
 
-@router.get("/rejected", response_model=List[JobOut])
+@router.get("/rejected", response_model=List[JobSummaryOut])
 def list_rejected_jobs(
     limit: int = Query(100, ge=1, le=200),
     db: Session = Depends(get_db),
@@ -184,7 +191,7 @@ def list_rejected_jobs(
     }
     out = []
     for job in jobs:
-        job_out = _attach_match(job, current_user.id, db)
+        job_out = _attach_match(job, current_user.id, db, JobSummaryOut)
         job_out.is_rejected = True
         job_out.rejection_reason = reasons.get(job.id)
         out.append(job_out)

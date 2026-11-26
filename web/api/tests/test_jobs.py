@@ -57,6 +57,26 @@ class TestListJobs:
         assert "Backend Engineer" in titles
         assert "UX Designer" not in titles
 
+    def test_list_omits_description_but_still_searches_it(self, client, db_session):
+        # Feed cards never show the description; leaving it out of list
+        # responses keeps the 512MB Render instance's memory down. Searching
+        # it must still work — the filter runs in SQL.
+        db_session.add(
+            Job(
+                title="Engineer",
+                company="Acme",
+                source="test",
+                description="Work on Kubernetes clusters",
+            )
+        )
+        db_session.commit()
+
+        resp = client.get("/jobs?keywords=kubernetes&sort=date")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert [j["title"] for j in data] == ["Engineer"]
+        assert "description" not in data[0]
+
     def test_location_filter(self, client, db_session):
         db_session.add_all(
             [

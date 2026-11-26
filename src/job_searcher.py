@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import List, Optional, Union
 
 from sqlalchemy import or_
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, defer, joinedload
 
 from src.models import Job, JobMatch
 
@@ -32,6 +32,8 @@ class JobSearcher:
         sort_by: str = "date",
         limit: int = 50,
         user_id: Optional[int] = None,
+        load_relations: bool = True,
+        load_description: bool = True,
     ) -> List[Job]:
         """Search jobs with filters.
 
@@ -50,15 +52,28 @@ class JobSearcher:
             limit: Maximum number of results
             user_id: Scope JobMatch rows to this user (required for correct
                 multi-user score filtering/sorting)
+            load_relations: Eager-load ``job_matches`` and ``applications``.
+                These are *every* user's rows, so each job carries ~one
+                JobMatch per user and the joined SQL result repeats the full
+                job row (description included) for each. The CLI reads them;
+                the API feed must pass False — it fetches the current user's
+                match separately, and the eager load OOM-killed the 512MB
+                Render instance under a few concurrent searches.
+            load_description: Load ``Job.description``. The feed list never
+                shows it; the API passes False so the largest column isn't
+                pulled for every over-fetched row. Accessing it afterwards
+                lazy-loads one query per job, so only skip it when unused.
 
         Returns:
             List of matching jobs
         """
-        query = (
-            self.session.query(Job)
-            .options(joinedload(Job.job_matches), joinedload(Job.applications))
-            .filter(Job.is_active.is_(True))
-        )
+        query = self.session.query(Job).filter(Job.is_active.is_(True))
+        if load_relations:
+            query = query.options(
+                joinedload(Job.job_matches), joinedload(Job.applications)
+            )
+        if not load_description:
+            query = query.options(defer(Job.description))
 
         # Text search
         if keywords:

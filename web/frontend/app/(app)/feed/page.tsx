@@ -3,10 +3,11 @@
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { getJobs, getProfile, getRejectedJobs, rejectJob, unrejectJob } from "@/lib/api";
 import { JobCard } from "@/components/JobCard";
+import { useDebouncedValue } from "@/lib/useDebouncedValue";
 
 export default function FeedPage() {
   const { data: session } = useSession();
@@ -39,6 +40,15 @@ export default function FeedPage() {
     }
     router.replace(`/feed?${params.toString()}`);
   }
+
+  // The input is local state; only its debounced value reaches the URL (and
+  // so the SWR key). Each GET /jobs keyword search is a slow description scan,
+  // and one request per keystroke OOM-killed the Render API.
+  const [keywordInput, setKeywordInput] = useState(keywords);
+  const debouncedKeywords = useDebouncedValue(keywordInput, 350);
+  useEffect(() => {
+    if (debouncedKeywords !== keywords) setParam("keywords", debouncedKeywords, "");
+  }, [debouncedKeywords]);
 
   const excludeStatuses = hideRejected ? ["rejected"] : [];
 
@@ -122,8 +132,8 @@ export default function FeedPage() {
         <input
           type="text"
           placeholder="Search keywords..."
-          value={keywords}
-          onChange={(e) => setParam("keywords", e.target.value, "")}
+          value={keywordInput}
+          onChange={(e) => setKeywordInput(e.target.value)}
           className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
         />
         <select
